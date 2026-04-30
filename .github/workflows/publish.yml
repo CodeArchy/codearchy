@@ -1,0 +1,332 @@
+name: Publish — VS Code Marketplace
+
+on:
+  push:
+    tags:
+      # Matches: v1.0.0, v2.3.1, v10.0.0-rc.1 etc.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+  # Allow a manual trigger with an optional pre-release flag
+  workflow_dispatch:
+    inputs:
+      pre_release:
+        description: 'Publish as pre-release?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: write   # needed to create a GitHub Release
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. VALIDATE
+  #    Gates the entire pipeline. Ensures the release tag is consistent with
+  #    package.json and that the CHANGELOG has been updated before anything
+  #    reaches the Marketplace.
+  # ─────────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # need full history for changelog diff
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Extract version metadata
+        id: meta
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Detect pre-release: workflow input takes priority, then SemVer pre-release
+          WF_INPUT="${{ github.event.inputs.pre_release }}"
+          if [[ "$WF_INPUT" == "true" ]] || [[ "$PKG_VERSION" =~ -[a-zA-Z] ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="${{ steps.meta.outputs.version }}"
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            echo "  Bump the version in package.json to match the tag before publishing."
+            exit 1
+          fi
+          echo "::notice::Version check passed: $PKG_VERSION"
+
+      - name: Check CHANGELOG is updated for this version
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+
+          # Expect a section header like: ## [1.2.3] or ## [1.2.3] - 2024-01-15
+          if ! grep -qE "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for version $VERSION."
+            echo "  Add a '## [$VERSION]' section to CHANGELOG.md before publishing."
+            exit 1
+          fi
+          echo "::notice::CHANGELOG entry found for $VERSION"
+
+      - name: Verify CHANGELOG entry is not empty
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          # Extract lines between this version header and the next ## section
+          ENTRY=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+
+          if [ -z "$(echo "$ENTRY" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG entry for $VERSION exists but is empty. Document your changes."
+            exit 1
+          fi
+          echo "::notice::CHANGELOG entry is non-empty."
+
+      - name: Ensure no uncommitted local changes slipped in
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git diff --quiet HEAD; then
+            echo "::error::Working tree is dirty — commit all changes before tagging."
+            git diff --stat HEAD
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. BUILD
+  #    Full production build (extension host + Webview UI).
+  #    Runs only after validate passes.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Production Build
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Build Webview UI
+        run: npm run build:webview
+
+      - name: Compile extension host
+        run: npm run compile
+
+      - name: Upload build artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-build-${{ github.sha }}
+          path: |
+            out/
+            webview-ui/dist/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. PACKAGE
+  #    Creates the release .vsix and runs a final content audit.
+  # ─────────────────────────────────────────────────────────────────────────────
+  package:
+    name: Package VSIX
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      vsix_name: ${{ steps.vsix_meta.outputs.vsix_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Restore build artefacts
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-build-${{ github.sha }}
+
+      - name: Package VSIX
+        env:
+          CI: 'true'
+        run: |
+          PRE_FLAG=""
+          if [ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]; then
+            PRE_FLAG="--pre-release"
+          fi
+          npx @vscode/vsce package --no-dependencies $PRE_FLAG
+
+      - name: Capture VSIX filename
+        id: vsix_meta
+        run: |
+          VSIX_FILE=$(ls *.vsix | head -1)
+          echo "vsix_name=$VSIX_FILE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Release VSIX: $VSIX_FILE ($(du -sh "$VSIX_FILE" | cut -f1))"
+
+      - name: Audit package contents
+        run: |
+          echo "--- Full package manifest ---"
+          npx @vscode/vsce ls --no-dependencies | tee package-manifest.txt
+
+          required_files=("out/extension.js" "package.json" "README.md" "CHANGELOG.md")
+          echo "--- Required files ---"
+          for f in "${required_files[@]}"; do
+            if grep -q "$f" package-manifest.txt; then
+              echo "  ✓  $f"
+            else
+              echo "  ✗  MISSING: $f" && exit 1
+            fi
+          done
+
+          excluded_patterns=("src/" ".github/" "node_modules/" "tsconfig.json" ".eslintrc")
+          echo "--- Must-be-excluded ---"
+          for p in "${excluded_patterns[@]}"; do
+            if grep -q "$p" package-manifest.txt; then
+              echo "  ✗  LEAKED: $p" && exit 1
+            else
+              echo "  ✓  clean: $p"
+            fi
+          done
+
+      - name: Upload release VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-vsix
+          path: '*.vsix'
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4a. PUBLISH — VS Code Marketplace
+  #     Requires the VSCE_PAT secret (Personal Access Token from Azure DevOps).
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    runs-on: ubuntu-latest
+    needs: [validate, package]
+    environment: marketplace     # protects the VSCE_PAT secret behind an approval gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Download release VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: release-vsix
+
+      - name: Publish to Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          VSIX_FILE="${{ needs.package.outputs.vsix_name }}"
+          PRE_FLAG=""
+          if [ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]; then
+            PRE_FLAG="--pre-release"
+          fi
+          npx @vscode/vsce publish --packagePath "$VSIX_FILE" $PRE_FLAG
+
+      - name: Confirm publish
+        run: |
+          echo "::notice::CodeArchy v${{ needs.validate.outputs.version }} successfully published to the VS Code Marketplace."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4b. PUBLISH — Open VSX Registry (VSCodium / Eclipse Theia / Gitpod users)
+  #     Optional: remove this job if you do not maintain an Open VSX listing.
+  #     Requires the OVSX_PAT secret.
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish-ovsx:
+    name: Publish to Open VSX
+    runs-on: ubuntu-latest
+    needs: [validate, package]
+    environment: marketplace
+    # Skip if OVSX_PAT is not configured — safe to leave in place
+    if: ${{ vars.PUBLISH_OVSX == 'true' }}
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download release VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: release-vsix
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          VSIX_FILE="${{ needs.package.outputs.vsix_name }}"
+          npx ovsx publish "$VSIX_FILE" --pat "$OVSX_PAT"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 5. GITHUB RELEASE
+  #    Creates a tagged GitHub Release and attaches the .vsix as a download
+  #    asset. Release notes are extracted from the CHANGELOG entry.
+  # ─────────────────────────────────────────────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, package, publish-marketplace]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: release-vsix
+
+      - name: Extract CHANGELOG notes for this release
+        id: release_notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          # Grab lines between this version header and the next ## section
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          # Write to file so the release action can read it (avoids shell escaping issues)
+          echo "$NOTES" > release-notes.md
+          echo "Release notes extracted ($(wc -l < release-notes.md) lines)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: CodeArchy v${{ needs.validate.outputs.version }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            *.vsix

@@ -147,25 +147,29 @@
         }
     },
     "scripts": {
-        "vscode:prepublish": "npm run download-kokoro && npm run build:webview && npm run compile",
+        "vscode:prepublish": "node scripts/prepublish.js",
         "build:webview": "cd webview-ui && npm install && npm run build",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "download-grammars": "node scripts/download-grammars.js",
         "download-kokoro": "cd webview-ui && npm install && cd .. && node scripts/download-kokoro.js",
         "lint": "eslint src --ext ts",
-        "test": "node ./out/test/runTest.js",
+        "test": "vscode-test",
         "package": "vsce package",
         "pretest": "npm run compile"
     },
     "devDependencies": {
+        "@types/mocha": "^10.0.10",
         "@types/node": "^20.11.0",
         "@types/vscode": "^1.85.0",
         "@typescript-eslint/eslint-plugin": "^7.0.0",
         "@typescript-eslint/parser": "^7.0.0",
+        "@vscode/test-cli": "^0.0.10",
+        "@vscode/test-electron": "^2.5.2",
+        "@vscode/vsce": "^2.22.0",
         "eslint": "^8.56.0",
-        "typescript": "^5.3.0",
-        "@vscode/vsce": "^2.22.0"
+        "mocha": "^10.8.2",
+        "typescript": "^5.3.0"
     },
     "dependencies": {
         "web-tree-sitter": "^0.22.0"
