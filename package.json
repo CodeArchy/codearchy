@@ -7,7 +7,7 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/iyinusa/codearchy"
+        "url": "https://github.com/CodeArchy/codearchy"
     },
     "engines": {
         "vscode": "^1.85.0"
