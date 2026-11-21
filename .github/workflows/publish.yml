@@ -20,6 +20,11 @@ on:
 permissions:
   contents: read    # least privilege by default; jobs that need more request it explicitly
 
+env:
+  # onnxruntime-node (pulled in by @huggingface/transformers) tries to download
+  # CUDA GPU binaries on Linux x64; CI has no GPU and the webview never uses them.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # 1. VALIDATE

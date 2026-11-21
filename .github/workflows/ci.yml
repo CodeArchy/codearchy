@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read    # CI only reads the repo
 
+env:
+  # onnxruntime-node (pulled in by @huggingface/transformers) tries to download
+  # CUDA GPU binaries on Linux x64; CI has no GPU and the webview never uses them.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
