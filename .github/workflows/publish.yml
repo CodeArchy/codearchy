@@ -18,7 +18,7 @@ on:
         options: ['false', 'true']
 
 permissions:
-  contents: write   # needed to create a GitHub Release
+  contents: read    # least privilege by default; jobs that need more request it explicitly
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -35,12 +35,12 @@ jobs:
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0      # need full history for changelog diff
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -116,10 +116,10 @@ jobs:
     needs: validate
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -134,7 +134,7 @@ jobs:
         run: npm run compile
 
       - name: Upload build artefacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: publish-build-${{ github.sha }}
           path: |
@@ -154,10 +154,10 @@ jobs:
       vsix_name: ${{ steps.vsix_meta.outputs.vsix_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -166,7 +166,7 @@ jobs:
         run: npm ci
 
       - name: Restore build artefacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: publish-build-${{ github.sha }}
 
@@ -213,7 +213,7 @@ jobs:
           done
 
       - name: Upload release VSIX
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-vsix
           path: '*.vsix'
@@ -221,19 +221,25 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 4a. PUBLISH — VS Code Marketplace
-  #     Requires the VSCE_PAT secret (Personal Access Token from Azure DevOps).
+  #     Authenticates with Marketplace Trusted Publishing (GitHub OIDC), so no
+  #     stored token is needed. The trusted-publishing policy on the publisher is
+  #     bound to: CodeArchy/codearchy · publish.yml · environment "marketplace".
+  #     Falls back to the VSCE_PAT environment secret only if OIDC fails.
   # ─────────────────────────────────────────────────────────────────────────────
   publish-marketplace:
     name: Publish to VS Code Marketplace
     runs-on: ubuntu-latest
     needs: [validate, package]
-    environment: marketplace     # protects the VSCE_PAT secret behind an approval gate
+    environment: marketplace     # approval gate (maintainers) + must match the trusted-publishing policy
+    permissions:
+      contents: read
+      id-token: write            # lets vsce request a GitHub OIDC token for Trusted Publishing
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -242,20 +248,32 @@ jobs:
         run: npm ci
 
       - name: Download release VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-vsix
 
       - name: Publish to Marketplace
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSIX_FILE: ${{ needs.package.outputs.vsix_name }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+          FALLBACK_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          VSIX_FILE="${{ needs.package.outputs.vsix_name }}"
+          # vsce >= 4 is required for --oidc; pinned for reproducible releases.
+          VSCE="npx --yes @vscode/vsce@4.1.1"
           PRE_FLAG=""
-          if [ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]; then
+          if [ "$IS_PRERELEASE" == "true" ]; then
             PRE_FLAG="--pre-release"
           fi
-          npx @vscode/vsce publish --packagePath "$VSIX_FILE" $PRE_FLAG
+
+          if $VSCE publish --oidc --packagePath "$VSIX_FILE" $PRE_FLAG; then
+            echo "::notice::Published via Trusted Publishing (OIDC)."
+          elif [ -n "$FALLBACK_PAT" ]; then
+            echo "::warning::Trusted Publishing failed; falling back to the VSCE_PAT secret. Check the publisher's trusted-publishing policy."
+            VSCE_PAT="$FALLBACK_PAT" $VSCE publish --packagePath "$VSIX_FILE" $PRE_FLAG
+          else
+            echo "::error::Trusted Publishing failed and no VSCE_PAT fallback secret is configured."
+            exit 1
+          fi
 
       - name: Confirm publish
         run: |
@@ -275,21 +293,21 @@ jobs:
     if: ${{ vars.PUBLISH_OVSX == 'true' }}
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
 
       - name: Download release VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-vsix
 
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          VSIX_FILE: ${{ needs.package.outputs.vsix_name }}
         run: |
-          VSIX_FILE="${{ needs.package.outputs.vsix_name }}"
-          npx ovsx publish "$VSIX_FILE" --pat "$OVSX_PAT"
+          npx --yes ovsx@1.4.0 publish "$VSIX_FILE" --pat "$OVSX_PAT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 5. GITHUB RELEASE
@@ -301,12 +319,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [validate, package, publish-marketplace]
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write   # the only job allowed to write: creates the GitHub Release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Download release VSIX
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-vsix
 
@@ -321,7 +341,7 @@ jobs:
           echo "Release notes extracted ($(wc -l < release-notes.md) lines)"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
           name: CodeArchy v${{ needs.validate.outputs.version }}
