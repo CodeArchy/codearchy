@@ -7,12 +7,10 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.github/ISSUE_TEMPLATE/**'
+  # No paths-ignore on PRs: these checks are required by the "Protect main"
+  # ruleset, and a skipped workflow would leave docs-only PRs blocked forever.
   pull_request:
     branches: [main, develop]
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - '.github/ISSUE_TEMPLATE/**'
 
 permissions:
   contents: read    # CI only reads the repo
