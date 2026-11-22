@@ -72,7 +72,7 @@ export class TreeSitterEngine {
         try {
             const runtimePath = resolveRuntime(options);
             // Loaded by path at runtime: the vendored copy in parsers/ is what ships in the VSIX.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const ts = require(runtimePath) as TreeSitterModule;
             const wasmPath = path.join(path.dirname(runtimePath), 'web-tree-sitter.wasm');
             await ts.Parser.init({
