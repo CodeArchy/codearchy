@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as https from 'https';
 import { exec } from 'child_process';
 import { ArchitectureGraph, WebviewMessage, WebviewMessageType } from '../types';
 import { OllamaService, MODEL_OPTIONS, SystemArchitecture, ProcessingMode } from '../inference/OllamaService';
@@ -1017,7 +1018,7 @@ export class ArchitecturePanel {
 
         const parsedUrl = new URL(url);
         const isHttps = parsedUrl.protocol === 'https:';
-        const transport = isHttps ? require('https') : require('http');
+        const transport = isHttps ? https : http;
 
         const req = transport.get(url, { signal }, (res: import('http').IncomingMessage) => {
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
