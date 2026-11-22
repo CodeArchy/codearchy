@@ -32,8 +32,17 @@ suite('CodeArchy — Analysis in the extension host', function () {
     });
 
     suiteTeardown(() => {
-        if (added && fs.existsSync(added)) fs.unlinkSync(added);
-        if (ignoredDir) fs.rmSync(ignoredDir, { recursive: true, force: true });
+        // Windows can briefly hold handles on paths VS Code's file watcher just
+        // saw (EPERM/EBUSY); retry, and never fail the suite over cleanup.
+        const remove = (p: string) => {
+            try {
+                fs.rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+            } catch (err) {
+                console.warn(`cleanup of ${p} failed: ${(err as Error).message}`);
+            }
+        };
+        if (added) remove(added);
+        if (ignoredDir) remove(ignoredDir);
     });
 
     test('analyzes every language with tree-sitter and resolves cross-file edges', async () => {
