@@ -20,6 +20,8 @@ import {
     playCachedAudio,
     isKokoroActive,
     getActiveKokoroVoiceId,
+    startSpeechStream,
+    type SpeechStream,
 } from '../voice/ttsManager';
 
 interface ChatPanelProps {
@@ -53,6 +55,8 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const autoSpeakOnNextReplyRef = useRef(false);
+    /** Live speech for a voice question: speaks the answer while it streams (V0). */
+    const voiceStreamRef = useRef<SpeechStream | null>(null);
     const isAtBottomRef = useRef(true);
     const projectId = useProjectId();
     const projectIdRef = useRef<string | null>(projectId);
@@ -242,6 +246,7 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
             switch (msg.type) {
                 case 'chatChunk': {
                     const chunk = msg.payload as { content: string };
+                    voiceStreamRef.current?.push(chunk.content);
                     setIsThinking(false);
                     setThinkingText('');
                     setMessages((prev) => {
@@ -268,7 +273,13 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                     const response = msg.payload as { content: string; error?: string };
                     setIsThinking(false);
                     setThinkingText('');
+                    // A voice question streamed its answer aloud as it arrived;
+                    // ending the stream flushes the last phrase and yields the
+                    // audio so this message's replay is instant.
+                    const voiceStream = voiceStreamRef.current;
+                    voiceStreamRef.current = null;
                     if (response.error) {
+                        voiceStream?.cancel();
                         autoSpeakOnNextReplyRef.current = false;
                         setError(response.error);
                         setIsStreaming(false);
@@ -280,6 +291,19 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                     const wantsAutoSpeak = autoSpeakOnNextReplyRef.current;
                     autoSpeakOnNextReplyRef.current = false;
                     const kokoroPath = isKokoroActive();
+                    const streamedAudio = voiceStream ? voiceStream.end() : null;
+                    if (voiceStream) {
+                        void streamedAudio?.then(() => {
+                            const t = voiceStream.trace;
+                            // eslint-disable-next-line no-console
+                            console.debug('[CodeArchy] voice turn', {
+                                engine: voiceStream.engine,
+                                firstPhraseMs: t.firstPhraseAt !== undefined ? Math.round(t.firstPhraseAt - t.startedAt) : null,
+                                firstAudioMs: t.firstAudioAt !== undefined ? Math.round(t.firstAudioAt - t.startedAt) : null,
+                                filler: !!t.fillerPlayed,
+                            });
+                        });
+                    }
                     // Finalize the streaming assistant message (or append a
                     // new one if nothing streamed) and persist it to the DB.
                     const pid = projectIdRef.current;
@@ -331,7 +355,24 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                                 // below) is instant. Streaming output stays
                                 // untouched — the cache job runs silently
                                 // in parallel with the user reading the text.
-                                if (kokoroPath) {
+                                if (kokoroPath && streamedAudio) {
+                                    // Cache what was just spoken instead of synthesising it again.
+                                    const audio = await streamedAudio;
+                                    if (audio && messageId !== undefined) {
+                                        const buffer = audio.pcm.buffer.slice(
+                                            audio.pcm.byteOffset,
+                                            audio.pcm.byteOffset + audio.pcm.byteLength,
+                                        ) as ArrayBuffer;
+                                        updateConversationMessageVoice(messageId, audio).catch(e =>
+                                            console.error('[CodeArchy] persist message voice failed', e),
+                                        );
+                                        setMessages(cur => cur.map(m =>
+                                            m.id === messageId
+                                                ? { ...m, voice: buffer, voiceId: audio.voiceId, voiceSampleRate: audio.sampleRate }
+                                                : m,
+                                        ));
+                                    }
+                                } else if (kokoroPath) {
                                     const voiceId = getActiveKokoroVoiceId();
                                     // Track per-chunk synth progress so the
                                     // assistant row can render a ring around
@@ -394,7 +435,7 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                     setIsStreaming(false);
                     // Web-Speech path keeps the original streaming behaviour
                     // — audio starts immediately, no cache involved.
-                    if (wantsAutoSpeak && !kokoroPath) {
+                    if (wantsAutoSpeak && !kokoroPath && !voiceStream) {
                         speakNow(response.content);
                     }
                     // Fire-and-forget narrator generation: ask the host to
@@ -432,6 +473,8 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                     break;
                 }
                 case 'error': {
+                    voiceStreamRef.current?.cancel();
+                    voiceStreamRef.current = null;
                     const errPayload = msg.payload as { message: string };
                     setError(errPayload.message);
                     setIsStreaming(false);
@@ -464,6 +507,10 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
                     } else if (vt.transcript?.trim()) {
                         const transcript = vt.transcript.trim();
                         autoSpeakOnNextReplyRef.current = true;
+                        // Open live speech now so a filler can cover the model's
+                        // thinking time; the answer is spoken as it streams in.
+                        voiceStreamRef.current?.cancel();
+                        voiceStreamRef.current = startSpeechStream({ filler: true });
 
                         const userMsg: ChatMessage = {
                             role: 'user',
@@ -508,7 +555,11 @@ export function ChatPanel({ isOpen, onToggle, onNarratorGenerationStart }: ChatP
             }
         };
         window.addEventListener('message', handler);
-        return () => window.removeEventListener('message', handler);
+        return () => {
+            window.removeEventListener('message', handler);
+            voiceStreamRef.current?.cancel();
+            voiceStreamRef.current = null;
+        };
     }, [speakNow]);
 
     const sendMessage = useCallback(

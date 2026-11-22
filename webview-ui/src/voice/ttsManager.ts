@@ -28,7 +28,10 @@ import {
     notifyGpuModelReady,
     type KokoroAudio,
     type KokoroInitProgress,
+    kokoroSpeakStream,
+    type KokoroStream,
 } from './kokoroTTS';
+import { PhraseChunker, cleanText } from './phraseChunker';
 import { subscribeVoiceConfig } from './voiceConfig';
 import { DEFAULT_KOKORO_VOICE } from './kokoroVoices';
 import { postMessage } from '../vscode';
@@ -57,30 +60,8 @@ export function isKokoroEverActivated(): boolean {
 
 // ── Text sanitiser ──────────────────────────────────────────────────────────
 
-function cleanText(raw: string): string {
-    let t = raw;
-    t = t.replace(/\$\$[\s\S]*?\$\$/g, '');
-    t = t.replace(/\\\[[\s\S]*?\\\]/g, '');
-    t = t.replace(/\$[^$\n]+?\$/g, '');
-    t = t.replace(/\\\([\s\S]*?\\\)/g, '');
-    t = t.replace(/```[\s\S]*?```/g, '');
-    t = t.replace(/`[^`\n]+?`/g, '');
-    t = t.replace(/!\[[^\]]*?\]\([^)]*?\)/g, '');
-    t = t.replace(/\[([^\]]+?)\]\([^)]*?\)/g, '$1');
-    t = t.replace(/(\*\*|__)(.*?)\1/gs, '$2');
-    t = t.replace(/(\*|_)(.*?)\1/gs, '$2');
-    t = t.replace(/~~(.*?)~~/gs, '$1');
-    t = t.replace(/^#{1,6}\s+/gm, '');
-    t = t.replace(/^\s*>\s?/gm, '');
-    t = t.replace(/^[-*_]{3,}\s*$/gm, '.');
-    t = t.replace(/^\s*[-*+]\s+/gm, '');
-    t = t.replace(/^\s*\d+\.\s+/gm, '');
-    t = t.replace(/<[^>]+>/g, '');
-    t = t.replace(/&amp;/gi, 'and').replace(/&lt;/gi, '').replace(/&gt;/gi, '')
-        .replace(/&nbsp;/gi, ' ').replace(/&[a-z]+;/gi, '');
-    t = t.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ');
-    return t.trim();
-}
+// `cleanText` lives in ./phraseChunker so streaming and whole-message speech
+// sanitise identically.
 
 // ── Speaking state ──────────────────────────────────────────────────────────
 
@@ -268,19 +249,13 @@ export function subscribeGpuModelNeeded(
  * @param totalMB    Total file size in MB (may be 0 if Content-Length unknown).
  */
 export function updateGpuDownloadProgress(
-    percent: number,
-    receivedMB: number,
-    totalMB: number,
+    _percent: number,
+    _receivedMB: number,
+    _totalMB: number,
 ): void {
-    if (kokoroStatus !== 'loading') return;
-    gpuDownloadPhase = true;
-    // Map download progress to 0–50% of the combined bar.
-    kokoroProgress = Math.round(percent * 0.5);
-    kokoroStage = totalMB > 0
-        ? `Downloading GPU model (${receivedMB.toFixed(0)} / ${totalMB.toFixed(0)}\u00a0MB)`
-        : `Downloading GPU model (${receivedMB.toFixed(0)}\u00a0MB)`;
-    kokoroFile = 'model.onnx — FP32 WebGPU (~310\u00a0MB)';
-    emitKokoro();
+    // The optional GPU model downloads in the background after activation and
+    // is picked up on the next engine start; it never drives the activation
+    // progress bar (the CPU model is already loading or ready).
 }
 
 /**
@@ -294,29 +269,8 @@ export function updateGpuDownloadProgress(
  * @param error   Optional human-readable error message when success is false.
  */
 export function completeGpuModelDownload(success: boolean, error?: string): void {
-    if (success) {
-        // Keep gpuDownloadPhase = true so subsequent worker initProgress events
-        // are mapped to the 50–100% range.  Set bar to 50% and update stage.
-        gpuDownloadPhase = true;
-        if (kokoroStatus === 'loading') {
-            kokoroProgress = 50;
-            kokoroStage = 'GPU model ready — loading into VRAM…';
-            kokoroFile = null;
-            emitKokoro();
-        }
-    } else {
-        // Download failed — worker will fall back to WASM; reset phase flag
-        // so WASM progress uses the full 0–100% range.
-        gpuDownloadPhase = false;
-        if (kokoroStatus === 'loading') {
-            kokoroProgress = 0;
-            kokoroStage = error
-                ? `GPU download failed: ${error} — using CPU mode`
-                : 'GPU download failed — falling back to CPU mode';
-            kokoroFile = null;
-            emitKokoro();
-        }
-    }
+    // Background download: status UI unaffected; used from the next start.
+    if (!success && error) console.warn('[CodeArchy] GPU voice model download failed:', error);
     notifyGpuModelReady(success);
 }
 
@@ -336,12 +290,9 @@ export function startKokoroEngine(): Promise<void> {
     // Register the GPU model needed callback BEFORE starting init so it's in
     // place when the worker posts gpuModelNeeded during its init flow.
     setGpuModelNeededCallback((notifyWorker: (ok: boolean) => void) => {
-        if (kokoroStatus === 'loading') {
-            // Hold kokoroProgress at 0; show descriptive stage text.
-            kokoroStage = 'GPU model not found — preparing download…';
-            kokoroFile = 'model.onnx (FP32, ~310 MB)';
-            emitKokoro();
-        }
+        // The worker no longer waits for this download: it starts on the CPU
+        // model and uses the GPU model from the next start, so the activation
+        // progress bar stays about the CPU model only.
         // Propagate to any App.tsx subscriber that will trigger the download.
         gpuModelDownloadListeners.forEach(l => {
             try { l(notifyWorker); } catch { /* ignore */ }
@@ -365,6 +316,7 @@ export function startKokoroEngine(): Promise<void> {
             const cfg = getVoiceConfig();
             const voice = cfg.voiceId ?? DEFAULT_KOKORO_VOICE;
             kokoroWarm(voice);
+            prepareFillers(voice);
         })
         .catch(err => {
             setKokoroStatus('error', err instanceof Error ? err.message : String(err));
@@ -378,6 +330,7 @@ subscribeVoiceConfig((cfg) => {
     if (cfg.engine !== 'kokoro') return;
     if (!isKokoroReady()) return;
     kokoroWarm(cfg.voiceId ?? DEFAULT_KOKORO_VOICE);
+    prepareFillers(cfg.voiceId ?? DEFAULT_KOKORO_VOICE);
 });
 
 // ── Web Speech voices ───────────────────────────────────────────────────────
@@ -632,4 +585,165 @@ export function isKokoroActive(): boolean {
 /** Resolve the voice id that synthesizeKokoroAudio() will use right now. */
 export function getActiveKokoroVoiceId(): string {
     return getVoiceConfig().voiceId ?? DEFAULT_KOKORO_VOICE;
+}
+
+
+// ── Streaming speech (V0: speak while the answer is still being written) ────
+//
+// The chat panel opens a stream when a voice question is sent, pushes the
+// answer's deltas as they arrive, and ends it with the final message. A
+// PhraseChunker releases a short first phrase (fast first audio) and then
+// sentence-sized phrases; Kokoro synthesises each while earlier ones play.
+// If no real audio is ready shortly after the question, a pre-synthesised
+// filler ("One moment.") plays so the silence never feels like a hang.
+
+const FILLER_PHRASES = ['One moment.', 'Let me check.', 'Good question.', 'Sure, let me look.'];
+const FILLER_DELAY_MS = 400;
+const fillers = new Map<string, KokoroAudio[]>();
+const fillersPreparing = new Set<string>();
+
+/** Pre-synthesise filler clips for a voice in the background (once per voice). */
+function prepareFillers(voice: string): void {
+    if (fillers.has(voice) || fillersPreparing.has(voice) || !isKokoroReady()) return;
+    fillersPreparing.add(voice);
+    void (async () => {
+        const clips: KokoroAudio[] = [];
+        for (const phrase of FILLER_PHRASES) {
+            const audio = await synthesizeKokoroAudio(phrase, voice);
+            if (audio) clips.push(audio);
+        }
+        if (clips.length) fillers.set(voice, clips);
+        fillersPreparing.delete(voice);
+    })();
+}
+
+/** Stage timestamps (ms, performance.now) for one spoken turn. */
+export interface SpeechTrace {
+    startedAt: number;
+    firstPhraseAt?: number;
+    firstAudioAt?: number;
+    fillerPlayed?: boolean;
+}
+
+export interface SpeechStream {
+    /** Feed a streamed delta of the answer (raw markdown is fine). */
+    push(delta: string): void;
+    /** The answer is complete. Resolves after playback with the Kokoro audio (for caching), or null. */
+    end(): Promise<KokoroAudio | null>;
+    /** Abandon the stream and stop any audio. */
+    cancel(): void;
+    readonly trace: SpeechTrace;
+    readonly engine: 'kokoro' | 'web-speech';
+}
+
+let activeStream: SpeechStream | null = null;
+
+export function startSpeechStream(opts: { filler?: boolean } = {}): SpeechStream {
+    stopSpeaking();
+    activeStream?.cancel();
+    const gen = ++synthGeneration;
+    const trace: SpeechTrace = { startedAt: performance.now() };
+    const chunker = new PhraseChunker();
+    const cfg = getVoiceConfig();
+    setSpeaking(true);
+    setSynthesizing(true);
+
+    const useKokoro = cfg.engine === 'kokoro' && isKokoroReady();
+    let stream: SpeechStream;
+
+    if (useKokoro) {
+        const voice = cfg.voiceId ?? DEFAULT_KOKORO_VOICE;
+        prepareFillers(voice);
+        let cancelled = false;
+        const ks: KokoroStream = kokoroSpeakStream({
+            voice,
+            onSynthChange: (synthesizing) => {
+                if (synthGeneration !== gen) return;
+                if (!synthesizing && trace.firstAudioAt === undefined) trace.firstAudioAt = performance.now();
+                setSynthesizing(synthesizing);
+            },
+            onEnd: () => { if (synthGeneration === gen) { setSpeaking(false); clearSynthesizingIfCurrent(gen); } },
+            onError: () => { if (synthGeneration === gen) { setSpeaking(false); clearSynthesizingIfCurrent(gen); } },
+        });
+        const fillerTimer = opts.filler
+            ? window.setTimeout(() => {
+                const clips = fillers.get(voice);
+                if (cancelled || trace.firstPhraseAt !== undefined || !clips?.length) return;
+                const clip = clips[Math.floor(Math.random() * clips.length)];
+                trace.fillerPlayed = true;
+                ks.playFirst(clip.pcm, clip.sampleRate);
+            }, FILLER_DELAY_MS)
+            : undefined;
+        const send = (phrases: string[]) => {
+            for (const p of phrases) {
+                if (trace.firstPhraseAt === undefined) trace.firstPhraseAt = performance.now();
+                ks.push(p);
+            }
+        };
+        stream = {
+            engine: 'kokoro',
+            trace,
+            push: (delta) => { if (!cancelled) send(chunker.push(delta)); },
+            end: async () => {
+                if (cancelled) return null;
+                send(chunker.flush());
+                window.clearTimeout(fillerTimer);
+                return ks.end();
+            },
+            cancel: () => {
+                cancelled = true;
+                window.clearTimeout(fillerTimer);
+                if (activeStream === stream) { activeStream = null; stopSpeaking(); }
+            },
+        };
+    } else {
+        // Web Speech: queue one utterance per phrase; the browser plays them in order.
+        const ss = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+        let cancelled = false;
+        let pending = 0;
+        let ended = false;
+        let resolveEnd: (() => void) | null = null;
+        const settle = () => {
+            if (ended && pending === 0) {
+                setSpeaking(false);
+                clearSynthesizingIfCurrent(gen);
+                resolveEnd?.();
+            }
+        };
+        const voice = cfg.voiceId ? getWebSpeechVoices().find((v) => v.voiceURI === cfg.voiceId) : undefined;
+        const send = (phrases: string[]) => {
+            if (!ss) return;
+            for (const p of phrases) {
+                if (trace.firstPhraseAt === undefined) trace.firstPhraseAt = performance.now();
+                const u = new SpeechSynthesisUtterance(p);
+                u.rate = cfg.rate ?? 1;
+                if (voice) { u.voice = voice; u.lang = voice.lang; }
+                u.onstart = () => {
+                    if (trace.firstAudioAt === undefined) trace.firstAudioAt = performance.now();
+                    clearSynthesizingIfCurrent(gen);
+                };
+                u.onend = u.onerror = () => { pending--; settle(); };
+                pending++;
+                try { ss.speak(u); } catch { pending--; }
+            }
+        };
+        stream = {
+            engine: 'web-speech',
+            trace,
+            push: (delta) => { if (!cancelled) send(chunker.push(delta)); },
+            end: () => new Promise<null>((resolve) => {
+                if (cancelled) return resolve(null);
+                send(chunker.flush());
+                ended = true;
+                resolveEnd = () => resolve(null);
+                settle();
+            }),
+            cancel: () => {
+                cancelled = true;
+                if (activeStream === stream) { activeStream = null; stopSpeaking(); }
+            },
+        };
+    }
+    activeStream = stream;
+    return stream;
 }

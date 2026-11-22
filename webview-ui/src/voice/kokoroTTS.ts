@@ -261,6 +261,11 @@ function onWorkerMessage(ev: MessageEvent<WorkerOut>): void {
         pendingPlayCount++;
         const pcm = msg.pcm;
         const sampleRate = msg.sampleRate;
+        // Streaming speech keeps the PCM so the whole answer can be cached.
+        if (collecting && collecting.id === msg.id) {
+            collecting.chunks.push(pcm);
+            collecting.sampleRate = sampleRate;
+        }
         playChain = playChain.then(async () => {
             if (stopFlag !== myStop) return;
             // About to play this chunk → audio is now flowing, so we are no
@@ -524,8 +529,12 @@ export function kokoroStop(): void {
     queued = null;
     busy = false;
     activeId = null;
+    // A streaming utterance awaiting end() learns it was stopped (resolves null).
+    const pendingReject = collecting ? activeReject : null;
+    collecting = null;
     activeResolve = null;
     activeReject = null;
+    pendingReject?.(new Error('stopped'));
     // Hide any "Processing voice…" overlay immediately on user-initiated stop.
     emitSynthState(false);
     activeOnSynthChange = null;
@@ -559,6 +568,93 @@ export function kokoroWarm(voice: string): void {
     // next voice change.
     warmedVoices.add(voice);
     worker.postMessage({ type: 'warm', voice });
+}
+
+// ── Streaming speak (V0) ───────────────────────────────────────────────────
+
+/** PCM collected for the active stream, so the full answer can be cached. */
+let collecting: { id: number; chunks: Float32Array[]; sampleRate: number } | null = null;
+
+export interface KokoroStream {
+    /** Queue one ready-to-speak phrase (from the phrase chunker). */
+    push(phrase: string): void;
+    /** No more phrases. Resolves after playback with the full audio, or null if stopped/empty. */
+    end(): Promise<KokoroAudio | null>;
+    /** Play a pre-synthesised clip (a filler) ahead of the stream's own audio. */
+    playFirst(pcm: Float32Array, sampleRate: number): void;
+    readonly id: number;
+}
+
+/**
+ * Starts a streaming utterance: phrases are pushed as the answer streams in
+ * and synthesised in order while earlier phrases play (gapless, on the same
+ * AudioContext timeline as kokoroSpeak). Supersedes any current speech.
+ */
+export function kokoroSpeakStream(options: KokoroSpeakOptions = {}): KokoroStream {
+    if (!ready || !worker) throw new Error('Kokoro not ready');
+    kokoroStop();
+    const w = worker;
+    const id = nextId++;
+    const voice = options.voice ?? DEFAULT_KOKORO_VOICE;
+    const ctx = getAudioCtx();
+    if (ctx.state !== 'running') { ctx.resume().catch(() => { /* ignore */ }); }
+
+    let resolveDone!: () => void;
+    let rejectDone!: (e: unknown) => void;
+    const done = new Promise<void>((res, rej) => { resolveDone = res; rejectDone = rej; });
+    done.catch(() => { /* surfaced through end() / onError */ });
+
+    busy = true;
+    activeId = id;
+    activeResolve = () => { options.onEnd?.(); resolveDone(); };
+    activeReject = (e) => { options.onError?.(e); rejectDone(e); };
+    activeOnSynthChange = options.onSynthChange ?? null;
+    activeSynthState = null;
+    pendingPlayCount = 0;
+    endReceived = false;
+    scheduledEndTime = 0;
+    playChain = Promise.resolve();
+    collecting = { id, chunks: [], sampleRate: 24000 };
+    emitSynthState(true);
+    w.postMessage({ type: 'streamStart', id, voice });
+
+    let ended = false;
+    return {
+        id,
+        push(phrase: string) {
+            if (ended || activeId !== id || !phrase.trim()) return;
+            w.postMessage({ type: 'streamPush', id, text: phrase });
+        },
+        playFirst(pcm: Float32Array, sampleRate: number) {
+            if (activeId !== id) return;
+            const myStop = stopFlag;
+            playChain = playChain.then(async () => {
+                if (stopFlag !== myStop) return;
+                emitSynthState(false);
+                await playPcm(pcm, sampleRate, myStop);
+                if (stopFlag === myStop && pendingPlayCount === 0 && !endReceived) emitSynthState(true);
+            });
+        },
+        async end(): Promise<KokoroAudio | null> {
+            if (!ended) {
+                ended = true;
+                if (activeId === id) w.postMessage({ type: 'streamEnd', id });
+            }
+            try {
+                await done;
+            } catch {
+                return null;
+            }
+            const c = collecting && collecting.id === id ? collecting : null;
+            if (collecting?.id === id) collecting = null;
+            if (!c || c.chunks.length === 0) return null;
+            const total = c.chunks.reduce((n, b) => n + b.length, 0);
+            const pcm = new Float32Array(total);
+            let offset = 0;
+            for (const b of c.chunks) { pcm.set(b, offset); offset += b.length; }
+            return { pcm, sampleRate: c.sampleRate, voiceId: voice };
+        },
+    };
 }
 
 // ── Generate (cache-prefill) ───────────────────────────────────────────────

@@ -2,7 +2,7 @@
     "name": "codearchy",
     "displayName": "CodeArchy",
     "description": "Offline-first privacy system that visualizes codebase into explainable system architecture for education, onboarding, and safer software development/maintenance",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "publisher": "iyinusa",
     "license": "MIT",
     "repository": {
@@ -186,6 +186,7 @@
         "lint": "eslint src --ext ts",
         "test": "vscode-test",
         "test:unit": "npm run compile && npm run grammars && mocha --ui tdd \"out/test/unit/**/*.test.js\"",
+        "test:webview": "node --test \"webview-ui/test/*.test.ts\"",
         "bench": "node scripts/bench.js",
         "package": "vsce package",
         "pretest": "npm run compile && npm run grammars"

@@ -2,14 +2,13 @@
  * Kokoro TTS worker.
  *
  * Runs `kokoro-js` off the UI thread for lag-free synthesis.
- * Model and voice files are pre-bundled into the extension under
- * webview-ui/dist/kokoro-model/ (populated once by `npm run download-kokoro`).
  *
  * On init a fetch shim is installed that intercepts every HuggingFace model
  * URL constructed by transformers.js / kokoro-js and redirects it to the
- * corresponding pre-bundled local asset served via the VS Code webview
- * resource server.  No network access is ever attempted — Kokoro works
- * completely offline from first activation.
+ * extension host's localhost model server. That server answers from a
+ * verified cache in global storage and, on the first activation only,
+ * downloads missing files from a pinned Hugging Face commit (sha256-checked)
+ * while streaming them through. The worker itself never reaches the network.
  *
  * The shim uses a generous per-request timeout (60 s) so the ~80 MB ONNX
  * binary can be served even on a cold VS Code start where the webview
@@ -26,6 +25,10 @@
  *   generate         → { type:'generate', id:number, text:string, voice?:string }
  *   generateProgress ← { type:'generateProgress', id:number, done:number, total:number }
  *   generated        ← { type:'generated', id:number, pcm:Float32Array, sampleRate:number }
+ *   streamStart → { type:'streamStart', id:number, voice?:string }   (V0 streaming speech)
+ *   streamPush  → { type:'streamPush', id:number, text:string }      one ready phrase
+ *   streamEnd   → { type:'streamEnd', id:number }                    no more phrases
+ *     (chunks and the final 'end' come back with the same id)
  *   stop   → { type:'stop' }
  *   error  ← { type:'error', id?:number, message:string }
  *
@@ -35,23 +38,15 @@
  *   AudioContext can start playing sentence 1 while sentence 2 is still
  *   being synthesised.
  *
- *   Background voice warming:
- *   After the ONNX graph is JIT-compiled by the first warmVoice(), all
- *   other bundled English voices warm in parallel. Voice switches are
- *   instant once settling completes.
+ *   Streaming speech (V0): the main thread sends phrases as the answer
+ *   streams (streamStart/streamPush/streamEnd); each is synthesised while
+ *   earlier phrases play.
+ *
+ *   Voice warming: the default voice warms during init; other voices warm
+ *   on demand (selection or preview) so start-up never competes with speech.
  */
 
 import { KokoroTTS, TextSplitterStream, env } from 'kokoro-js';
-
-// All English voices bundled in dist/kokoro-model/.../voices/.
-const ALL_ENGLISH_VOICES = [
-    'af_alloy', 'af_aoede', 'af_bella', 'af_heart', 'af_jessica',
-    'af_kore', 'af_nicole', 'af_nova', 'af_river', 'af_sarah', 'af_sky',
-    'am_adam', 'am_echo', 'am_eric', 'am_fenrir', 'am_liam',
-    'am_michael', 'am_onyx', 'am_puck', 'am_santa',
-    'bf_alice', 'bf_emma', 'bf_isabella', 'bf_lily',
-    'bm_daniel', 'bm_fable', 'bm_george', 'bm_lewis',
-] as const;
 
 type WorkerMsg =
     | { type: 'init'; modelBase: string; ortBase: string }
@@ -59,6 +54,9 @@ type WorkerMsg =
     | { type: 'speak'; id: number; text: string; voice?: string }
     | { type: 'generate'; id: number; text: string; voice?: string }
     | { type: 'stop' }
+    | { type: 'streamStart'; id: number; voice?: string }
+    | { type: 'streamPush'; id: number; text: string }
+    | { type: 'streamEnd'; id: number }
     /** Main thread → worker: GPU model download completed successfully. */
     | { type: 'gpuModelReady' }
     /** Main thread → worker: GPU model download failed; fall back to WASM. */
@@ -77,20 +75,8 @@ const inflightWarm = new Map<string, Promise<void>>();
 /** The backend that successfully initialised the model. Sent in 'ready'. */
 let activeDevice: 'webgpu' | 'wasm' = 'wasm';
 
-/**
- * Resolve function set when the worker is waiting for the main thread to
- * complete a GPU model download.  The init flow posts { type:'gpuModelNeeded' }
- * and suspends here until { type:'gpuModelReady' } or { type:'gpuModelFailed' }
- * arrives.  Only one download can be in-flight at a time.
- */
+/** Set while a GPU model download signal is awaited (no longer used at init). */
 let gpuModelSignalResolve: ((ok: boolean) => void) | null = null;
-
-/** Returns a Promise that resolves true (ready) or false (failed/cancelled). */
-function waitForGpuModelSignal(): Promise<boolean> {
-    return new Promise<boolean>(resolve => {
-        gpuModelSignalResolve = resolve;
-    });
-}
 
 /**
  * Returns true if WebGPU is available in this worker context.
@@ -336,14 +322,11 @@ async function init(modelBase: string, ortBase: string): Promise<void> {
         }
 
         if (!gpuModelPresent) {
-            // Notify main thread that GPU model download is needed.
-            // The main thread will stream download progress back and then
-            // send { type:'gpuModelReady' } or { type:'gpuModelFailed' }.
-            reportProgress(0, 'GPU model not found — requesting download');
+            // Ask the host to fetch the optional GPU model (~326 MB) in the
+            // background, but DON'T wait for it: speech starts right away on
+            // the CPU model, and the GPU model is used from the next start.
+            // (Previously activation blocked until the whole download finished.)
             post({ type: 'gpuModelNeeded' });
-            gpuModelPresent = await waitForGpuModelSignal();
-            // Reset progress counter so the model-load progress bar starts fresh.
-            lastReportedPercent = -1;
         }
 
         if (gpuModelPresent) {
@@ -373,52 +356,6 @@ async function init(modelBase: string, ortBase: string): Promise<void> {
     reportProgress(90, 'Warming default voice');
     await warmVoice('af_alloy');
     reportProgress(100, 'Voice engine ready');
-}
-
-/**
- * Sequentially warm every bundled English voice in the background after the
- * engine is ready.  Sequential (not parallel) keeps GPU memory pressure low
- * and ensures voices become available one-by-one in list order — the UI can
- * enable each card the moment its `warmed` ack arrives.
- *
- * Any voice already warmed by an earlier `warm` message is skipped.
- * This cooperates with on-demand warm requests from the main thread:
- * `warmVoice()` uses `inflightWarm` for deduplication, so if the main thread
- * requests a specific voice while the loop is warming a different one, the
- * request is fulfilled as soon as the current inference completes.
- *
- * IMPORTANT — macrotask yield between voices:
- * ONNX/WASM inference is synchronous and blocks the worker's JS thread for
- * the full duration of each warm (~10-25 s on CPU).  Without a yield, any
- * `speak` message from the main thread queues behind ALL remaining warms,
- * making the Test button appear stuck ("processing forever, no audio").
- *
- * `await yieldToMacrotaskQueue()` placed AFTER each warm schedules the next
- * iteration as a fresh macrotask.  A `speak` message that arrived while the
- * previous WASM call was running lands in the macrotask queue BEFORE this
- * setTimeout(0) callback (FIFO), so it fires first — synthesis runs
- * immediately, audio plays, then backgroundWarmAll resumes.
- */
-async function backgroundWarmAll(): Promise<void> {
-    for (const v of ALL_ENGLISH_VOICES) {
-        if (warmedVoices.has(v)) {
-            // Already warmed (e.g. af_alloy from init, or explicit warm request) —
-            // still post the ack so the main thread's set stays in sync.
-            post({ type: 'warmed', voice: v });
-            continue;
-        }
-        await warmVoice(v);
-        // Only post if it actually succeeded; warmVoice swallows failures.
-        if (warmedVoices.has(v)) {
-            post({ type: 'warmed', voice: v });
-        }
-        // Yield to the macrotask queue after every warm so any pending speak
-        // message can be processed before the next background inference starts.
-        // A speak message queued while the WASM was blocking arrives in the
-        // macrotask queue before this setTimeout callback (FIFO), so it fires
-        // first and synthesis runs without waiting for all remaining warms.
-        await new Promise<void>(r => setTimeout(r, 0));
-    }
 }
 
 /** Run a silent inference for 'voice' so subsequent speak()s are instant. */
@@ -570,17 +507,57 @@ function splitTextForSynthesis(text: string): string[] {
     return safe.length ? safe : [trimmed];
 }
 
+// ── Streaming speech (V0) ─────────────────────────────────────────────────
+//
+// The main thread chunks the LLM answer into phrases as it streams and sends
+// each one here; phrases are synthesised in order while earlier ones play.
+// Only one stream is live; starting a new one (or 'stop') abandons the old.
+
+interface SpeechStreamState {
+    id: number;
+    voice: string;
+    queue: string[];
+    ended: boolean;
+    running: boolean;
+    myStop: number;
+}
+let speechStream: SpeechStreamState | null = null;
+
+async function pumpStream(st: SpeechStreamState): Promise<void> {
+    if (st.running) return;
+    st.running = true;
+    try {
+        if (!warmedVoices.has(st.voice)) await (inflightWarm.get(st.voice) ?? warmVoice(st.voice));
+        type GenOpts = NonNullable<Parameters<KokoroTTS['generate']>[1]>;
+        while (st.queue.length && stopFlag === st.myStop && tts) {
+            const text = st.queue.shift()!;
+            const audio = await tts.generate(text, { voice: st.voice } as unknown as GenOpts);
+            if (stopFlag !== st.myStop) return;
+            const pcm = new Float32Array(audio.audio as Float32Array);
+            post({ type: 'chunk', id: st.id, pcm, sampleRate: audio.sampling_rate }, [pcm.buffer]);
+        }
+    } finally {
+        st.running = false;
+    }
+    if (stopFlag !== st.myStop) return;
+    if (st.queue.length) { void pumpStream(st); return; } // phrases arrived during the last generate
+    if (st.ended) {
+        if (speechStream === st) speechStream = null;
+        post({ type: 'end', id: st.id });
+    }
+}
+
 self.onmessage = async (ev: MessageEvent<WorkerMsg>) => {
     const msg = ev.data;
     try {
         if (msg.type === 'init') {
             await init(msg.modelBase, msg.ortBase);
             post({ type: 'ready', device: activeDevice });
-            // Start background warming of all voices now that the main thread
-            // is listening for 'warmed' acks.  Fire-and-forget — backgroundWarmAll
-            // posts a 'warmed' event for each voice as it completes so the UI can
-            // enable them in real time without any polling.
-            void backgroundWarmAll();
+            // Only the default voice is warmed (during init). Other voices warm
+            // on demand when selected or previewed: warming all 28 up front kept
+            // the single synthesis thread busy for ~1 minute after activation,
+            // delaying the user's first real answers.
+            for (const v of warmedVoices) post({ type: 'warmed', voice: v });
         } else if (msg.type === 'warm') {
             await warmVoice(msg.voice);
             post({ type: 'warmed', voice: msg.voice });
@@ -597,8 +574,25 @@ self.onmessage = async (ev: MessageEvent<WorkerMsg>) => {
                 { type: 'generated', id: msg.id, pcm: result.pcm, sampleRate: result.sampleRate },
                 [result.pcm.buffer],
             );
+        } else if (msg.type === 'streamStart') {
+            if (!tts) throw new Error('TTS not initialised');
+            const myStop = ++stopFlag; // supersedes any speak or older stream
+            speechStream = { id: msg.id, voice: msg.voice ?? 'af_alloy', queue: [], ended: false, running: false, myStop };
+        } else if (msg.type === 'streamPush') {
+            const st = speechStream;
+            if (st && st.id === msg.id && stopFlag === st.myStop) {
+                st.queue.push(msg.text);
+                void pumpStream(st).catch((err) => post({ type: 'error', id: st.id, message: err instanceof Error ? err.message : String(err) }));
+            }
+        } else if (msg.type === 'streamEnd') {
+            const st = speechStream;
+            if (st && st.id === msg.id && stopFlag === st.myStop) {
+                st.ended = true;
+                void pumpStream(st).catch((err) => post({ type: 'error', id: st.id, message: err instanceof Error ? err.message : String(err) }));
+            }
         } else if (msg.type === 'stop') {
             stopFlag++;
+            speechStream = null;
         } else if (msg.type === 'gpuModelReady') {
             // Download completed successfully — unblock the init() await.
             gpuModelSignalResolve?.(true);

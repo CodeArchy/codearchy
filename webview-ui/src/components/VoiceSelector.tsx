@@ -1,8 +1,8 @@
 /**
  * VoiceSelector modal — pick a TTS engine + specific voice with a "Test"
- * preview button for each option. Kokoro TTS is pre-bundled with the
- * extension and warmed up on app mount, so no install/activate flow is
- * needed; voices simply become testable once the engine reports ready.
+ * preview button for each option. Kokoro's model is downloaded once on first
+ * activation (verified by the extension host, cached in global storage) and
+ * then warms on app mount; voices become testable once the engine is ready.
  */
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
@@ -178,15 +178,13 @@ export function VoiceSelector({ onClose }: VoiceSelectorProps) {
                 {list.map((option) => {
                     const selected = config.engine === engine && config.voiceId === option.id;
                     const testing = testingVoiceId === option.id;
-                    // A voice is "warming" when the engine is ready but the worker
-                    // hasn't yet finished the background warm inference for it.
-                    // We gate the Test button to avoid cold-inference slowness while
-                    // keeping the card itself fully visible and selectable.
-                    const warming = engine === 'kokoro'
-                        && kokoroState.status === 'ready'
-                        && !kokoroWarmed.has(option.id);
-                    // Disabled when engine not ready OR this specific voice is still warming.
-                    const isDisabled = engineNotReady || warming;
+                    // Voices warm on demand (selecting or testing one warms it), so an
+                    // unwarmed voice is still selectable: its first use just takes a
+                    // second longer. Warming every voice up front cost ~1 minute of
+                    // CPU after activation and slowed the first answers.
+                    const warming = false;
+                    void kokoroWarmed;
+                    const isDisabled = engineNotReady;
                     return (
                         <div
                             key={`${engine}-${option.id}`}
@@ -258,7 +256,7 @@ export function VoiceSelector({ onClose }: VoiceSelectorProps) {
                             <strong>Kokoro TTS</strong>
                             <span>
                                 {kokoroState.status === 'ready'
-                                    ? 'Neural · Offline · Pre-bundled'
+                                    ? 'Neural · Offline'
                                     : kokoroState.status === 'loading'
                                         ? isKokoroEverActivated()
                                             ? `Loading in background… ${kokoroState.progress}%`
@@ -282,11 +280,16 @@ export function VoiceSelector({ onClose }: VoiceSelectorProps) {
                 ) : (
                     <div className="voice-section">
                         <p className="voice-section-desc">
-                            Kokoro-82M is pre-bundled and loads automatically
-                            in the background. The first load reads the local model files
-                            (~82 MB ONNX) into memory — subsequent activations are near-instant. All processing happens on your machine, fully offline.
-                            <p className="voice-section-disclaimer">Speaking process is slow at the moment (takes about 10-25 seconds to process). Still in BETA stage.</p>
+                            Kokoro-82M is a neural voice that runs on your machine. The first
+                            time you start it, CodeArchy downloads the voice model once (about
+                            93 MB from Hugging Face, checked against pinned hashes; each extra
+                            voice adds 0.5 MB when first used) and keeps it in its own storage.
+                            After that it starts from disk and works fully offline. On machines
+                            with a supported GPU, a faster GPU model (326 MB) downloads in the
+                            background and is used from the next start. Speech starts while the
+                            answer is still being written.
                         </p>
+                        <p className="voice-section-disclaimer">Still in BETA. On CPU, the first sentence takes a moment to synthesize.</p>
 
                         {kokoroState.status === 'idle' && !isKokoroEverActivated() && (
                             <div className="kokoro-activate-card">
@@ -301,9 +304,9 @@ export function VoiceSelector({ onClose }: VoiceSelectorProps) {
                                     </div>
                                 </div>
                                 <ul className="kokoro-bullets">
-                                    <li>Loads pre-bundled model files (or downloads on first run)</li>
-                                    <li>Warms the inference graph for instant speech</li>
-                                    <li>Runs entirely offline after first activation</li>
+                                    <li>First start: one-time download of the voice model (~93 MB), checked against pinned hashes</li>
+                                    <li>Warms the inference graph for fast speech</li>
+                                    <li>Runs entirely offline after that; your text never leaves your machine</li>
                                 </ul>
                                 <button
                                     className="kokoro-activate-btn"
