@@ -38,6 +38,7 @@ suite('CodeArchy — Analysis in the extension host', function () {
             try {
                 fs.rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
             } catch (err) {
+                // eslint-disable-next-line no-console
                 console.warn(`cleanup of ${p} failed: ${(err as Error).message}`);
             }
         };
