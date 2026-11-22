@@ -46,7 +46,9 @@ export function cleanText(raw: string): string {
     t = t.replace(/^[-*_]{3,}\s*$/gm, '.');
     t = t.replace(/^\s*[-*+]\s+/gm, '');
     t = t.replace(/^\s*\d+\.\s+/gm, '');
-    t = t.replace(/<[^>]+>/g, '');
+    // Speech output, not HTML, but strip tags completely anyway: remove tags,
+    // then any stray angle brackets a partial tag could leave behind.
+    t = t.replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
     t = t.replace(/&amp;/gi, 'and').replace(/&lt;/gi, '').replace(/&gt;/gi, '')
         .replace(/&nbsp;/gi, ' ').replace(/&[a-z]+;/gi, '');
     t = t.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ');

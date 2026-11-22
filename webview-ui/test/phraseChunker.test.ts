@@ -89,3 +89,10 @@ test('runaway sentences are capped near maxChars at a clause or space', () => {
 test('cleanText strips markdown and math', () => {
     assert.equal(cleanText('## Title\n**Bold** and `code` with $x^2$ and [link](http://a)'), 'Title\nBold and with and link');
 });
+
+test('cleanText leaves no angle brackets behind', () => {
+    for (const input of ['a <scr<script>ipt>b</script> c', 'x < y > z', '<<b>>bold<</b>>', 'unclosed <img src=x']) {
+        assert.doesNotMatch(cleanText(input), /[<>]/, input);
+    }
+    assert.equal(cleanText('Use <b>bold</b> text'), 'Use bold text');
+});

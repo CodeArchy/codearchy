@@ -100,27 +100,37 @@ export interface DownloadProgress {
 export class IntegrityError extends Error {}
 
 export class VoiceModelStore {
-    private readonly files: Record<string, ModelFile>;
+    /** Manifest keyed by file name. A Map, so names like "constructor" can't match inherited properties. */
+    private readonly files: Map<string, ModelFile & { name: string }>;
     private readonly revisionDir: string;
     private readonly inflight = new Map<string, Promise<string>>();
 
     constructor(private readonly options: StoreOptions) {
-        this.files = options.files ?? KOKORO_FILES;
+        this.files = new Map(Object.entries(options.files ?? KOKORO_FILES).map(([name, f]) => [name, { ...f, name }]));
         this.revisionDir = path.join(options.cacheDir, `kokoro-${(options.revision ?? KOKORO_REVISION).slice(0, 12)}`);
     }
 
     isKnown(rel: string): boolean {
-        return Object.prototype.hasOwnProperty.call(this.files, rel);
+        return this.files.has(rel);
+    }
+
+    /**
+     * The manifest entry for a requested name. Every path and URL below is
+     * built from `entry.name` (the manifest's own string), never from the
+     * caller's input, so request data cannot shape a path or download URL.
+     */
+    private entry(rel: string): (ModelFile & { name: string }) | undefined {
+        return this.files.get(rel);
     }
 
     /** Path of a verified local copy, or undefined. Never downloads. */
     localPath(rel: string): string | undefined {
-        const spec = this.files[rel];
+        const spec = this.entry(rel);
         if (!spec) return undefined;
-        const cached = path.join(this.revisionDir, rel);
+        const cached = path.join(this.revisionDir, spec.name);
         if (sizeOf(cached) === spec.size) return cached;
         if (this.options.bundledDir) {
-            const bundled = path.join(this.options.bundledDir, rel);
+            const bundled = path.join(this.options.bundledDir, spec.name);
             if (sizeOf(bundled) === spec.size) return bundled;
         }
         return undefined;
@@ -128,13 +138,14 @@ export class VoiceModelStore {
 
     /** Downloads (if needed) and returns the verified local path. */
     ensure(rel: string, onProgress?: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<string> {
-        const local = this.localPath(rel);
+        const spec = this.entry(rel);
+        if (!spec) return Promise.reject(new Error('unknown model file'));
+        const local = this.localPath(spec.name);
         if (local) return Promise.resolve(local);
-        if (!this.isKnown(rel)) return Promise.reject(new Error(`unknown model file: ${rel}`));
-        const existing = this.inflight.get(rel);
+        const existing = this.inflight.get(spec.name);
         if (existing) return existing;
-        const p = this.download(rel, { onProgress, signal }).finally(() => this.inflight.delete(rel));
-        this.inflight.set(rel, p);
+        const p = this.download(spec, { onProgress, signal }).finally(() => this.inflight.delete(spec.name));
+        this.inflight.set(spec.name, p);
         return p;
     }
 
@@ -144,18 +155,19 @@ export class VoiceModelStore {
      * unless the file is explicit-only, streaming bytes through as they arrive.
      */
     async serve(rel: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        const spec = this.files[rel];
+        const spec = this.entry(rel);
         if (!spec) {
             res.writeHead(404).end();
             return;
         }
+        const name = spec.name;
         const headers = {
-            'Content-Type': rel.endsWith('.json') ? 'application/json' : 'application/octet-stream',
+            'Content-Type': name.endsWith('.json') ? 'application/json' : 'application/octet-stream',
             'Content-Length': spec.size,
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': rel.endsWith('.json') ? 'no-cache' : 'public, max-age=3600, immutable',
+            'Cache-Control': name.endsWith('.json') ? 'no-cache' : 'public, max-age=3600, immutable',
         };
-        const local = this.localPath(rel);
+        const local = this.localPath(name);
         if (req.method === 'HEAD') {
             res.writeHead(local ? 200 : 404, local ? headers : undefined).end();
             return;
@@ -170,7 +182,7 @@ export class VoiceModelStore {
             return;
         }
         // Another request is already downloading this file: wait, then serve.
-        const pending = this.inflight.get(rel);
+        const pending = this.inflight.get(name);
         if (pending) {
             try {
                 const file = await pending;
@@ -182,21 +194,21 @@ export class VoiceModelStore {
             return;
         }
         res.writeHead(200, headers);
-        const p = this.download(rel, { tee: res }).finally(() => this.inflight.delete(rel));
-        this.inflight.set(rel, p);
+        const p = this.download(spec, { tee: res }).finally(() => this.inflight.delete(name));
+        this.inflight.set(name, p);
         try {
             await p;
         } catch (err) {
-            this.options.log?.(`voice model download failed (${rel}): ${(err as Error).message}`);
+            this.options.log?.(`voice model download failed (${name}): ${(err as Error).message}`);
             res.destroy(); // the client sees a failed request, never a complete bad file
         }
     }
 
     private download(
-        rel: string,
+        spec: ModelFile & { name: string },
         opts: { tee?: http.ServerResponse; onProgress?: (p: DownloadProgress) => void; signal?: AbortSignal }
     ): Promise<string> {
-        const spec = this.files[rel];
+        const rel = spec.name;
         const dest = path.join(this.revisionDir, rel);
         const tmp = `${dest}.${process.pid}.${Date.now()}.download`;
         const url = `${this.options.baseUrl ?? 'https://huggingface.co'}/${KOKORO_REPO}/resolve/${this.options.revision ?? KOKORO_REVISION}/${rel}`;

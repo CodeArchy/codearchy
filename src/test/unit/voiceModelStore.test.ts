@@ -126,8 +126,10 @@ suite('Voice model store (on-demand Kokoro download)', () => {
 
     test('names outside the manifest are rejected (no path traversal)', async () => {
         assert.strictEqual((await get(front.url('../../etc/passwd'))).status, 404);
+        assert.strictEqual((await get(front.url('constructor'))).status, 404);
+        assert.strictEqual(hub.hits.size, 0, 'unknown names must never trigger a download');
         // The store matches exact manifest keys, so dot segments never resolve.
-        for (const name of ['voices/../config.json', '../config.json', '/config.json', 'onnx\\model.onnx']) {
+        for (const name of ['voices/../config.json', '../config.json', '/config.json', 'onnx\\model.onnx', 'constructor', '__proto__', 'toString']) {
             assert.strictEqual(store.isKnown(name), false, name);
             assert.strictEqual(store.localPath(name), undefined, name);
         }
