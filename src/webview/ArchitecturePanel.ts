@@ -2,11 +2,11 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
-import * as https from 'https';
 import { exec } from 'child_process';
 import { ArchitectureGraph, WebviewMessage, WebviewMessageType } from '../types';
 import { OllamaService, MODEL_OPTIONS, SystemArchitecture, ProcessingMode } from '../inference/OllamaService';
 import { HostAudioRecorder } from '../audio/HostAudioRecorder';
+import { KOKORO_REPO, VoiceModelStore } from '../voice/VoiceModelStore';
 
 /**
  * Detect which diagram the user wants the narrator to walk through, based on
@@ -46,12 +46,22 @@ export class ArchitecturePanel {
   private modelServerPort = 0;
   /** AbortController used to cancel an in-progress GPU model download. */
   private gpuModelDownloadAbort: AbortController | null = null;
+  /** Verified on-demand cache for the Kokoro voice model (global storage). */
+  private readonly voiceModels: VoiceModelStore;
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.extensionContext = context;
     this.ollamaService = new OllamaService();
+    this.voiceModels = new VoiceModelStore({
+      // Global storage survives extension updates (the install dir doesn't).
+      cacheDir: path.join(context.globalStorageUri.fsPath, 'voice'),
+      // Development copy prepared by `npm run download-kokoro`, if present.
+      bundledDir: path.join(extensionUri.fsPath, 'webview-ui', 'dist', 'kokoro-model', KOKORO_REPO),
+      // eslint-disable-next-line no-console
+      log: (m) => console.warn(`[CodeArchy] ${m}`),
+    });
 
     // Load saved model selection
     const config = vscode.workspace.getConfiguration('codearchy');
@@ -987,123 +997,19 @@ export class ArchitecturePanel {
     this.gpuModelDownloadAbort = new AbortController();
     const signal = this.gpuModelDownloadAbort.signal;
 
-    const HF_URL =
-      'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx';
-
-    // Destination: the same path the model server already serves.
-    // webview-ui/dist/ is writable in both dev and packaged installs.
-    const destDir = path.join(
-      this.extensionUri.fsPath,
-      'webview-ui', 'dist', 'kokoro-model',
-      'onnx-community', 'Kokoro-82M-v1.0-ONNX', 'onnx',
-    );
-    const destFile = path.join(destDir, 'model.onnx');
-    const tmpFile = destFile + '.download';
-
+    // Verified download into global storage (pinned revision, sha256 checked);
+    // the model server then serves it at the URL the worker probes.
+    let lastPercent = -1;
     try {
-      fs.mkdirSync(destDir, { recursive: true });
-    } catch (err) {
-      this.panel.webview.postMessage({
-        type: WebviewMessageType.GpuModelDownloadComplete,
-        payload: { success: false, error: `Cannot create model directory: ${err instanceof Error ? err.message : String(err)}` },
-      });
-      return;
-    }
-
-    // Use Node.js https with manual redirect following so we handle
-    // HuggingFace's CDN redirects transparently.
-    const downloadWithRedirects = (url: string, redirects = 0): Promise<void> => {
-      return new Promise<void>((resolve, reject) => {
-        if (redirects > 10) { reject(new Error('Too many redirects')); return; }
-
-        const parsedUrl = new URL(url);
-        const isHttps = parsedUrl.protocol === 'https:';
-        const transport = isHttps ? https : http;
-
-        const req = transport.get(url, { signal }, (res: import('http').IncomingMessage) => {
-          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            // Follow redirect.
-            res.resume(); // drain response body
-            const nextUrl = new URL(res.headers.location, url).href;
-            resolve(downloadWithRedirects(nextUrl, redirects + 1));
-            return;
-          }
-
-          if (res.statusCode !== 200) {
-            res.resume();
-            reject(new Error(`HTTP ${res.statusCode} from ${url}`));
-            return;
-          }
-
-          const totalBytes = parseInt(res.headers['content-length'] ?? '0', 10);
-          const totalMB = totalBytes > 0 ? totalBytes / (1024 * 1024) : 0;
-          let receivedBytes = 0;
-          let lastReportedPercent = -1;
-
-          const tmpStream = fs.createWriteStream(tmpFile);
-
-          res.on('data', (chunk: Buffer) => {
-            receivedBytes += chunk.length;
-            tmpStream.write(chunk);
-
-            if (totalBytes > 0) {
-              const percent = Math.round((receivedBytes / totalBytes) * 100);
-              // Throttle: only post when percent crosses a whole-number boundary.
-              if (percent !== lastReportedPercent) {
-                lastReportedPercent = percent;
-                const receivedMB = receivedBytes / (1024 * 1024);
-                this.panel.webview.postMessage({
-                  type: WebviewMessageType.GpuModelDownloadProgress,
-                  payload: { percent, receivedMB, totalMB },
-                });
-              }
-            } else {
-              // Content-Length unknown: report MB received only.
-              const receivedMB = receivedBytes / (1024 * 1024);
-              const reportInterval = Math.floor(receivedMB) !== Math.floor((receivedBytes - chunk.length) / (1024 * 1024));
-              if (reportInterval) {
-                this.panel.webview.postMessage({
-                  type: WebviewMessageType.GpuModelDownloadProgress,
-                  payload: { percent: 0, receivedMB, totalMB: 0 },
-                });
-              }
-            }
-          });
-
-          res.on('end', () => {
-            tmpStream.end(() => {
-              try {
-                fs.renameSync(tmpFile, destFile);
-                resolve();
-              } catch (renameErr) {
-                reject(renameErr);
-              }
-            });
-          });
-
-          res.on('error', (err: Error) => {
-            tmpStream.destroy();
-            try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-            reject(err);
-          });
-
-          signal.addEventListener('abort', () => {
-            req.destroy();
-            tmpStream.destroy();
-            try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-            reject(new Error('Download cancelled'));
-          }, { once: true });
+      await this.voiceModels.ensure('onnx/model.onnx', ({ receivedBytes, totalBytes }) => {
+        const percent = Math.round((receivedBytes / totalBytes) * 100);
+        if (percent === lastPercent) return;
+        lastPercent = percent;
+        this.panel.webview.postMessage({
+          type: WebviewMessageType.GpuModelDownloadProgress,
+          payload: { percent, receivedMB: receivedBytes / (1024 * 1024), totalMB: totalBytes / (1024 * 1024) },
         });
-
-        req.on('error', (err: Error) => {
-          try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-          reject(err);
-        });
-      });
-    };
-
-    try {
-      await downloadWithRedirects(HF_URL);
+      }, signal);
       this.panel.webview.postMessage({
         type: WebviewMessageType.GpuModelDownloadComplete,
         payload: { success: true },
@@ -1155,6 +1061,14 @@ export class ArchitecturePanel {
         relPath = decodeURIComponent(rawPath);
       } catch {
         res.writeHead(400); res.end(); return;
+      }
+
+      // Kokoro model files come from the verified on-demand store. Only names
+      // in its pinned manifest are served, so no path traversal is possible.
+      const kokoroPrefix = `/kokoro-model/${KOKORO_REPO}/`;
+      if (relPath.startsWith(kokoroPrefix)) {
+        void this.voiceModels.serve(relPath.slice(kokoroPrefix.length), req, res);
+        return;
       }
       // Normalise and strip any leading traversal sequences.
       relPath = path.normalize(relPath);
@@ -1237,7 +1151,7 @@ export class ArchitecturePanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}' 'wasm-unsafe-eval' ${webview.cspSource} blob:; img-src ${webview.cspSource} data: blob:; font-src data:; connect-src ${webview.cspSource} http://localhost:* http://127.0.0.1:* https://huggingface.co; worker-src ${webview.cspSource} blob:; child-src blob:; media-src ${webview.cspSource} data: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}' 'wasm-unsafe-eval' ${webview.cspSource} blob:; img-src ${webview.cspSource} data: blob:; font-src data:; connect-src ${webview.cspSource} http://localhost:* http://127.0.0.1:*; worker-src ${webview.cspSource} blob:; child-src blob:; media-src ${webview.cspSource} data: blob:;">
   <title>CodeArchy Architecture</title>
   <link rel="stylesheet" href="${cssUri}">
   <link rel="stylesheet" href="${baseStylesUri}">

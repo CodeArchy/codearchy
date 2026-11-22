@@ -5,6 +5,26 @@ All notable changes to CodeArchy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-22
+
+### Fixed
+
+- **Kokoro voice works again.** Version 1.1.0 was packaged without the voice model, so Kokoro couldn't start. The model is now downloaded once, on first activation, instead of being bundled.
+
+### Changed
+
+- **Voice model downloads on demand.**
+  - **Size:** about 93 MB the first time you activate Kokoro, plus 0.5 MB for each extra voice the first time you use it.
+  - **Integrity:** files come from a pinned Hugging Face commit and are checked against sha256 hashes. A file that fails the check is never used or cached.
+  - **Storage:** the model is stored in VS Code's global storage, so it survives extension updates, and it's used offline from then on.
+  - **Network:** only the extension host makes the download. The webview's content policy no longer allows any external host.
+- **Speech starts while the answer is still being written.**
+  - **Phrase streaming:** voice answers are split into phrases as they stream in, with a short first phrase, and each is synthesised while the previous one plays. On a CPU-only machine, time to first audio for a typical answer drops from about 52 s to about 7 s.
+  - **Filler phrases:** a short pre-synthesised phrase ("One moment.") covers the wait if the answer is slow to begin.
+  - **Replay:** the spoken audio is kept, so replaying a message is instant.
+- **GPU voice model downloads in the background.** The optional 326 MB model no longer blocks activation: speech starts on the CPU model straight away, and the GPU model is used from the next start.
+- **Voices warm on demand.** Selecting or previewing a voice warms it. Warming all 28 voices at start-up kept the voice engine busy for about a minute after activation.
+
 ## [1.1.0] - 2026-11-22
 
 ### Added
