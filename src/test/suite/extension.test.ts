@@ -84,16 +84,18 @@ suite('CodeArchy — Smoke Tests', () => {
     });
 
     test('Extension does not pollute global command namespace on activate', async () => {
-        const before = (await vscode.commands.getCommands(true)).length;
         const ext = findExtension();
         if (ext && !ext.isActive) {
             await ext.activate();
         }
-        const after = (await vscode.commands.getCommands(true)).length;
-        // Allow up to 20 new commands (all ours) but not hundreds
-        assert.ok(
-            after - before <= 20,
-            `Activation registered an unexpected number of commands (${after - before} new)`,
-        );
+        // Count only our namespace: VS Code itself registers built-in commands
+        // lazily (more so with a workspace open), so a before/after total is noisy.
+        const ours = (await vscode.commands.getCommands(true)).filter((c) => c.startsWith('codearchy.'));
+        const contributed: string[] = (ext?.packageJSON?.contributes?.commands ?? []).map((c: { command: string }) => c.command);
+        for (const cmd of contributed) {
+            assert.ok(ours.includes(cmd), `contributed command "${cmd}" is not registered`);
+        }
+        // Allow generated view commands (focus, refresh, ...) but not hundreds.
+        assert.ok(ours.length <= 40, `Activation registered an unexpected number of codearchy.* commands (${ours.length})`);
     });
 });

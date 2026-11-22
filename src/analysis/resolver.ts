@@ -197,7 +197,7 @@ export class ImportResolver {
                 if (p.wildcard ? clean.startsWith(p.prefix) && clean.endsWith(p.suffix) : clean === p.prefix) {
                     const star = p.wildcard ? clean.slice(p.prefix.length, clean.length - p.suffix.length) : '';
                     for (const target of p.targets) {
-                        const hit = this.jsCandidates(path.resolve(config.baseUrl ?? config.dir, target.replace('*', star)));
+                        const hit = this.jsCandidates(path.resolve(config.baseUrl ?? config.dir, target.split('*').join(star)));
                         if (hit.length) return hit;
                     }
                 }
