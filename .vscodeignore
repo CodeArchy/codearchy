@@ -15,6 +15,7 @@ coverage/**
 webview-ui/src/**
 webview-ui/node_modules/**
 webview-ui/kokoro-model/**
+webview-ui/dist/kokoro-model/**
 scripts/**
 test-profile/**
 test-extensions/**

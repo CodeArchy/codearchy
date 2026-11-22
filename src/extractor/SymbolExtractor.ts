@@ -174,7 +174,7 @@ export class DependencyResolver {
         }
 
         const fromDir = path.dirname(fromFile);
-        let resolved = path.resolve(fromDir, importSource);
+        const resolved = path.resolve(fromDir, importSource);
 
         const candidates = [
             resolved,
