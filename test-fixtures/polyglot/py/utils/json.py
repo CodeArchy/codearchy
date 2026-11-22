@@ -1,0 +1,1 @@
+def dumps(): pass

@@ -26,6 +26,8 @@
         "node_modules",
         ".vscode-test",
         "out",
-        "webview-ui"
+        "webview-ui",
+        "test-fixtures",
+        "parsers"
     ]
 }

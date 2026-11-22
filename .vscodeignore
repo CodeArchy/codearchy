@@ -34,3 +34,8 @@ webview-ui/tsconfig.json
 # automatically if model.onnx is present locally (run download-kokoro
 # manually to enable it), but it is not needed for the packaged extension.
 webview-ui/dist/kokoro-model/**/model.onnx
+
+# Unit-test fixtures and benchmark tooling
+test-fixtures/**
+parsers/.grammars-stamp.json
+.vscode-test.mjs

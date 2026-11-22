@@ -9,6 +9,7 @@
  *    download (models are excluded from the VSIX via .vscodeignore anyway).
  *  - Locally / during real publishing   → downloads the Kokoro model so
  *    developers can test TTS features without a separate manual step.
+ *  - Always → fetches the pinned tree-sitter grammars into parsers/.
  */
 
 'use strict';
@@ -26,5 +27,6 @@ if (isCI) {
     run('npm run download-kokoro');
 }
 
+run('npm run grammars');
 run('npm run build:webview');
 run('npm run compile');

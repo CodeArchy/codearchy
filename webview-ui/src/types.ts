@@ -7,6 +7,8 @@ export interface SymbolInfo {
     startLine: number;
     endLine: number;
     exported: boolean;
+    /** Enclosing type for members (e.g. the class that owns a method). */
+    container?: string;
 }
 
 export interface GraphNode {

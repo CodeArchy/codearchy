@@ -3,7 +3,7 @@ import {
     SubsystemInfo,
     GraphNode,
     GraphEdge,
-} from '../types';
+} from '../model';
 
 const SUBSYSTEM_COLORS = [
     '#4FC3F7', '#81C784', '#FFB74D', '#E57373',
@@ -11,18 +11,59 @@ const SUBSYSTEM_COLORS = [
     '#AED581', '#FFD54F', '#F06292', '#7986CB',
 ];
 
-const HEURISTIC_GROUPS: Record<string, string[]> = {
-    'API / Routes': ['route', 'router', 'controller', 'handler', 'endpoint', 'api', 'middleware'],
-    'Models / Data': ['model', 'schema', 'entity', 'dto', 'migration', 'database', 'db', 'repository', 'repo'],
-    'Services / Logic': ['service', 'provider', 'manager', 'engine', 'processor', 'worker', 'job', 'task'],
-    'Utilities': ['util', 'helper', 'common', 'shared', 'lib', 'tool', 'constant', 'config', 'env'],
-    'Views / UI': ['view', 'component', 'page', 'layout', 'template', 'screen', 'widget', 'ui'],
-    'Tests': ['test', 'spec', 'mock', 'fixture', '__test__', '__spec__'],
-    'Types / Interfaces': ['type', 'interface', 'contract', 'definition', 'typing'],
-    'Auth / Security': ['auth', 'login', 'session', 'token', 'permission', 'role', 'guard', 'security', 'password'],
-    'Messaging / Events': ['event', 'listener', 'emitter', 'queue', 'pubsub', 'message', 'notification', 'webhook'],
-    'Storage / Files': ['storage', 'upload', 'file', 'asset', 'media', 'image', 'blob', 's3'],
-};
+/**
+ * Keyword groups, matched against whole path tokens (never substrings):
+ * `ui` matches `ui/` or `UiButton.tsx`, but not `build/` or `guide.md`.
+ * Order matters only for ties within one token.
+ */
+const HEURISTIC_GROUPS: Array<[string, string[]]> = [
+    ['Tests', ['test', 'tests', 'spec', 'specs', 'mock', 'mocks', 'fixture', 'fixtures', 'e2e', 'testing', 'conftest']],
+    ['API / Routes', ['route', 'routes', 'router', 'routers', 'controller', 'controllers', 'handler', 'handlers', 'endpoint', 'endpoints', 'api', 'apis', 'middleware', 'middlewares', 'graphql', 'resolver', 'resolvers', 'rest', 'rpc', 'grpc']],
+    ['Auth / Security', ['auth', 'authentication', 'authorization', 'login', 'logout', 'session', 'sessions', 'token', 'tokens', 'permission', 'permissions', 'role', 'roles', 'guard', 'guards', 'security', 'password', 'oauth', 'jwt', 'acl']],
+    ['Models / Data', ['model', 'models', 'schema', 'schemas', 'entity', 'entities', 'dto', 'dtos', 'migration', 'migrations', 'database', 'db', 'repository', 'repositories', 'repo', 'repos', 'dao', 'orm', 'prisma', 'sql', 'store', 'stores']],
+    ['Services / Logic', ['service', 'services', 'provider', 'providers', 'manager', 'managers', 'engine', 'processor', 'processors', 'worker', 'workers', 'job', 'jobs', 'task', 'tasks', 'usecase', 'usecases', 'domain', 'core', 'logic']],
+    ['Views / UI', ['view', 'views', 'component', 'components', 'page', 'pages', 'layout', 'layouts', 'template', 'templates', 'screen', 'screens', 'widget', 'widgets', 'ui', 'webview', 'frontend', 'hooks', 'styles']],
+    ['Messaging / Events', ['event', 'events', 'listener', 'listeners', 'emitter', 'queue', 'queues', 'pubsub', 'message', 'messages', 'messaging', 'notification', 'notifications', 'webhook', 'webhooks', 'kafka', 'broker', 'consumer', 'consumers', 'producer']],
+    ['Storage / Files', ['storage', 'upload', 'uploads', 'file', 'files', 'asset', 'assets', 'media', 'image', 'images', 'blob', 'blobs', 's3', 'cache']],
+    ['Types / Interfaces', ['type', 'types', 'typings', 'interface', 'interfaces', 'contract', 'contracts', 'definition', 'definitions', 'protocol', 'proto']],
+    ['Utilities', ['util', 'utils', 'utility', 'utilities', 'helper', 'helpers', 'common', 'shared', 'lib', 'libs', 'tool', 'tools', 'constant', 'constants', 'config', 'configs', 'configuration', 'env', 'misc']],
+];
+
+const KEYWORD_TO_GROUP = new Map<string, string>();
+for (const [group, keywords] of HEURISTIC_GROUPS) {
+    for (const k of keywords) if (!KEYWORD_TO_GROUP.has(k)) KEYWORD_TO_GROUP.set(k, group);
+}
+
+/** Lower-case word tokens of one path segment: `UserController.test.ts` → user, controller, test. */
+export function tokenizeSegment(segment: string): string[] {
+    return segment
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .split(/[^A-Za-z0-9]+/)
+        .map((t) => t.toLowerCase())
+        .filter(Boolean);
+}
+
+/**
+ * Heuristic group for a workspace-relative path. Test markers anywhere win
+ * (a test tree contains every other keyword); otherwise the most specific
+ * token wins: the file name first, then its nearest directory, and so on.
+ */
+export function heuristicGroupForPath(relativePath: string): string | undefined {
+    const segments = relativePath.split('/').filter(Boolean);
+    if (segments.length === 0) return undefined;
+    const fileName = segments[segments.length - 1].replace(/\.[^.]+$/, '');
+    const tokenLists = [...segments.slice(0, -1), fileName].map(tokenizeSegment);
+
+    if (tokenLists.some((tokens) => tokens.some((t) => KEYWORD_TO_GROUP.get(t) === 'Tests'))) return 'Tests';
+    for (let i = tokenLists.length - 1; i >= 0; i--) {
+        for (const token of tokenLists[i]) {
+            const group = KEYWORD_TO_GROUP.get(token);
+            if (group) return group;
+        }
+    }
+    return undefined;
+}
 
 export class ArchitectureInference {
     inferSubsystems(graph: ArchitectureGraph): ArchitectureGraph {
@@ -76,6 +117,7 @@ export class ArchitectureInference {
             groupedNodes.set(group, existing);
         }
 
+        const labels = new Map(graph.nodes.map((n) => [n.id, n.label]));
         let colorIndex = 0;
         for (const [name, nodeIds] of groupedNodes) {
             if (nodeIds.length === 0) continue;
@@ -83,7 +125,7 @@ export class ArchitectureInference {
             subsystems.push({
                 id: `subsystem-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
                 name,
-                description: `Contains ${nodeIds.length} module(s): ${this.describeSubsystem(nodeIds, graph)}`,
+                description: `Contains ${nodeIds.length} module(s): ${this.describeSubsystem(nodeIds, labels)}`,
                 nodeIds,
                 color: SUBSYSTEM_COLORS[colorIndex % SUBSYSTEM_COLORS.length],
             });
@@ -116,18 +158,7 @@ export class ArchitectureInference {
     }
 
     private matchHeuristicGroup(node: GraphNode): string | undefined {
-        const lowerPath = node.id.toLowerCase();
-        const lowerLabel = node.label.toLowerCase();
-        const combined = `${lowerPath} ${lowerLabel}`;
-
-        for (const [groupName, keywords] of Object.entries(HEURISTIC_GROUPS)) {
-            for (const keyword of keywords) {
-                if (combined.includes(keyword)) {
-                    return groupName;
-                }
-            }
-        }
-        return undefined;
+        return heuristicGroupForPath(node.id);
     }
 
     private refineByConnectivity(graph: ArchitectureGraph, assignments: Map<string, string>) {
@@ -176,12 +207,9 @@ export class ArchitectureInference {
         return last.charAt(0).toUpperCase() + last.slice(1).replace(/[-_]/g, ' ');
     }
 
-    private describeSubsystem(nodeIds: string[], graph: ArchitectureGraph): string {
+    private describeSubsystem(nodeIds: string[], labels: Map<string, string>): string {
         const maxShow = 3;
-        const nodes = nodeIds.slice(0, maxShow).map((id) => {
-            const node = graph.nodes.find((n) => n.id === id);
-            return node?.label || id;
-        });
+        const nodes = nodeIds.slice(0, maxShow).map((id) => labels.get(id) || id);
         const suffix = nodeIds.length > maxShow ? ` and ${nodeIds.length - maxShow} more` : '';
         return nodes.join(', ') + suffix;
     }

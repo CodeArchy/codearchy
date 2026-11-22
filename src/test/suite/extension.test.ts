@@ -28,6 +28,20 @@ suite('CodeArchy — Smoke Tests', () => {
         assert.strictEqual(ext.isActive, true, 'Extension failed to reach active state');
     });
 
+    test('Tree-sitter runtime and grammars load in the extension host', async () => {
+        const ext = findExtension();
+        assert.ok(ext, 'Extension not found');
+        const api = (ext.isActive ? ext.exports : await ext.activate()) as
+            | { parserStatus(): Promise<{ treeSitter: boolean; grammars: string[] }> }
+            | undefined;
+        assert.ok(api?.parserStatus, 'activate() should return the CodeArchy API');
+        const status = await api.parserStatus();
+        assert.strictEqual(status.treeSitter, true, 'web-tree-sitter failed to initialise in the extension host');
+        for (const grammar of ['tree-sitter-typescript.wasm', 'tree-sitter-python.wasm', 'tree-sitter-go.wasm']) {
+            assert.ok(status.grammars.includes(grammar), `missing grammar ${grammar}; found ${status.grammars.join(', ')}`);
+        }
+    });
+
     test('All contributed commands are registered', async () => {
         const ext = findExtension();
         if (ext && !ext.isActive) {
