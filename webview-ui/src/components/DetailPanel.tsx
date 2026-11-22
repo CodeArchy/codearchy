@@ -49,10 +49,10 @@ export function DetailPanel({ node, graph, onClose, onNavigateToFile }: DetailPa
                             <span
                                 key={i}
                                 className="symbol-tag"
-                                title={sym.kind}
+                                title={`${sym.kind}${sym.exported ? ' · exported' : ''} · line ${sym.startLine + 1}`}
                                 onClick={() => onNavigateToFile(node.filePath, sym.startLine)}
                             >
-                                {sym.name}
+                                {sym.container ? `${sym.container}.${sym.name}` : sym.name}
                             </span>
                         ))}
                         {node.symbols.length > 20 && (

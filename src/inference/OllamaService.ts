@@ -904,7 +904,12 @@ GUIDELINES:
             const subNodes = graph.nodes.filter((n) => sub.nodeIds.includes(n.id));
             for (const node of subNodes.slice(0, maxModulesPerSubsystem)) {
                 if (maxSymbolNames > 0) {
-                    const symbolNames = node.symbols.slice(0, maxSymbolNames).map((s) => s.name).join(', ');
+                    // Top-level declarations describe a file better than its methods.
+                    const topLevel = node.symbols.filter((s) => !s.container);
+                    const symbolNames = (topLevel.length ? topLevel : node.symbols)
+                        .slice(0, maxSymbolNames)
+                        .map((s) => s.name)
+                        .join(', ');
                     lines.push(`  - ${node.id}: ${node.symbols.length} symbols [${symbolNames}]`);
                 } else {
                     lines.push(`  - ${node.id} (${node.symbols.length} symbols)`);

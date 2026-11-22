@@ -85,6 +85,13 @@ jobs:
       - name: Compile extension host (TypeScript)
         run: npm run compile
 
+      - name: Fetch tree-sitter grammars
+        run: npm run grammars
+
+      # Parser/resolver golden tests: plain Node, no VS Code needed.
+      - name: Unit tests
+        run: npx mocha --ui tdd "out/test/unit/**/*.test.js"
+
       - name: Upload compiled artefacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -138,6 +145,10 @@ jobs:
             "out/extension.js"
             "package.json"
             "README.md"
+            "parsers/web-tree-sitter.cjs"
+            "parsers/web-tree-sitter.wasm"
+            "parsers/tree-sitter-typescript.wasm"
+            "parsers/tree-sitter-python.wasm"
           )
           for f in "${required_files[@]}"; do
             if grep -q "$f" package-manifest.txt; then
@@ -155,6 +166,8 @@ jobs:
             "node_modules/"
             "tsconfig.json"
             ".eslintrc"
+            "test-fixtures/"
+            "out/test/"
           )
           for p in "${excluded_patterns[@]}"; do
             if grep -q "$p" package-manifest.txt; then

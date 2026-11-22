@@ -2,7 +2,7 @@
     "name": "codearchy",
     "displayName": "CodeArchy",
     "description": "Offline-first privacy system that visualizes codebase into explainable system architecture for education, onboarding, and safer software development/maintenance",
-    "version": "1.0.4",
+    "version": "1.1.0",
     "publisher": "iyinusa",
     "license": "MIT",
     "repository": {
@@ -96,10 +96,27 @@
                         "javascript",
                         "python",
                         "java",
+                        "kotlin",
                         "go",
-                        "rust"
+                        "rust",
+                        "csharp",
+                        "php"
                     ],
-                    "description": "Languages to include in architecture analysis."
+                    "description": "Languages to include in architecture analysis.",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "typescript",
+                            "javascript",
+                            "python",
+                            "java",
+                            "kotlin",
+                            "go",
+                            "rust",
+                            "csharp",
+                            "php"
+                        ]
+                    }
                 },
                 "codearchy.excludePatterns": {
                     "type": "array",
@@ -107,16 +124,29 @@
                         "**/node_modules/**",
                         "**/dist/**",
                         "**/out/**",
+                        "**/build/**",
                         "**/.git/**",
                         "**/vendor/**",
-                        "**/build/**"
+                        "**/target/**",
+                        "**/__pycache__/**",
+                        "**/.venv/**",
+                        "**/venv/**",
+                        "**/.next/**",
+                        "**/coverage/**",
+                        "**/*.min.js"
                     ],
-                    "description": "Glob patterns to exclude from analysis."
+                    "description": "Glob patterns to exclude from analysis. Files ignored by .gitignore are always excluded in git repositories."
                 },
                 "codearchy.maxFileSize": {
                     "type": "number",
                     "default": 500000,
                     "description": "Maximum file size in bytes to analyze."
+                },
+                "codearchy.maxFiles": {
+                    "type": "number",
+                    "default": 20000,
+                    "minimum": 0,
+                    "description": "Maximum number of source files to analyze (0 = no limit). CodeArchy warns when a workspace exceeds it."
                 },
                 "codearchy.aiModel": {
                     "type": "string",
@@ -151,12 +181,14 @@
         "build:webview": "cd webview-ui && npm install && npm run build",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "download-grammars": "node scripts/download-grammars.js",
+        "grammars": "node scripts/fetch-grammars.js",
         "download-kokoro": "cd webview-ui && npm install && cd .. && node scripts/download-kokoro.js",
         "lint": "eslint src --ext ts",
         "test": "vscode-test",
+        "test:unit": "npm run compile && npm run grammars && mocha --ui tdd \"out/test/unit/**/*.test.js\"",
+        "bench": "node scripts/bench.js",
         "package": "vsce package",
-        "pretest": "npm run compile"
+        "pretest": "npm run compile && npm run grammars"
     },
     "devDependencies": {
         "@types/mocha": "^10.0.10",
@@ -172,6 +204,6 @@
         "typescript": "^5.3.0"
     },
     "dependencies": {
-        "web-tree-sitter": "^0.22.0"
+        "web-tree-sitter": "^0.27.2"
     }
 }

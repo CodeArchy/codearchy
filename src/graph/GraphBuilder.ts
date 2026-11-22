@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
     FileAnalysis,
     GraphNode,
@@ -6,104 +7,100 @@ import {
     EdgeType,
     ArchitectureGraph,
     GraphMetadata,
-} from '../types';
-import { DependencyResolver } from '../extractor/SymbolExtractor';
+} from '../model';
+import { ImportResolver, toPosix } from '../analysis/resolver';
 
 export class GraphBuilder {
-    private resolver: DependencyResolver;
+    constructor(private readonly workspaceRoot: string) {}
 
-    constructor(workspaceRoot: string) {
-        this.resolver = new DependencyResolver(workspaceRoot);
-    }
+    /**
+     * Builds the file graph. Node ids are workspace-relative POSIX paths on
+     * every OS, so they're stable across machines.
+     */
+    build(analyses: Iterable<FileAnalysis>, manifests: Map<string, string> = new Map()): ArchitectureGraph {
+        const list = [...analyses];
+        const resolver = new ImportResolver(this.workspaceRoot, list, manifests);
+        const nodes = list.map((a) => this.buildNode(a));
+        const edges = this.buildEdges(list, resolver);
 
-    build(analyses: FileAnalysis[], allFiles: string[]): ArchitectureGraph {
-        const nodes = this.buildNodes(analyses);
-        const edges = this.buildEdges(analyses, allFiles);
-
-        const languages = [...new Set(analyses.map((a) => a.language))];
-        const totalSymbols = analyses.reduce((sum, a) => sum + a.symbols.length, 0);
+        const parserStats = { treeSitter: 0, regex: 0, skipped: 0 };
+        for (const a of list) {
+            if (a.parser === 'tree-sitter') parserStats.treeSitter++;
+            else parserStats.regex++;
+        }
 
         const metadata: GraphMetadata = {
             analyzedAt: Date.now(),
-            fileCount: analyses.length,
-            totalSymbols,
+            fileCount: list.length,
+            totalSymbols: list.reduce((sum, a) => sum + a.symbols.length, 0),
             totalEdges: edges.length,
-            languages,
+            languages: [...new Set(list.map((a) => a.language))],
+            parserStats,
         };
 
+        return { nodes, edges, subsystems: [], metadata };
+    }
+
+    relativeId(filePath: string): string {
+        return toPosix(path.relative(this.workspaceRoot, filePath));
+    }
+
+    private buildNode(analysis: FileAnalysis): GraphNode {
+        const id = this.relativeId(analysis.filePath);
         return {
-            nodes,
-            edges,
-            subsystems: [],
-            metadata,
+            id,
+            label: fileLabel(id),
+            filePath: analysis.filePath,
+            type: NodeType.File,
+            symbols: analysis.symbols,
+            metadata: {
+                language: analysis.language,
+                symbolCount: analysis.symbols.length,
+                exportCount: analysis.exports.length,
+                importCount: analysis.imports.length,
+                ...(analysis.namespace ? { namespace: analysis.namespace } : {}),
+                parser: analysis.parser,
+            },
         };
     }
 
-    private buildNodes(analyses: FileAnalysis[]): GraphNode[] {
-        return analyses.map((analysis) => {
-            const relativePath = this.resolver.getRelativePath(analysis.filePath);
-            const label = this.getFileLabel(relativePath);
+    private buildEdges(analyses: FileAnalysis[], resolver: ImportResolver): GraphEdge[] {
+        const edges = new Map<string, GraphEdge>();
 
-            return {
-                id: relativePath,
-                label,
-                filePath: analysis.filePath,
-                type: NodeType.File,
-                symbols: analysis.symbols,
-                metadata: {
-                    language: analysis.language,
-                    symbolCount: analysis.symbols.length,
-                    exportCount: analysis.exports.length,
-                    importCount: analysis.imports.length,
-                },
-            };
-        });
-    }
-
-    private buildEdges(analyses: FileAnalysis[], allFiles: string[]): GraphEdge[] {
-        const edges: GraphEdge[] = [];
-        const edgeSet = new Set<string>();
+        const add = (source: string, target: string, weight: number, metadata: Record<string, unknown>) => {
+            if (source === target) return;
+            const key = `${source}:${target}`;
+            const existing = edges.get(key);
+            if (existing) {
+                existing.weight += weight;
+                return;
+            }
+            edges.set(key, { id: key, source, target, type: EdgeType.Import, weight, metadata });
+        };
 
         for (const analysis of analyses) {
-            const sourceId = this.resolver.getRelativePath(analysis.filePath);
-
+            const sourceId = this.relativeId(analysis.filePath);
             for (const imp of analysis.imports) {
-                const resolvedPath = this.resolver.resolveImportPath(
-                    imp.source,
-                    analysis.filePath,
-                    allFiles
-                );
-
-                if (resolvedPath) {
-                    const targetId = this.resolver.getRelativePath(resolvedPath);
-                    const edgeKey = `${sourceId}:${targetId}`;
-
-                    if (!edgeSet.has(edgeKey) && sourceId !== targetId) {
-                        edgeSet.add(edgeKey);
-                        edges.push({
-                            id: edgeKey,
-                            source: sourceId,
-                            target: targetId,
-                            type: EdgeType.Import,
-                            weight: imp.specifiers.length || 1,
-                            metadata: {
-                                specifiers: imp.specifiers,
-                                importSource: imp.source,
-                            },
-                        });
-                    }
+                for (const target of resolver.resolve(imp, analysis)) {
+                    add(sourceId, this.relativeId(target), imp.specifiers.length || 1, {
+                        specifiers: imp.specifiers,
+                        importSource: imp.source,
+                    });
                 }
             }
+            for (const target of resolver.implicitDependencies(analysis)) {
+                add(sourceId, this.relativeId(target), 1, {
+                    specifiers: [],
+                    importSource: analysis.namespace ? `(same package ${analysis.namespace})` : '(same package)',
+                    implicit: true,
+                });
+            }
         }
-
-        return edges;
+        return [...edges.values()];
     }
+}
 
-    private getFileLabel(relativePath: string): string {
-        const parts = relativePath.split('/');
-        if (parts.length <= 2) {
-            return relativePath;
-        }
-        return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
-    }
+function fileLabel(relativeId: string): string {
+    const parts = relativeId.split('/');
+    return parts.length <= 2 ? relativeId : `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
 }

@@ -5,6 +5,41 @@ All notable changes to CodeArchy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-22
+
+### Added
+
+- **Real tree-sitter parsing for every supported language.** Grammars now ship in the extension (they were never bundled before, so every file went through regex). They're fetched from pinned npm releases and verified by integrity hash at build time.
+- **Three new languages:** C#, PHP and Kotlin, alongside TypeScript, JavaScript, Python, Java, Go and Rust.
+- **Methods and nested types** are extracted with their owning class, struct, trait or `impl`.
+- **Import resolution for each ecosystem.**
+  - TypeScript `paths`/`baseUrl` (including `extends`) and workspace packages
+  - Python absolute and relative imports
+  - Java/Kotlin fully-qualified and wildcard imports
+  - C# `using`
+  - PHP `use`, PSR-4 and `require`
+  - Go modules
+  - Rust `mod`, `crate::` and `super::`
+  - Same-package references for Java, Kotlin, C#, PHP and Go
+- **Live updates from disk.** Files that are created, changed, deleted or renamed by an editor, a coding agent or `git pull` update the diagram, edges included.
+- **CodeArchy output channel.** Shows discovery, parser coverage and timing for each analysis.
+- **`codearchy.maxFiles` setting.** Defaults to 20,000. CodeArchy warns when a workspace exceeds it instead of silently truncating.
+- **Developer tooling:** `npm run test:unit` (plain-Node parser and resolver tests), an end-to-end VS Code sandbox test, and `npm run bench` for measuring any repository.
+
+### Changed
+
+- **File discovery uses `git ls-files`.** This honours `.gitignore` and has no 5,000-file cap. The VS Code file search is now only a fallback.
+- **Files are read directly from disk.** They're no longer opened as editor documents.
+- **Analysis yields regularly** so the extension host stays responsive.
+- **Subsystem grouping matches whole path words.** `ui` no longer matches `build/`, and `test` no longer matches `latest`.
+- **Graph node ids are POSIX paths on every OS.**
+
+### Fixed
+
+- **Symbol names and exports.** Names were the full source text of a declaration, and exported declarations were missed under tree-sitter.
+- **Progress notification.** It overshot 100%.
+- **Released packages.** They didn't include the parser runtime.
+
 ## [1.0.3] - 2026-05-16
 
 ### Added

@@ -197,7 +197,9 @@ jobs:
           echo "--- Full package manifest ---"
           npx @vscode/vsce ls --no-dependencies | tee package-manifest.txt
 
-          required_files=("out/extension.js" "package.json" "README.md" "CHANGELOG.md")
+          required_files=("out/extension.js" "package.json" "README.md" "CHANGELOG.md"
+                          "parsers/web-tree-sitter.cjs" "parsers/web-tree-sitter.wasm"
+                          "parsers/tree-sitter-typescript.wasm" "parsers/tree-sitter-python.wasm")
           echo "--- Required files ---"
           for f in "${required_files[@]}"; do
             if grep -q "$f" package-manifest.txt; then
@@ -207,7 +209,7 @@ jobs:
             fi
           done
 
-          excluded_patterns=("src/" ".github/" "node_modules/" "tsconfig.json" ".eslintrc")
+          excluded_patterns=("src/" ".github/" "node_modules/" "tsconfig.json" ".eslintrc" "test-fixtures/" "out/test/")
           echo "--- Must-be-excluded ---"
           for p in "${excluded_patterns[@]}"; do
             if grep -q "$p" package-manifest.txt; then

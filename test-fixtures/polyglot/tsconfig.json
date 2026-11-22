@@ -1,0 +1,8 @@
+{
+  // path aliases resolve through baseUrl
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@app/*": ["web/src/*"], },
+  },
+}
