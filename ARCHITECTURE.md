@@ -41,6 +41,7 @@ wires one platform into the engine.
     conformance: one test suite every platform must pass (golden graph included)
     ui:          the shared React UI (Map, Navigator, Inspector); protocol only
     providers:   AI model adapters (Ollama, OpenAI-compatible, Anthropic, Gemini); no engine
+    ai:          summary cards (and later chat) over the hierarchy; core + protocol + providers
 ```
 
 `pnpm lint` runs [`tooling/check-boundaries.mjs`](tooling/check-boundaries.mjs), which rejects any
@@ -264,6 +265,43 @@ the web app's origin), never in settings.
 `scripts/live.mjs` runs a tool-calling round trip against real providers
 configured through environment variables. It's for manual checks and never
 runs in CI.
+
+## Summary cards
+
+[`packages/ai`](packages/ai) writes a short card for every module, component,
+package and the system: a title, its purpose, its responsibilities, the
+children that matter most, any risks, and a confidence. It works bottom-up.
+A module's card comes from that file's facts; a container's card comes from
+its children's cards plus the dependencies between them. So every prompt is
+bounded by fan-out, never by the size of the repository.
+
+- **Facts, never bodies.** A module's facts are its path, role, header doc,
+  declared symbols (each with its declaration line as the signature, and the
+  doc comment above it), its strongest dependencies either way, and flags
+  (test file, cycle, hub, covered by tests). A container's facts are its
+  children's cards, the dependencies between them, its outside dependencies,
+  and a README paragraph or manifest description. These all count as
+  `structure` under the privacy tiers.
+- **Deterministic first.** Every node also gets a card built without AI, from
+  docs, names and structure. AI upgrades it and never blocks on it. When no
+  model is allowed, a request is blocked (budget or tier), or the reply is
+  unusable after one repair attempt, the node keeps its deterministic card.
+  The card always says which kind it is.
+- **Citation guard.** Children and symbols are shown to the model as short
+  refs (`S1`, `C2`). Only refs or exact names of parts it was shown map back
+  to node keys. Anything else is dropped, and the card's confidence is
+  capped. Refs inside the prose are turned back into names.
+- **Cache.** A card's key is a hash of the prompt version, the model, and
+  exactly the facts it was written from. Child cards are part of a parent's
+  facts, so an edit re-summarizes only the path from the changed file up to the
+  root. Fallback cards are never cached under an AI key, so they're retried
+  later.
+- **Crawls** summarize the nodes given (most important first), with a cap on
+  AI calls. They stop calling the model when the registry blocks, and every
+  node still gets a card. `estimate()` sizes a crawl before it starts.
+
+`scripts/live.mjs` indexes a folder and prints its cards, using a model taken
+from the environment.
 
 ## Apps
 
