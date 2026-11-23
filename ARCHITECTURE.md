@@ -122,6 +122,16 @@ discover ─▶ index ─▶ resolve ─▶ graph ─▶ hierarchy ─▶ infer 
      depth-first order with Euler-tour intervals, so "is A inside B" is two
      comparisons and a subtree is a contiguous range.
 
+   **Views** are projections of the hierarchy (`HierarchyIndex.project`). A
+   view shows the children of a *scope* node, some of them expanded in place.
+   Every module dependency is mapped onto the visible nodes that contain its
+   ends (a binary search over Euler intervals), aggregated with its weight,
+   and dependencies that leave the scope become *port stubs* attributed to the
+   outside node at the scope's level. `explainEdge` lists the module
+   dependencies and import sites behind any visible edge, and a budget caps how
+   many nodes expansions may add. Projecting a scope takes well under a
+   millisecond on repositories of a few thousand files.
+
 7. **Infer.** Heuristics group files into subsystems (API, services, models,
    storage, and so on). AI providers, where enabled, refine this from the
    graph: they receive structure, not raw source files.
@@ -218,5 +228,5 @@ which is the behaviour change to review.
 | Extraction | [`packages/core/src/extract/treeSitter.ts`](packages/core/src/extract/treeSitter.ts) |
 | Incremental indexing | [`packages/core/src/index/indexer.ts`](packages/core/src/index/indexer.ts) and [`store.ts`](packages/core/src/index/store.ts) |
 | Import resolution | [`packages/core/src/resolve/resolver.ts`](packages/core/src/resolve/resolver.ts) |
-| The hierarchy | [`packages/core/src/hierarchy/build.ts`](packages/core/src/hierarchy/build.ts) and [`packages/protocol/src/hierarchy.ts`](packages/protocol/src/hierarchy.ts) |
+| The hierarchy and views | [`packages/core/src/hierarchy/build.ts`](packages/core/src/hierarchy/build.ts), [`project.ts`](packages/core/src/hierarchy/project.ts), and the types in [`packages/protocol/src/hierarchy.ts`](packages/protocol/src/hierarchy.ts) / [`view.ts`](packages/protocol/src/view.ts) |
 | A full host wiring | [`apps/playground/src/engine.worker.ts`](apps/playground/src/engine.worker.ts) (browser), [`apps/vscode/src/pipeline/AnalysisPipeline.ts`](apps/vscode/src/pipeline/AnalysisPipeline.ts) (VS Code) |

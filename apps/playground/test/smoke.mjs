@@ -55,6 +55,16 @@ for (const name of wanted) {
         await page.locator('.tree [data-key="pkg:rust"]').click();
         await rustSrc.waitFor();
 
+        // View (projector): drill into the root package, see its port stubs, expand in place, explain an edge.
+        await page.click('#tab-view');
+        await page.click('button[data-action="drill"][data-key="pkg:."]');
+        await page.locator('.view tr[data-key="dir:web/src"]').waitFor();
+        await page.locator('.view td', { hasText: '@poly/shared' }).first().waitFor();
+        await page.click('button[data-action="expand"][data-key="dir:web/src"]');
+        await page.locator('.view tr[data-key="mod:web/src/index.ts"]').waitFor();
+        await page.locator('.view h3 + div td', { hasText: 'index.ts' }).first().click();
+        await page.locator('#detail h2', { hasText: '→' }).waitFor();
+
         await page.click('#tab-unresolved');
         await page.locator('#list td', { hasText: 'react' }).first().waitFor();
 

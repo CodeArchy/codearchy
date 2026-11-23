@@ -7,6 +7,7 @@
 import {
     DEFAULT_EXCLUDE_PATTERNS,
     DEFAULT_LANGUAGE_IDS,
+    HierarchyIndex,
     ImportResolver,
     IndexStore,
     Indexer,
@@ -40,6 +41,7 @@ interface Workspace {
     analyses: Map<string, FileAnalysis>;
     resolver: ImportResolver;
     dependents: Map<string, string[]>;
+    hierarchy: HierarchyIndex;
 }
 
 let current: Workspace | undefined;
@@ -147,7 +149,7 @@ async function open(source: Source): Promise<Summary> {
         }
     }
 
-    current = { store, analyses: result.analyses, resolver, dependents };
+    current = { store, analyses: result.analyses, resolver, dependents, hierarchy: new HierarchyIndex(hierarchy) };
     return {
         name,
         storage,
@@ -208,6 +210,8 @@ scope.onmessage = async (ev) => {
         let result: unknown;
         if (req.type === 'open') result = await open(req.source);
         else if (req.type === 'file') result = fileDetail(req.path);
+        else if (req.type === 'view') result = current?.hierarchy.project(req.request);
+        else if (req.type === 'explain') result = current?.hierarchy.explainEdge(req.source, req.target);
         else result = search(req.query);
         scope.postMessage({ type: 'result', id: req.id, result });
     } catch (err) {

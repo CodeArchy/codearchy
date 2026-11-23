@@ -33,6 +33,7 @@ export {
 export { ImportResolver, parseJsonc } from './resolve/resolver.js';
 export { buildGraph, MAX_EDGE_EVIDENCE, type BuildOptions, type EdgeEvidence } from './graph/builder.js';
 export { buildHierarchy, type HierarchyOptions } from './hierarchy/build.js';
+export { HierarchyIndex, neighbourhood, DEFAULT_VIEW_BUDGET } from './hierarchy/project.js';
 export { detectCommunities, type WeightedEdge } from './hierarchy/cluster.js';
 export { roleOfComponent, roleOfModule, roleOfName } from './hierarchy/roles.js';
 export { ArchitectureInference, heuristicGroupForPath, tokenizeSegment } from './graph/inference.js';
