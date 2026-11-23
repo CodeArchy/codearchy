@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import type { AiHost } from '@codearchy/ai';
+import type { AiHostEvent } from '@codearchy/protocol';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -41,6 +43,13 @@ export function configuredUi(): 'map' | 'classic' {
 export class ArchitecturePanel {
   private static instance: ArchitecturePanel | undefined;
   static engineHost: EngineHost | undefined;
+  /** The AI side of the new UI (chat, cards, AI settings). */
+  static aiHost: AiHost | undefined;
+
+  /** Forwards an AI host event (state, card, preview) to the open panel. */
+  static postAiEvent(event: AiHostEvent): void {
+    void ArchitecturePanel.instance?.panel.webview.postMessage({ type: WebviewMessageType.AiEvent, payload: { event } });
+  }
   /** A reveal requested before the webview was ready. */
   private pendingReveal: string | undefined;
   private readonly panel: vscode.WebviewPanel;
@@ -227,6 +236,25 @@ export class ArchitecturePanel {
           reply = { id: req.id, error: err instanceof Error ? err.message : String(err) };
         }
         this.panel.webview.postMessage({ type: WebviewMessageType.EngineResponse, payload: reply });
+        break;
+      }
+
+      case WebviewMessageType.AiRequest: {
+        const req = message.payload as { id: number; method: string; params?: Record<string, unknown> };
+        const reply = (body: { result?: unknown; error?: string }) =>
+          void this.panel.webview.postMessage({ type: WebviewMessageType.AiResponse, payload: { id: req.id, ...body } });
+        const host = ArchitecturePanel.aiHost;
+        if (!host) reply({ error: 'AI is not available' });
+        else host.handle(req.method, req.params ?? {}).then((result) => reply({ result }), (err: unknown) => reply({ error: err instanceof Error ? err.message : String(err) }));
+        break;
+      }
+
+      case WebviewMessageType.AiAsk: {
+        const { conversation, question, selection } = message.payload as { conversation: string; question: string; selection?: string };
+        const send = (event: unknown) => void this.panel.webview.postMessage({ type: WebviewMessageType.AiChatEvent, payload: { conversation, event } });
+        const host = ArchitecturePanel.aiHost;
+        if (!host) send({ type: 'error', code: 'unavailable', message: 'AI is not available' });
+        else void host.ask(conversation, question, { selection }, send).catch((err: unknown) => send({ type: 'error', code: 'unavailable', message: err instanceof Error ? err.message : String(err) }));
         break;
       }
 

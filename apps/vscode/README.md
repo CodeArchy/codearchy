@@ -105,19 +105,21 @@ Understanding *why* a module exists before changing it is the single most effect
 | **Architecture Map** *(2.0 beta)* | Explore System › Package › Component › File on one canvas: double-click expands in place with smooth transitions; click a node to animate what it uses and what uses it; Navigator, Inspector and ⌘K search |
 | **Matrix and lenses** *(2.0 beta)* | A dependency structure matrix that exposes cycles; Health (cycles, hubs, orphans) and Tests lenses |
 | **Editor integration** *(2.0 beta)* | A status bar entry and a CodeLens show where the current file sits; **Reveal in Map** from the editor or Explorer |
+| **Ask about your code** *(2.0 beta)* | Answers from the map with citations you can click (to the map, or to the file and line), a **Show me** button, and summary cards in the Inspector |
+| **Your choice of model** *(2.0 beta)* | Ollama or LM Studio on your machine, your GitHub Copilot plan (VS Code's Language Model API), or an API key for Anthropic, OpenAI, Gemini, OpenRouter, Groq or Mistral. Keys stay in your OS keychain |
 | **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby via Tree-sitter WASM, with import resolution for each ecosystem |
 | **Semantic Subsystem Inference** | Heuristic grouping (API, Services, Models, Auth, Events, Storage …) |
 | **Gemma 4 AI Architect** | Local LLM via Ollama produces professional system architecture, not a file list |
 | **Interactive React Flow Diagram** | Pan, zoom, drag, click to inspect, double-click to open source files |
 | **Classic views** | The 1.x System, Flow and Dense (Cytoscape.js) views stay available during the 2.0 beta (`codearchy.ui`) |
-| **Conversational AI Assistant** | Ask architecture questions in natural language; context maintained across turns |
+| **Conversational AI Assistant** *(classic views)* | Ask architecture questions in natural language; context maintained across turns |
 | **Voice Input** *(coming)* | Speak your questions; audio is transcribed and sent to Gemma 4 |
 | **Kokoro Neural TTS** | AI responses are read aloud via an offline neural speech engine (GPU or CPU fallback) |
 | **Story Narrator** | Step-by-step architectural walkthroughs generated and narrated by the AI |
 | **Incremental Re-analysis** | Re-parses only changed files on save, stays fast on large repos |
 | **Export** | Save the diagram as SVG or PNG |
 | **Activity Bar Integration** | Browse subsystems and modules in a dedicated VS Code tree view |
-| **Fully Offline** | Zero runtime network calls, your code never leaves your machine |
+| **Private by default** | The privacy tier starts at *Local only*: nothing leaves your machine. You choose if structure (names, signatures, docs, dependencies) or code excerpts may go to a cloud model; secrets are removed first, and **Ask before sending** shows each request |
 
 ---
 

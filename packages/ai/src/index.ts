@@ -33,3 +33,6 @@ export { GroundedChat, type AskOptions, type ChatStreamEvent, type GroundedChatO
 export { checkCitations, type Citation } from './citations.js';
 export { NodeSearch, stem, terms, tokens, type SearchHit } from './search.js';
 export { READ_CODE_BUDGET, READ_CODE_MAX_LINES, runTool, TOOL_SPECS, ToolArgumentError, toolStatus, type CanvasAction, type ToolContext } from './tools.js';
+
+// 3.6: the host side of the AiClient contract.
+export { AiHost, DEFAULT_AI_SETTINGS, type AiHostOptions, type ProviderFactory, type SettingsStore } from './host.js';

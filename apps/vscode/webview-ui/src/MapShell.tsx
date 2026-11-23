@@ -1,16 +1,16 @@
 /**
- * The 2.0 panel: @codearchy/ui's CodeArchyMap, talking to the engine in the
- * extension host over postMessage, plus the existing chat and the AI model /
- * voice settings. The classic views (App.tsx) remain behind the
- * `codearchy.ui` setting during the 2.0 beta.
+ * The 2.0 panel: @codearchy/ui's CodeArchyMap, talking to the engine and the
+ * AI host in the extension host over postMessage. Chat, summary cards and AI
+ * settings come from the shared UI (the `ai` client); local model downloads
+ * and voice keep their v1 dialogs. The classic views (App.tsx) remain behind
+ * the `codearchy.ui` setting during the 2.0 beta.
  */
 import { useEffect, useRef, useState } from 'react';
 import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
-import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from '@codearchy/protocol';
+import type { AiClient, AiHostEvent, ChatEvent, EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from '@codearchy/protocol';
 import '@codearchy/ui/styles.css';
 import './mapShell.css';
 import { postMessage } from './vscode';
-import { ChatPanel } from './components/ChatPanel';
 import { ModelSelector } from './components/ModelSelector';
 import { VoiceSelector } from './components/VoiceSelector';
 
@@ -54,6 +54,64 @@ const host = {
     openFile: (path: string, line?: number) => postMessage('openWorkspaceFile', { path, line }),
 };
 
+// ─── AI host requests, chat streams and events over postMessage ─────────────
+
+const aiPending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
+const aiChats = new Map<string, (e: ChatEvent) => void>();
+const aiListeners = new Set<(e: AiHostEvent) => void>();
+
+window.addEventListener('message', (ev: MessageEvent) => {
+    const msg = ev.data as { type?: string; payload?: Record<string, unknown> };
+    if (msg?.type === 'aiResponse' && msg.payload) {
+        const { id, result, error } = msg.payload as { id: number; result?: unknown; error?: string };
+        const p = aiPending.get(id);
+        aiPending.delete(id);
+        if (error) p?.reject(new Error(error));
+        else p?.resolve(result);
+    } else if (msg?.type === 'aiChatEvent' && msg.payload) {
+        const { conversation, event } = msg.payload as { conversation: string; event: ChatEvent };
+        aiChats.get(conversation)?.(event);
+    } else if (msg?.type === 'aiEvent' && msg.payload) {
+        const event = (msg.payload as { event: AiHostEvent }).event;
+        for (const l of aiListeners) l(event);
+    }
+});
+
+function aiRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    const id = nextId++;
+    return new Promise<T>((resolve, reject) => {
+        aiPending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+        postMessage('aiRequest', { id, method, params });
+    });
+}
+
+const ai: AiClient = {
+    state: () => aiRequest('state'),
+    refresh: () => aiRequest('refresh'),
+    updateSettings: (patch) => aiRequest('updateSettings', { patch }),
+    setKey: (provider, key) => aiRequest('setKey', { provider, key }),
+    card: (key, options) => aiRequest('card', { key, generate: options?.generate === true }),
+    ask: (conversation, question, options, onEvent) =>
+        new Promise<void>((resolve) => {
+            aiChats.set(conversation, (e) => {
+                onEvent(e);
+                if (e.type === 'done' || e.type === 'error') {
+                    aiChats.delete(conversation);
+                    resolve();
+                }
+            });
+            postMessage('aiAsk', { conversation, question, selection: options.selection });
+        }),
+    cancel: (conversation) => void aiRequest('cancel', { conversation }),
+    reset: (conversation) => void aiRequest('reset', { conversation }),
+    answerPreview: (id, send) => void aiRequest('answerPreview', { id, send }),
+    subscribe: (listener) => {
+        aiListeners.add(listener);
+        return () => aiListeners.delete(listener);
+    },
+    audit: () => aiRequest('audit'),
+};
+
 /** VS Code blocks `new Worker(vscode-resource:…)`: load ELK's worker as a blob: URL. */
 async function elkWorkerBlobUrl(): Promise<string> {
     const uri = window.CODEARCHY_ELK_WORKER_URI;
@@ -72,7 +130,6 @@ export function MapShell() {
     const revisionRef = useRef<string>();
     const [dataVersion, setDataVersion] = useState(0);
     const [reveal, setReveal] = useState<{ key: string; nonce: number }>();
-    const [chatOpen, setChatOpen] = useState(false);
     const [dialog, setDialog] = useState<'model' | 'voice'>();
 
     useEffect(() => {
@@ -106,11 +163,8 @@ export function MapShell() {
 
     const extras = (
         <>
-            <button type="button" className="ca-search-button" title="Chat with the AI architect" aria-pressed={chatOpen} onClick={() => setChatOpen((v) => !v)}>
-                Chat
-            </button>
-            <button type="button" className="ca-search-button" title="AI model settings" onClick={() => setDialog('model')}>
-                AI model
+            <button type="button" className="ca-search-button" title="Download and manage local Ollama models" onClick={() => setDialog('model')}>
+                Local models
             </button>
             <button type="button" className="ca-search-button" title="Voice and speech settings" onClick={() => setDialog('voice')}>
                 Voice
@@ -140,9 +194,9 @@ export function MapShell() {
                     dataVersion={dataVersion}
                     revealRequest={reveal}
                     toolbarExtras={extras}
+                    ai={ai}
                 />
             )}
-            <ChatPanel isOpen={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
             {dialog === 'model' ? <ModelSelector onClose={() => setDialog(undefined)} /> : null}
             {dialog === 'voice' ? <VoiceSelector onClose={() => setDialog(undefined)} /> : null}
         </div>

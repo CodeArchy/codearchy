@@ -373,6 +373,25 @@ export class AnalysisPipeline {
         return this.state ? fromPosix(this.state.root, rel) : undefined;
     }
 
+    /** The current hierarchy, for the AI host (it changes as files change). */
+    currentIndex(): HierarchyIndex | undefined {
+        return this.hierarchy();
+    }
+
+    /** Reads a workspace file by its POSIX path; never anything outside the workspace. */
+    async readWorkspaceFile(rel: string): Promise<string | undefined> {
+        const state = this.state;
+        if (!state) return undefined;
+        const abs = fromPosix(state.root, rel);
+        const inside = path.relative(state.root, abs);
+        if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) return undefined;
+        try {
+            return await fs.promises.readFile(abs, 'utf8');
+        } catch {
+            return undefined;
+        }
+    }
+
     private async discover(workspaceUri: vscode.Uri, config: ExtensionConfig): Promise<DiscoveryResult> {
         const options = {
             languages: config.includedLanguages,

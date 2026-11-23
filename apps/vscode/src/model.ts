@@ -21,6 +21,15 @@ export enum WebviewMessageType {
     SetUi = 'setUi',
     /** Host → new UI: show this node on the Map: { key }. */
     RevealNode = 'revealNode',
+    /** New UI ↔ AI host: { id, method, params } / { id, result?, error? } (AiClient methods). */
+    AiRequest = 'aiRequest',
+    AiResponse = 'aiResponse',
+    /** New UI → AI host: ask in a conversation: { conversation, question, selection? }. */
+    AiAsk = 'aiAsk',
+    /** AI host → new UI: one chat event: { conversation, event }. */
+    AiChatEvent = 'aiChatEvent',
+    /** AI host → new UI: state changes, new cards, previews: { event }. */
+    AiEvent = 'aiEvent',
     GraphData = 'graphData',
     NodeSelected = 'nodeSelected',
     RefreshRequest = 'refreshRequest',
