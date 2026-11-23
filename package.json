@@ -13,7 +13,7 @@
     },
     "scripts": {
         "build": "turbo run build",
-        "lint": "turbo run lint",
+        "lint": "node tooling/check-boundaries.mjs && turbo run lint",
         "typecheck": "turbo run typecheck",
         "test:unit": "turbo run test:unit",
         "test": "turbo run test:unit test:webview",

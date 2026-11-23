@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "Platform adapter layer: Node types allowed here (and only in platform-* packages).",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist", "types": ["node"] },
+    "include": ["src"]
+}

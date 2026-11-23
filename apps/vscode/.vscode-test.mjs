@@ -6,7 +6,7 @@ export default defineConfig({
     files: 'out/test/suite/**/*.test.js',
     extensionDevelopmentPath: '.',
     // A small multi-language repo, so the suite exercises real analysis.
-    workspaceFolder: './test-fixtures/polyglot',
+    workspaceFolder: '../../fixtures/polyglot',
     mocha: {
         ui: 'tdd',
         color: true,

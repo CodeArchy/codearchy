@@ -141,18 +141,16 @@ jobs:
       - name: Install dependencies (pnpm workspace)
         run: pnpm install --frozen-lockfile
 
-      - name: Build Webview UI
-        run: pnpm run build:webview
-
-      - name: Compile extension host
-        run: pnpm run compile
+      - name: Build workspace (packages, extension bundle, parsers, webview)
+        run: pnpm -w run build
 
       - name: Upload build artefacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: publish-build-${{ github.sha }}
           path: |
-            apps/vscode/out/
+            apps/vscode/dist/
+            apps/vscode/parsers/
             apps/vscode/webview-ui/dist/
           retention-days: 1
 
@@ -212,8 +210,8 @@ jobs:
           echo "--- Full package manifest ---"
           pnpm exec vsce ls --no-dependencies | tee package-manifest.txt
 
-          required_files=("out/extension.js" "package.json" "README.md" "CHANGELOG.md"
-                          "parsers/web-tree-sitter.cjs" "parsers/web-tree-sitter.wasm"
+          required_files=("dist/extension.js" "package.json" "README.md" "CHANGELOG.md"
+                          "parsers/web-tree-sitter.wasm"
                           "parsers/tree-sitter-typescript.wasm" "parsers/tree-sitter-python.wasm")
           echo "--- Required files ---"
           for f in "${required_files[@]}"; do
@@ -224,7 +222,7 @@ jobs:
             fi
           done
 
-          excluded_patterns=("src/" ".github/" "node_modules/" "tsconfig.json" ".eslintrc" "test-fixtures/" "out/test/")
+          excluded_patterns=("src/" ".github/" "node_modules/" "tsconfig.json" ".eslintrc" "fixtures/" "out/")
           echo "--- Must-be-excluded ---"
           for p in "${excluded_patterns[@]}"; do
             if grep -q "$p" package-manifest.txt; then

@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
-import { DEFAULT_LANGUAGE_IDS } from './analysis/languages';
-import { DEFAULT_EXCLUDE_PATTERNS } from './analysis/discovery';
+import { DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS } from '@codearchy/core';
 
 export * from './model';
-export { LANGUAGE_EXTENSIONS, getLanguageFromExtension } from './analysis/languages';
+export { LANGUAGE_EXTENSIONS, getLanguageFromExtension } from '@codearchy/core';
 
 export interface ExtensionConfig {
     includedLanguages: string[];

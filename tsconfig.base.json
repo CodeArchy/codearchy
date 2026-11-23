@@ -1,0 +1,20 @@
+{
+    "$comment": "Shared compiler settings for packages/*. Each package narrows `lib` and `types` to its layer: core and sdk get no DOM and no Node types, so the dependency rules are enforced by the compiler, not just lint.",
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "lib": ["ES2022"],
+        "types": [],
+        "strict": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true,
+        "noUncheckedSideEffectImports": true
+    }
+}

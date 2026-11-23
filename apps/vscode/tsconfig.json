@@ -1,33 +1,17 @@
 {
+    "$comment": "Typecheck only. dist/extension.js is bundled by scripts/build.mjs (esbuild); tests are compiled by tsconfig.test.json.",
     "compilerOptions": {
-        "module": "commonjs",
+        "module": "preserve",
+        "moduleResolution": "bundler",
         "target": "ES2022",
-        "lib": [
-            "ES2022"
-        ],
-        "outDir": "out",
-        "rootDir": "src",
-        "sourceMap": true,
+        "lib": ["ES2022"],
+        "noEmit": true,
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
-        "declaration": true,
-        "declarationMap": true,
-        "moduleResolution": "node",
-        "ignoreDeprecations": "5.0",
-        "types": [
-            "node",
-            "mocha"
-        ]
+        "types": ["node", "mocha"]
     },
-    "exclude": [
-        "node_modules",
-        ".vscode-test",
-        "out",
-        "webview-ui",
-        "test-fixtures",
-        "parsers"
-    ]
+    "include": ["src"]
 }

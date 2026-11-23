@@ -1,0 +1,18 @@
+{
+    "name": "@codearchy/grammars",
+    "version": "0.1.0",
+    "description": "Pinned tree-sitter grammar WASM files for CodeArchy, fetched from npm and integrity-verified.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        "./grammars.json": "./grammars.json",
+        "./wasm/*": "./wasm/*",
+        "./package.json": "./package.json"
+    },
+    "files": ["grammars.json", "wasm"],
+    "scripts": {
+        "build": "node scripts/fetch.cjs",
+        "fetch": "node scripts/fetch.cjs"
+    },
+    "repository": { "type": "git", "url": "https://github.com/CodeArchy/codearchy", "directory": "packages/grammars" }
+}

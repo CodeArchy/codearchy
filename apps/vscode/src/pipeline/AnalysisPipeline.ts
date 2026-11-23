@@ -1,45 +1,73 @@
+/**
+ * VS Code composition root for the engine: wires @codearchy/core to the
+ * Node adapters (@codearchy/platform-node), maps vscode URIs to the core's
+ * workspace-relative POSIX paths, and keeps per-file results so changes on
+ * disk are applied incrementally.
+ */
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
+import {
+    Analyzer,
+    AnalysisCancelledError,
+    ArchitectureInference,
+    buildGraph,
+    classifyFiles,
+    compileGlobs,
+    getPackForExtension,
+    isManifest,
+    posixPath,
+    readManifests,
+    type DiscoveryResult,
+    type ParserRuntime,
+} from '@codearchy/core';
+import {
+    NodeFileSystem,
+    createNodeParserRuntime,
+    fromPosix,
+    gitIgnoredPaths,
+    gitListFiles,
+    toPosix,
+    yieldToNode,
+} from '@codearchy/platform-node';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
-import { Analyzer, AnalysisCancelledError, readManifests } from '../analysis/Analyzer';
-import { classifyFiles, discoverWithGit, DiscoveryResult, gitIgnoredPaths, isManifest } from '../analysis/discovery';
-import { compileGlobs } from '../analysis/glob';
-import { getPackForExtension } from '../analysis/languages';
-import { toPosix } from '../analysis/resolver';
-import { GraphBuilder } from '../graph/GraphBuilder';
-import { ArchitectureInference } from '../inference/ArchitectureInference';
 
-/** Per-workspace state kept between analyses so file changes are incremental. */
+/** Per-workspace state kept between analyses so file changes are incremental. Keys are POSIX paths. */
 interface WorkspaceState {
     root: string;
+    fs: NodeFileSystem;
+    analyzer: Analyzer;
     analyses: Map<string, FileAnalysis>;
     manifests: Map<string, string>;
     discovery: DiscoveryResult;
 }
 
 export class AnalysisPipeline {
-    private analyzer: Analyzer | undefined;
-    private analyzerPromise: Promise<Analyzer> | undefined;
+    private parser: ParserRuntime | undefined;
+    private parserPromise: Promise<ParserRuntime | undefined> | undefined;
     private readonly inference = new ArchitectureInference();
     private state: WorkspaceState | undefined;
+    private readonly parsersDir: string;
 
     constructor(
-        private readonly extensionPath: string,
+        extensionPath: string,
         private readonly output?: vscode.OutputChannel
-    ) {}
+    ) {
+        this.parsersDir = path.join(extensionPath, 'parsers');
+    }
 
     async initParser(): Promise<void> {
-        await this.getAnalyzer();
+        await this.getParser();
     }
 
     isTreeSitterAvailable(): boolean {
-        return this.analyzer?.treeSitterAvailable ?? false;
+        return !!this.parser;
     }
 
     /** Parser health, for diagnostics and the extension's smoke tests. */
     async parserStatus(): Promise<{ treeSitter: boolean; grammars: string[] }> {
-        const analyzer = await this.getAnalyzer();
-        return { treeSitter: analyzer.treeSitterAvailable, grammars: analyzer.availableGrammars() };
+        const parser = await this.getParser();
+        return { treeSitter: !!parser, grammars: this.availableGrammars() };
     }
 
     async analyze(
@@ -49,7 +77,14 @@ export class AnalysisPipeline {
     ): Promise<ArchitectureGraph> {
         const config = getConfig();
         const root = workspaceUri.fsPath;
-        const analyzer = await this.getAnalyzer();
+        const fsPort = new NodeFileSystem(root);
+        const analyzer = new Analyzer({
+            fs: fsPort,
+            parser: await this.getParser(),
+            maxFileSize: config.maxFileSize,
+            log: (m) => this.log(m),
+            yieldToHost: yieldToNode,
+        });
 
         onProgress({ phase: 'discovery', current: 0, total: 1, message: 'Discovering files...' });
         const discovery = await this.discover(workspaceUri, config);
@@ -60,7 +95,7 @@ export class AnalysisPipeline {
                 `, ${discovery.manifests.length} manifests`
         );
 
-        const manifests = await readManifests(discovery.manifests);
+        const manifests = await readManifests(fsPort, discovery.manifests);
         let analyses: Map<string, FileAnalysis>;
         try {
             analyses = await analyzer.analyzeAll(discovery.sourceFiles, {
@@ -68,7 +103,7 @@ export class AnalysisPipeline {
                 onProgress: ({ current, total, file }) => {
                     // Reporting every file floods the progress UI; every 1% is plenty.
                     if (current === total || current % Math.max(1, Math.floor(total / 100)) === 0) {
-                        onProgress({ phase: 'parsing', current, total, message: `Parsing: ${path.relative(root, file)}` });
+                        onProgress({ phase: 'parsing', current, total, message: `Parsing: ${file}` });
                     }
                 },
             });
@@ -77,7 +112,7 @@ export class AnalysisPipeline {
             throw err;
         }
 
-        this.state = { root, analyses, manifests, discovery };
+        this.state = { root, fs: fsPort, analyzer, analyses, manifests, discovery };
         onProgress({ phase: 'graphing', current: 0, total: 1, message: 'Building dependency graph...' });
         const graph = this.buildGraph();
         onProgress({ phase: 'complete', current: 1, total: 1, message: 'Analysis complete.' });
@@ -95,59 +130,55 @@ export class AnalysisPipeline {
         const config = getConfig();
         const languages = new Set(config.includedLanguages);
         const isExcluded = compileGlobs(config.excludePatterns);
-        const analyzer = await this.getAnalyzer();
         let dirty = false;
 
-        const relevant = (uri: vscode.Uri): 'source' | 'manifest' | undefined => {
-            const rel = toPosix(path.relative(state.root, uri.fsPath));
-            if (rel.startsWith('..') || path.isAbsolute(rel) || isExcluded(rel) || rel.split('/').includes('.git')) return undefined;
-            if (isManifest(path.basename(uri.fsPath))) return 'manifest';
-            const pack = getPackForExtension(path.extname(uri.fsPath));
+        const rel = (uri: vscode.Uri): string | undefined => toPosix(state.root, uri.fsPath) || undefined;
+        const relevant = (p: string): 'source' | 'manifest' | undefined => {
+            if (isExcluded(p) || p.split('/').includes('.git')) return undefined;
+            if (isManifest(posixPath.basename(p))) return 'manifest';
+            const pack = getPackForExtension(posixPath.extname(p));
             return pack && languages.has(pack.id) ? 'source' : undefined;
         };
 
         for (const uri of deleted) {
-            const file = uri.fsPath;
-            if (state.analyses.delete(file) || state.manifests.delete(file)) {
+            const p = rel(uri);
+            if (!p) continue;
+            if (state.analyses.delete(p) || state.manifests.delete(p)) {
                 dirty = true;
                 continue;
             }
             // Not a known file: maybe a deleted directory, which arrives as one event.
-            const prefix = file + path.sep;
             for (const key of [...state.analyses.keys()]) {
-                if (key.startsWith(prefix)) {
+                if (key.startsWith(`${p}/`)) {
                     state.analyses.delete(key);
                     dirty = true;
                 }
             }
         }
 
+        const changedPaths = changed.map(rel).filter((p): p is string => !!p);
         // Full discovery honours .gitignore; apply the same rule to files that
         // appear later (build output, generated code), or they'd leak in.
-        const fresh = changed.filter((u) => !state.analyses.has(u.fsPath) && relevant(u) === 'source');
+        const fresh = changedPaths.filter((p) => !state.analyses.has(p) && relevant(p) === 'source');
         const ignored =
-            state.discovery.method === 'git' && fresh.length > 0
-                ? await gitIgnoredPaths(state.root, fresh.map((u) => toPosix(path.relative(state.root, u.fsPath))))
-                : new Set<string>();
+            state.discovery.method === 'git' && fresh.length > 0 ? await gitIgnoredPaths(state.root, fresh) : new Set<string>();
 
-        for (const uri of changed) {
-            const kind = relevant(uri);
-            if (!kind) continue;
-            if (ignored.has(toPosix(path.relative(state.root, uri.fsPath)))) continue;
+        for (const p of changedPaths) {
+            const kind = relevant(p);
+            if (!kind || ignored.has(p)) continue;
             if (kind === 'manifest') {
-                const read = await readManifests([uri.fsPath]);
-                const text = read.get(uri.fsPath);
-                if (text !== undefined) state.manifests.set(uri.fsPath, text);
+                const text = (await readManifests(state.fs, [p])).get(p);
+                if (text !== undefined) state.manifests.set(p, text);
                 dirty = true;
                 continue;
             }
-            const isNew = !state.analyses.has(uri.fsPath);
+            const isNew = !state.analyses.has(p);
             if (isNew && config.maxFiles > 0 && state.analyses.size >= config.maxFiles) continue;
-            const analysis = await analyzer.analyzeFile(uri.fsPath);
+            const analysis = await state.analyzer.analyzeFile(p);
             if (analysis) {
-                state.analyses.set(uri.fsPath, analysis);
+                state.analyses.set(p, analysis);
                 dirty = true;
-            } else if (state.analyses.delete(uri.fsPath)) {
+            } else if (state.analyses.delete(p)) {
                 dirty = true;
             }
         }
@@ -156,13 +187,14 @@ export class AnalysisPipeline {
     }
 
     dispose(): void {
-        this.analyzer?.dispose();
+        this.parser?.dispose();
+        this.parser = undefined;
         this.state = undefined;
     }
 
     private buildGraph(): ArchitectureGraph {
         const state = this.state!;
-        let graph = new GraphBuilder(state.root).build(state.analyses.values(), state.manifests);
+        let graph = buildGraph(state.analyses.values(), state.manifests, { toHostPath: (p) => fromPosix(state.root, p) });
         graph = this.inference.inferSubsystems(graph);
         graph.metadata = {
             ...graph.metadata,
@@ -183,8 +215,9 @@ export class AnalysisPipeline {
             excludePatterns: config.excludePatterns,
             maxFiles: config.maxFiles,
         };
-        const viaGit = await discoverWithGit(workspaceUri.fsPath, options);
-        if (viaGit) return viaGit;
+        const root = workspaceUri.fsPath;
+        const viaGit = await gitListFiles(root);
+        if (viaGit) return classifyFiles(viaGit, options, 'git');
 
         // Not a git repo (or no git): let VS Code walk the tree, without a cap.
         const exclude = config.excludePatterns.length > 0 ? `{${config.excludePatterns.join(',')}}` : undefined;
@@ -192,28 +225,38 @@ export class AnalysisPipeline {
             new vscode.RelativePattern(workspaceUri, '**/*'),
             exclude ? new vscode.RelativePattern(workspaceUri, exclude) : undefined
         );
-        const relative = uris.map((u) => path.relative(workspaceUri.fsPath, u.fsPath));
-        return classifyFiles(workspaceUri.fsPath, relative, options, 'walk');
+        const relative = uris.map((u) => toPosix(root, u.fsPath)).filter((p): p is string => !!p);
+        return classifyFiles(relative, options, 'walk');
     }
 
-    private getAnalyzer(): Promise<Analyzer> {
-        if (this.analyzer) return Promise.resolve(this.analyzer);
-        if (!this.analyzerPromise) {
-            this.analyzerPromise = Analyzer.create({
-                grammarDir: path.join(this.extensionPath, 'parsers'),
-                maxFileSize: getConfig().maxFileSize,
-                log: (m) => this.log(m),
-            }).then((a) => {
-                this.analyzer = a;
+    /** The tree-sitter runtime + grammars bundled in parsers/ (shared by all workspaces). */
+    private getParser(): Promise<ParserRuntime | undefined> {
+        if (!this.parserPromise) {
+            this.parserPromise = createNodeParserRuntime(
+                {
+                    grammarDir: this.parsersDir,
+                    runtimeWasmPath: path.join(this.parsersDir, 'web-tree-sitter.wasm'),
+                },
+                (m) => this.log(m)
+            ).then((parser) => {
+                this.parser = parser;
                 this.log(
-                    a.treeSitterAvailable
-                        ? `tree-sitter ready; grammars: ${a.availableGrammars().join(', ') || 'none'}`
+                    parser
+                        ? `tree-sitter ready; grammars: ${this.availableGrammars().join(', ') || 'none'}`
                         : 'tree-sitter unavailable; using regex fallback for all languages'
                 );
-                return a;
+                return parser;
             });
         }
-        return this.analyzerPromise;
+        return this.parserPromise;
+    }
+
+    private availableGrammars(): string[] {
+        try {
+            return fs.readdirSync(this.parsersDir).filter((f) => f.startsWith('tree-sitter-') && f.endsWith('.wasm'));
+        } catch {
+            return [];
+        }
     }
 
     private log(message: string) {

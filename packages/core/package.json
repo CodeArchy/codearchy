@@ -1,0 +1,35 @@
+{
+    "name": "@codearchy/core",
+    "version": "0.1.0",
+    "description": "CodeArchy engine: language packs, extraction, import resolution, graph and inference. Pure TypeScript behind ports.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test:unit": "vitest run"
+    },
+    "dependencies": {
+        "@codearchy/protocol": "workspace:*",
+        "@codearchy/sdk": "workspace:*"
+    },
+    "devDependencies": {
+        "typescript": "5.9.3",
+        "vitest": "5.1.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "packages/core"
+    }
+}

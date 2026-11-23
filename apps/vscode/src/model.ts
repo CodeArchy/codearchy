@@ -1,122 +1,9 @@
 /**
- * Host-agnostic data model shared by the analysis core, the extension host and
- * (by hand, for now) the webview. Must not import `vscode` so the analysis core
- * can run and be tested in plain Node.
+ * The data model comes from @codearchy/protocol (shared by every host and the
+ * UI). The v1 webview message protocol below is specific to this extension and
+ * is replaced by the typed RPC protocol later in Phase 1.
  */
-
-export interface SymbolInfo {
-    name: string;
-    kind: SymbolKind;
-    filePath: string;
-    startLine: number;
-    endLine: number;
-    exported: boolean;
-    /** Enclosing type for members (e.g. the class that owns a method). */
-    container?: string;
-}
-
-export enum SymbolKind {
-    Function = 'function',
-    Class = 'class',
-    Interface = 'interface',
-    Variable = 'variable',
-    Type = 'type',
-    Enum = 'enum',
-    Module = 'module',
-    Method = 'method',
-}
-
-export interface ImportInfo {
-    source: string;
-    specifiers: string[];
-    isDefault: boolean;
-    isNamespace: boolean;
-    filePath: string;
-    /** 0-based line of the import statement, when known. */
-    line?: number;
-}
-
-export interface FileAnalysis {
-    filePath: string;
-    language: string;
-    symbols: SymbolInfo[];
-    imports: ImportInfo[];
-    exports: string[];
-    /** Package / namespace the file declares (Java, Kotlin, C#, PHP, Go). */
-    namespace?: string;
-    /** Distinct identifiers referenced in the file. Used to narrow package-level
-     *  imports (Java wildcards, C# usings, Go packages) to the files actually used. */
-    references?: string[];
-    /** Which extractor produced this analysis. */
-    parser?: 'tree-sitter' | 'regex';
-}
-
-export interface GraphNode {
-    id: string;
-    label: string;
-    filePath: string;
-    type: NodeType;
-    symbols: SymbolInfo[];
-    group?: string;
-    metadata: Record<string, unknown>;
-}
-
-export enum NodeType {
-    File = 'file',
-    Module = 'module',
-    Subsystem = 'subsystem',
-}
-
-export interface GraphEdge {
-    id: string;
-    source: string;
-    target: string;
-    type: EdgeType;
-    weight: number;
-    metadata: Record<string, unknown>;
-}
-
-export enum EdgeType {
-    Import = 'import',
-    Export = 'export',
-    Dependency = 'dependency',
-    Composition = 'composition',
-}
-
-export interface ArchitectureGraph {
-    nodes: GraphNode[];
-    edges: GraphEdge[];
-    subsystems: SubsystemInfo[];
-    metadata: GraphMetadata;
-}
-
-export interface SubsystemInfo {
-    id: string;
-    name: string;
-    description: string;
-    nodeIds: string[];
-    color: string;
-}
-
-export interface GraphMetadata {
-    analyzedAt: number;
-    fileCount: number;
-    totalSymbols: number;
-    totalEdges: number;
-    languages: string[];
-    /** Stable identity for persistence (workspace absolute path). */
-    projectId?: string;
-    /** Display name for the project (usually folder basename). */
-    projectName?: string;
-    /** Absolute filesystem path of the workspace root. */
-    projectPath?: string;
-    /** How many files each extractor handled. */
-    parserStats?: { treeSitter: number; regex: number; skipped: number };
-    /** Set when discovery stopped at `codearchy.maxFiles`. */
-    truncatedAt?: number;
-    /** Total matching files found before any truncation. */
-    discoveredFiles?: number;
-}
+export * from '@codearchy/protocol';
 
 export interface WebviewMessage {
     type: WebviewMessageType;
@@ -201,11 +88,4 @@ export enum WebviewMessageType {
     /** Webview → host: Kokoro engine loaded successfully — persist flag so next
      *  VS Code session can auto-start without the activation prompt. */
     PersistKokoroActivated = 'persistKokoroActivated',
-}
-
-export interface AnalysisProgress {
-    phase: string;
-    current: number;
-    total: number;
-    message: string;
 }
