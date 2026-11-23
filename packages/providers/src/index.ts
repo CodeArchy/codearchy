@@ -39,3 +39,41 @@ export {
 } from './adapters/openai-compatible.js';
 export { anthropic, type AnthropicOptions } from './adapters/anthropic.js';
 export { gemini, type GeminiOptions } from './adapters/gemini.js';
+
+// Orchestration: privacy, redaction, budgets, audit, credentials and routing.
+export {
+    checkContent,
+    checkProvider,
+    hostOf,
+    isLoopback,
+    isOnDevice,
+    type ContentKind,
+    type Decision,
+    type PrivacyPolicy,
+    type PrivacyTier,
+} from './privacy.js';
+export { entropy, redactRequest, scanSecrets, type SecretFinding } from './scanner.js';
+export { exportAudit, MemoryAuditLog, type AuditEntry, type AuditLog, type Role } from './audit.js';
+export {
+    Budget,
+    estimateRun,
+    estimateTokens,
+    MemoryUsageStore,
+    type BudgetLimits,
+    type BudgetStatus,
+    type Price,
+    type RunEstimate,
+    type UsageStore,
+} from './budget.js';
+export { apiKeyName, MemorySecretStore, type SecretStore } from './credentials.js';
+export {
+    ProviderRegistry,
+    type ModelRef,
+    type ProviderSnapshot,
+    type RegistryConfig,
+    type RegistryDeps,
+    type RequestPreview,
+    type Resolution,
+    type RoleSetting,
+    type SendOptions,
+} from './registry.js';

@@ -63,6 +63,7 @@ export function gemini(options: GeminiOptions = {}): ProviderAdapter {
         id: ID,
         label: 'Google Gemini',
         kind: 'api-key',
+        baseUrl: base,
 
         async detect(signal) {
             if (!options.apiKey) return { state: 'needs-key' };
