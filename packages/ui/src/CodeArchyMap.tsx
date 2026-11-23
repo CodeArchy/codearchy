@@ -6,7 +6,11 @@
  * Modes: Map (node-link) or Matrix (DSM); lenses colour both by Health or
  * Tests, always with the value as text too.
  *
- * Keyboard: Enter drill · Space expand/collapse · Backspace up a level ·
+ * One canvas: double-click, Enter or Space expands a node in place (and
+ * collapses it again); "Show only this" / Shift+Enter opens it as its own
+ * view. Reveals (search, Navigator, editor) expand the path in place.
+ *
+ * Keyboard: Enter / Space expand · Shift+Enter open on its own · Backspace up a level ·
  * F focus (2-hop neighbourhood) · Esc clear · ⌘K / Ctrl+K search.
  *
  * Dense views draw their heaviest dependencies (plus everything around the
@@ -18,8 +22,8 @@ import { ReactFlowProvider } from '@xyflow/react';
 import type { EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { LayoutEngine, type Layout } from './layout.js';
-import { MapCanvas } from './MapCanvas.js';
-import { buildMapModel, DEFAULT_EDGE_LIMIT, keyOfExternal, LENSES, neighbourhood, visibleEdges, type LensId } from './model.js';
+import { MapCanvas, type FocusRequest } from './MapCanvas.js';
+import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, revealPlan, visibleEdges, type LensId } from './model.js';
 import { Matrix } from './Matrix.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
@@ -38,6 +42,8 @@ export interface CodeArchyMapProps {
     revealRequest?: { key: string; nonce: number };
     /** Host controls added to the toolbar (settings, chat, switch views…). */
     toolbarExtras?: ReactNode;
+    /** Host content at the toolbar's start (e.g. the app's brand). */
+    toolbarStart?: ReactNode;
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
@@ -61,18 +67,26 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [explanation, setExplanation] = useState<EdgeExplanation>();
     const [searching, setSearching] = useState(false);
     const [status, setStatus] = useState('Loading…');
+    /** Where the viewport goes after the next transition (a node, or the whole map). */
+    const [focusOn, setFocusOn] = useState<FocusRequest>({ nonce: 1 });
+    const nonce = useRef(1);
+    const focusTo = useCallback((key?: string) => setFocusOn({ ...(key ? { key } : {}), nonce: ++nonce.current }), []);
+    /** A reveal waiting for its view: if an ancestor didn't fit the budget, open its parent instead. */
+    const revealing = useRef<{ key: string; path: string[] } | undefined>(undefined);
     const root = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setScope('sys:root');
         setExpanded([]);
         setSelection(undefined);
-    }, [revision]);
+        focusTo();
+    }, [revision]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // View + layout for the current scope and expansions.
     useEffect(() => {
         let live = true;
-        setStatus('Loading…');
+        // Only a slow view shows the pill: a quick expansion just animates.
+        const slow = setTimeout(() => live && setStatus('Loading…'), 250);
         void (async () => {
             const v = await client.view({ scope, expanded });
             if (!live || !v) return;
@@ -83,13 +97,25 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             const m = { ...full, edges: visibleEdges(full, { all: allEdges }) };
             const l = await engine.layout(`${v.frontierHash}${allEdges ? ':all' : ''}`, m);
             if (!live) return;
+            clearTimeout(slow);
             setView(v);
             setLayout(l);
             setStatus('');
             if (v.scope !== scope) setScope(v.scope);
+            // A reveal whose path didn't fit the node budget: show the node in its parent's own view.
+            const r = revealing.current;
+            if (r) {
+                revealing.current = undefined;
+                if (!v.nodes.some((n) => n.key === r.key) && r.path.length >= 2) {
+                    setScope(r.path[r.path.length - 2]);
+                    setExpanded([]);
+                    focusTo(r.key);
+                }
+            }
         })().catch((err: unknown) => live && setStatus(`Layout failed: ${err instanceof Error ? err.message : String(err)}`));
         return () => {
             live = false;
+            clearTimeout(slow);
         };
     }, [client, engine, scope, expanded.join('\n'), revision, allEdges, props.dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -112,15 +138,15 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         };
     }, [client, selection, props.dataVersion]);
 
-    const lit = useMemo(() => {
-        if (!model || selection?.kind !== 'node') return undefined;
-        return neighbourhood(model, selection.key, focus ? 2 : 1);
-    }, [model, selection, focus]);
+    /** "Uses N · used by M" for the legend while something is selected. */
+    const flow = useMemo(() => (model && selection?.kind === 'node' ? flowRoles(model, selection.key, 1) : undefined), [model, selection]);
 
     const drawn = useMemo(() => {
         if (!model) return [];
         const key = selection?.kind === 'node' ? selection.key : undefined;
-        const around = key ? (focus ? neighbourhood(model, key, 1) : new Set([key])) : undefined;
+        // The selection's own edges always draw (for an expanded node: everything inside it).
+        const roles = key ? flowRoles(model, key, 1) : undefined;
+        const around = roles ? (focus ? roles.lit : roles.selected) : undefined;
         return visibleEdges(model, { all: allEdges, around });
     }, [model, allEdges, selection, focus]);
 
@@ -129,16 +155,31 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         [view]
     );
 
-    const drill = useCallback((key: string) => {
-        setScope(key);
-        setExpanded([]);
-        setSelection(undefined);
-    }, []);
-    const toggleExpand = useCallback((key: string) => {
-        // Expansions nested under a collapsed node stay listed: the engine ignores
-        // them while it's collapsed, and re-expanding restores what was open.
-        setExpanded((e) => (e.includes(key) ? e.filter((k) => k !== key) : [...e, key]));
-    }, []);
+    /** Opens a node as its own view (a new canvas); the Map otherwise expands in place. */
+    const drill = useCallback(
+        (key: string) => {
+            setScope(key);
+            setExpanded([]);
+            setSelection(undefined);
+            focusTo();
+        },
+        [focusTo]
+    );
+    /**
+     * Expands or collapses a node in place, on the same canvas. Expanding glides
+     * to the opened node; collapsing steps back to the whole map.
+     */
+    const toggleExpand = useCallback(
+        (key: string) => {
+            const collapsing = expanded.includes(key);
+            // Expansions nested under a collapsed node stay listed: the engine ignores
+            // them while it's collapsed, and re-expanding restores what was open.
+            setExpanded((e) => (e.includes(key) ? e.filter((k) => k !== key) : [...e, key]));
+            setSelection({ kind: 'node', key });
+            focusTo(collapsing ? undefined : key);
+        },
+        [expanded, focusTo]
+    );
     const up = useCallback(() => {
         if (!view || view.breadcrumb.length < 2) return;
         const current = view.scope;
@@ -146,17 +187,23 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         setSelection({ kind: 'node', key: current });
     }, [view, drill]);
 
-    /** Shows `key` on the canvas: its parent becomes the scope, and it is selected. */
+    /**
+     * Shows `key` on the same canvas: its ancestors are expanded in place, it is
+     * selected and the view glides to it. A file's symbol reveals its file.
+     */
     const reveal = useCallback(
         async (key: string) => {
             const d = await client.describe(key);
             if (!d) return;
-            const parent = d.breadcrumb.length >= 2 ? d.breadcrumb[d.breadcrumb.length - 2].key : 'sys:root';
-            setScope(parent);
-            setExpanded([]);
+            const path = d.breadcrumb.map((b) => b.key);
+            const plan = revealPlan(path, scope, expanded);
+            revealing.current = { key: d.key, path };
+            setScope(plan.scope);
+            setExpanded(plan.expanded);
             setSelection({ kind: 'node', key: d.key });
+            focusTo(d.key);
         },
-        [client]
+        [client, scope, expanded, focusTo]
     );
 
     useEffect(() => {
@@ -169,11 +216,10 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             if (external) return void reveal(external);
             const n = view?.nodes.find((x) => x.key === id);
             if (!n) return;
-            if (n.expanded) return toggleExpand(id);
-            if (n.hasChildren) drill(id);
-            else if (n.kind === 'module') host?.openFile?.(n.path);
+            if (n.expanded || n.hasChildren) return toggleExpand(id);
+            if (n.kind === 'module') host?.openFile?.(n.path);
         },
-        [view, reveal, toggleExpand, drill, host]
+        [view, reveal, toggleExpand, host]
     );
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -187,6 +233,10 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         if (e.key === 'Backspace') return up();
         if (e.key === 'Escape') return setSelection(undefined);
         if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey) return setFocus((f) => !f);
+        if (e.key === 'Enter' && key && e.shiftKey) {
+            const n = view?.nodes.find((x) => x.key === key);
+            if (n?.hasChildren) return drill(key);
+        }
         if (e.key === 'Enter' && key) return activate(key);
         if (e.key === ' ' && key && !keyOfExternal(key)) {
             e.preventDefault();
@@ -205,8 +255,17 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     return (
         <div ref={root} className="ca-root" data-host={props.hostKind ?? 'web'} tabIndex={-1} onKeyDown={onKeyDown}>
             <header className="ca-toolbar">
+                {props.toolbarStart}
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
+                {flow && mode === 'map' ? (
+                    <span className="ca-legend" aria-label="Selection flow">
+                        <span className="ca-legend-out">uses {flow.out.size}</span>
+                        <span className="ca-legend-in">used by {flow.in.size}</span>
+                    </span>
+                ) : (
+                    <span className="ca-hint">Click to trace dependencies · double-click to expand</span>
+                )}
                 {focus ? <span className="ca-chip" title="F toggles focus">Focus: 2 hops</span> : null}
                 {view?.skipped.length ? <span className="ca-muted">{view.skipped.length} expansion(s) over budget</span> : null}
                 {mode === 'map' && model && model.edges.length > DEFAULT_EDGE_LIMIT ? (
@@ -243,7 +302,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 ) : null}
             </header>
             <div className="ca-body">
-                <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={drill} />
+                <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={(k) => void reveal(k)} />
                 <section className="ca-canvas" aria-label="Architecture map">
                     {mode === 'matrix' && view ? (
                         <Matrix
@@ -260,15 +319,14 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                                 model={model}
                                 edges={drawn}
                                 layout={layout}
-                                frontierHash={view.frontierHash}
                                 selected={selectedKey}
                                 selectedEdge={selection?.kind === 'edge' ? `${selection.source}->${selection.target}` : undefined}
-                                lit={lit}
+                                hops={focus ? 2 : 1}
                                 lens={lens}
+                                focus={focusOn}
                                 onSelect={(id) => setSelection(id ? { kind: 'node', key: id } : undefined)}
                                 onActivate={activate}
-                                onExpand={toggleExpand}
-                                onCollapse={toggleExpand}
+                                onToggle={toggleExpand}
                                 onSelectEdge={(source, target) => setSelection({ kind: 'edge', source, target })}
                             />
                         </ReactFlowProvider>

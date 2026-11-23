@@ -235,3 +235,70 @@ export function heatStep(weight: number, max: number): number {
     if (weight <= 0 || max <= 0) return 0;
     return 1 + Math.min(6, Math.floor((Math.log1p(weight) / Math.log1p(max)) * 6.999));
 }
+
+// ─── selection flow ─────────────────────────────────────────────────────────
+
+export interface FlowRoles {
+    /** The selection: the node itself, plus everything drawn inside it when it's expanded. */
+    selected: Set<string>;
+    /** Nodes that stay bright: the selection and its neighbours (`hops` away). */
+    lit: Set<string>;
+    /** Edges leaving the selection ("uses"), entering it ("used by"), and inside it. */
+    out: Set<string>;
+    in: Set<string>;
+    internal: Set<string>;
+}
+
+/** Everything drawn inside `id` (expanded containers hold their children). */
+function inside(model: MapModel, id: string): Set<string> {
+    const set = new Set([id]);
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const n of model.nodes) {
+            if (n.parent && set.has(n.parent) && !set.has(n.id)) {
+                set.add(n.id);
+                grew = true;
+            }
+        }
+    }
+    return set;
+}
+
+/**
+ * How a selection lights the Map: its own edges are classified as uses /
+ * used by / internal (each drawn animated, in the dependency's direction);
+ * neighbours within `hops` stay bright and everything else fades.
+ */
+export function flowRoles(model: MapModel, id: string, hops = 1): FlowRoles {
+    const selected = inside(model, id);
+    const out = new Set<string>();
+    const inn = new Set<string>();
+    const internal = new Set<string>();
+    for (const e of model.edges) {
+        const s = selected.has(e.source);
+        const t = selected.has(e.target);
+        if (s && t) internal.add(e.id);
+        else if (s) out.add(e.id);
+        else if (t) inn.add(e.id);
+    }
+    const lit = new Set(selected);
+    for (const n of selected) for (const x of neighbourhood(model, n, hops)) lit.add(x);
+    return { selected, lit, out, in: inn, internal };
+}
+
+// ─── reveal in place ────────────────────────────────────────────────────────
+
+/**
+ * How to show `path` (system → … → the node) on the current canvas: expand
+ * its ancestors below the scope rather than opening a new view. A node
+ * outside the current scope brings the canvas back to the system.
+ */
+export function revealPlan(path: string[], scope: string, expanded: string[]): { scope: string; expanded: string[] } {
+    const at = path.indexOf(scope);
+    const base = at >= 0 && at < path.length - 1 ? scope : at === path.length - 1 ? scope : path[0];
+    const from = path.indexOf(base);
+    const ancestors = path.slice(from + 1, -1);
+    const keep = base === scope ? expanded : [];
+    return { scope: base, expanded: [...new Set([...keep, ...ancestors])] };
+}

@@ -24,6 +24,9 @@ const ROOT_OPTIONS: Record<string, string> = {
     'elk.edgeRouting': 'ORTHOGONAL',
     'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
     'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+    // Keep the engine's (stable, hierarchy) order where it doesn't cost crossings, so
+    // expanding one node doesn't reshuffle its unrelated neighbours.
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     'elk.spacing.nodeNode': '36',
     'elk.layered.spacing.nodeNodeBetweenLayers': '80',
     'elk.spacing.edgeNode': '24',

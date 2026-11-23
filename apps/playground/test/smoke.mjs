@@ -54,22 +54,38 @@ for (const name of wanted) {
         const mapNode = (key) => page.locator(`.react-flow__node[data-id="${key}"]`);
         const crumb = () => page.locator('.ca-breadcrumb').textContent();
         await mapNode('pkg:rust').waitFor();
+        // One canvas: double-click expands in place (the breadcrumb doesn't change).
         await mapNode('pkg:.').dblclick();
         await mapNode('dir:web/src').waitFor();
-        assert.match(await crumb(), /poly$/);
+        assert.doesNotMatch(await crumb(), /›/, 'still the system canvas');
         await mapNode('dir:web/src').locator('.ca-expand').click();
         await mapNode('mod:web/src/index.ts').click();
         await page.locator('.ca-inspector h3', { hasText: 'Depends on (4)' }).waitFor();
+        // Selection traces flow: its dependencies animate in the dependency's direction; the rest fades.
+        // (A new node's edges are drawn once the node has rendered, so wait for all four.)
+        await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge.animated.ca-edge-out').length === 4);
+        assert.match(await page.locator('.ca-legend').textContent(), /uses 4/);
+        await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge.ca-faded').length > 0); // unrelated edges fade
         await page.locator('.react-flow__edge[data-id="mod:web/src/index.ts->mod:web/src/esm.ts"]').click({ force: true });
         await page.locator('.ca-inspector', { hasText: 'Dependency' }).locator('h2', { hasText: 'index.ts → esm.ts' }).waitFor();
+        // Double-clicking an expanded node's header collapses it, in place.
+        await mapNode('dir:web/src').locator('.ca-container-head').dblclick();
+        await mapNode('mod:web/src/index.ts').waitFor({ state: 'detached' });
+        // "Show only this" is the explicit way into a separate view; Backspace comes back.
+        await mapNode('pkg:rust').click();
+        await page.getByRole('button', { name: 'Show only this' }).click();
+        await mapNode('dir:rust/src').waitFor();
+        assert.match(await crumb(), /rusty-core$/);
         await page.locator('.ca-root').focus();
         await page.keyboard.press('Backspace');
-        await mapNode('pkg:rust').waitFor();
+        await mapNode('pkg:.').waitFor();
+        // Search reveals in place: the path expands on this canvas.
         await page.keyboard.press('Control+k');
         await page.locator('.ca-search input').fill('OrderSer');
         await page.locator('.ca-search li', { hasText: 'OrderService' }).first().waitFor();
         await page.keyboard.press('Enter');
         await mapNode('mod:cs/Orders/OrderService.cs').waitFor();
+        assert.doesNotMatch(await crumb(), /›/, 'revealed on the system canvas');
         await page.locator('.ca-navigator [data-key="pkg:rust"]').click();
         await page.locator('.ca-inspector[data-key="pkg:rust"]').waitFor();
 
@@ -80,8 +96,12 @@ for (const name of wanted) {
         await page.selectOption('.ca-lens select', 'tests');
         assert.match(await mapNode('pkg:rust').locator('.ca-lens-badge').textContent(), /% tested|tests only/);
         await page.locator('.ca-inspector h3', { hasText: 'Health & tests' }).waitFor();
-        await mapNode('pkg:.').dblclick();
-        await mapNode('dir:web/src').dblclick(); // its files depend on each other
+        // Reveal web/src's files (they depend on each other), then the Matrix of this view.
+        await page.locator('.ca-root').focus();
+        await page.keyboard.press('Control+k');
+        await page.locator('.ca-search input').fill('esm');
+        await page.locator('.ca-search li', { hasText: 'esm.ts' }).first().waitFor();
+        await page.keyboard.press('Enter');
         await mapNode('mod:web/src/index.ts').waitFor();
         await page.click('.ca-segmented button:has-text("Matrix")');
         await page.locator('.ca-matrix-cell').first().click();
