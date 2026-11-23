@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { ReactFlowProvider } from '@xyflow/react';
 import type { AiClient, EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
 import { AiSettingsPanel, ChatPanel, PreviewDialog } from './ai.js';
+import { Icon } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { LayoutEngine, type Layout } from './layout.js';
 import { MapCanvas, type FocusRequest } from './MapCanvas.js';
@@ -302,10 +303,12 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </label>
                 {props.ai ? (
                     <>
-                        <button type="button" className="ca-search-button" aria-pressed={sideTab === 'chat'} onClick={() => setSideTab((t) => (t === 'chat' ? 'inspector' : 'chat'))}>
+                        <button type="button" className="ca-search-button" title="Ask about the codebase" aria-pressed={sideTab === 'chat'} onClick={() => setSideTab((t) => (t === 'chat' ? 'inspector' : 'chat'))}>
+                            <Icon name="chat" size={14} />
                             Ask
                         </button>
-                        <button type="button" className="ca-search-button" title="AI settings" onClick={() => setSettingsOpen(true)}>
+                        <button type="button" className="ca-search-button" title="AI settings: privacy, providers, models" onClick={() => setSettingsOpen(true)}>
+                            <Icon name="sliders" size={14} />
                             AI
                         </button>
                     </>
@@ -355,6 +358,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         <div className="ca-tabs" role="tablist" aria-label="Side panel">
                             {(['inspector', 'chat'] as const).map((t) => (
                                 <button key={t} type="button" role="tab" aria-selected={sideTab === t} className={sideTab === t ? 'ca-on' : ''} onClick={() => setSideTab(t)}>
+                                    <Icon name={t === 'inspector' ? 'info' : 'sparkles'} size={14} />
                                     {t === 'inspector' ? 'Inspector' : 'Ask'}
                                 </button>
                             ))}

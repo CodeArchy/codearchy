@@ -10,3 +10,4 @@ export { LayoutEngine, toElkGraph, fromElkGraph, type Layout, type Box } from '.
 export { AiSettingsPanel, Answer, CardSection, ChatPanel, PreviewDialog, type AnswerLinks, type ChatPanelProps } from './ai.js';
 export { parseAnswer, parseInline, type Block, type Inline } from './answer.js';
 export type { AiCard, AiClient, AiHostEvent, AiProviderInfo, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, SendPreview } from '@codearchy/protocol';
+export { Icon, type IconName } from './icons.js';

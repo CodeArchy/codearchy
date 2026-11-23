@@ -210,7 +210,7 @@ for (const name of wanted) {
         await page.locator('.ca-inspector').getByRole('button', { name: 'Ask about this' }).click();
         const chat = page.locator('.ca-chat');
         await page.waitForFunction(() => /What does rusty-core do/.test(document.querySelector('.ca-chat textarea')?.value ?? '')); // the manifest's name
-        await chat.getByRole('button', { name: 'Ask', exact: true }).click();
+        await chat.getByRole('button', { name: 'Send', exact: true }).click();
         await chat.locator('.ca-cite', { hasText: 'rusty-core' }).waitFor();
         await chat.getByRole('button', { name: 'Show me' }).waitFor();
         assert.match(await chat.locator('.ca-chat-meta').textContent(), /demo · scripted/);
@@ -222,19 +222,26 @@ for (const name of wanted) {
         // Settings: a key turns the cloud provider ready (the field never shows it); local only blocks it.
         await page.getByRole('button', { name: 'AI', exact: true }).click();
         const settings = page.getByRole('dialog', { name: 'AI settings' });
+        const tab = (name) => settings.getByRole('tab', { name }).click();
+        await settings.getByRole('status').getByText(/Chat uses/).waitFor(); // the banner says which model chats
+        await tab('Providers');
         const cloud = settings.locator('[data-provider="cloud"]');
         await cloud.getByText('needs an API key').waitFor();
         await cloud.getByLabel('Cloud (demo) API key').fill('sk-demo-not-a-real-key-123456');
         await cloud.getByRole('button', { name: 'Save' }).click();
         await cloud.getByText(/ready · 1 model/).waitFor();
+        await cloud.getByText('key saved').waitFor();
         assert.equal(await cloud.getByLabel('Cloud (demo) API key').inputValue(), '', 'the key field is cleared after saving');
+        await tab('Privacy');
         await settings.getByLabel(/Local only/).check();
+        await tab('Providers');
         await cloud.getByText('Not on this machine, and the privacy tier is local only').waitFor();
-        await settings.getByLabel(/Ask before sending/).check();
+        await tab('Privacy');
+        await settings.getByRole('switch', { name: /Ask before sending/ }).check();
         await settings.getByRole('button', { name: 'Close' }).click();
         // Ask before sending: the preview appears; declining stops the request.
         await chat.locator('textarea').fill('where is the parser');
-        await chat.getByRole('button', { name: 'Ask', exact: true }).click();
+        await chat.getByRole('button', { name: 'Send', exact: true }).click();
         const preview = page.getByRole('dialog', { name: 'Send this request?' });
         await preview.getByText('where is the parser').first().waitFor({ state: 'attached' });
         await preview.getByRole('button', { name: "Don't send" }).click();

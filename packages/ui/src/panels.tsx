@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AiClient, EdgeExplanation, NodeDetails, NodeLink, NodeSummary } from '@codearchy/protocol';
 import { CardSection } from './ai.js';
+import { Icon } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { lensBadge, type LensId } from './model.js';
 
@@ -240,7 +241,8 @@ export function Inspector(props: InspectorProps) {
                     </button>
                 ) : null}
                 {props.ai && props.onAsk && d.kind !== 'symbol' ? (
-                    <button type="button" onClick={() => props.onAsk!(d.name)}>
+                    <button type="button" className="ca-with-icon" onClick={() => props.onAsk!(d.name)}>
+                        <Icon name="chat" size={13} />
                         Ask about this
                     </button>
                 ) : null}
