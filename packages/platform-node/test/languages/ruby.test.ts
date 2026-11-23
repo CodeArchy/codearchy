@@ -66,6 +66,17 @@ end
         ]);
     });
 
+    test('nested modules are containers too', async () => {
+        const r = await analyzeSource('gem.rb', `
+module MyGem
+  module Utils
+    def self.slug(s); end
+  end
+end
+`);
+        assertSymbols(r, ['method Utils.slug*', 'module MyGem*', 'module MyGem.Utils*']);
+    });
+
     test('calls named like require but with no string literal are not imports', async () => {
         const r = await analyzeSource('dyn.rb', `
 require name

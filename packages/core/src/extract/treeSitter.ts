@@ -181,7 +181,8 @@ export class TreeSitterExtractor {
             let container: string | undefined;
             if (parent) {
                 if (!containerKinds.includes(parent.kind)) continue; // local to a function / module body
-                if (TOP_LEVEL_ONLY.includes(kind) && kind !== 'function') continue; // fields, nested aliases
+                // Fields and nested aliases are dropped, unless the kind is itself a container (Ruby's nested modules).
+                if (TOP_LEVEL_ONLY.includes(kind) && kind !== 'function' && !containerKinds.includes(kind)) continue;
                 if (kind === 'function') kind = 'method';
                 container = parent.name;
             } else if (kind === 'method') {
