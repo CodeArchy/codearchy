@@ -26,6 +26,14 @@
     --ca-seq-1: #cde2fb; --ca-seq-2: #9ec5f4; --ca-seq-3: #6da7ec; --ca-seq-4: #3987e5; --ca-seq-5: #256abf; --ca-seq-6: #184f95; --ca-seq-7: #0d366b;
     /* Status (fixed, never themed): always shown with an icon and a label. */
     --ca-critical: #d03b3b; --ca-serious: #ec835a; --ca-warning: #fab219;
+    /* Selection flow: what the selection uses (accent) and what uses it. */
+    --ca-flow-out: var(--ca-accent);
+    --ca-flow-in: #eb6834;
+    --ca-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+    --ca-shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.12);
+    /* Primary buttons: the editor's own button colours in VS Code. */
+    --ca-primary-bg: var(--vscode-button-background, var(--ca-accent));
+    --ca-primary-fg: var(--vscode-button-foreground, #ffffff);
     color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -41,6 +49,10 @@
         --ca-hover: #23283a;
         --ca-selected: #2b3352;
         --ca-edge: #6b7486;
+        --ca-flow-in: #f08a5d;
+        --ca-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --ca-shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.5);
+        --ca-primary-fg: #15171c;
         --ca-ord-1: #184f95; --ca-ord-2: #256abf; --ca-ord-3: #3987e5; --ca-ord-4: #6da7ec; --ca-ord-5: #9ec5f4;
         --ca-seq-1: #0d366b; --ca-seq-2: #184f95; --ca-seq-3: #256abf; --ca-seq-4: #3987e5; --ca-seq-5: #6da7ec; --ca-seq-6: #9ec5f4; --ca-seq-7: #cde2fb;
         color-scheme: dark;
@@ -48,6 +60,9 @@
 }
 /* VS Code dark and high-contrast themes: the lens ramps step from dark to light. */
 .vscode-dark .ca-root, .vscode-high-contrast .ca-root {
+    --ca-flow-in: #f08a5d;
+    --ca-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ca-shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.5);
     --ca-ord-1: #184f95; --ca-ord-2: #256abf; --ca-ord-3: #3987e5; --ca-ord-4: #6da7ec; --ca-ord-5: #9ec5f4;
     --ca-seq-1: #0d366b; --ca-seq-2: #184f95; --ca-seq-3: #256abf; --ca-seq-4: #3987e5; --ca-seq-5: #6da7ec; --ca-seq-6: #9ec5f4; --ca-seq-7: #cde2fb;
 }
@@ -93,7 +108,13 @@
 .ca-root .react-flow__minimap-mask { fill: color-mix(in srgb, var(--ca-bg) 65%, transparent); }
 .ca-root .react-flow__minimap-node { fill: var(--ca-node-border); stroke: none; }
 
-.ca-node { width: 100%; height: 100%; box-sizing: border-box; background: var(--ca-node); border: 1px solid var(--ca-node-border); border-radius: 10px; padding: 6px 10px; display: flex; flex-direction: column; justify-content: space-between; transition: opacity 0.15s; }
+.ca-node { width: 100%; height: 100%; box-sizing: border-box; background: var(--ca-node); border: 1px solid var(--ca-node-border); border-radius: 10px; padding: 7px 11px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--ca-shadow); transition: opacity 0.25s ease, filter 0.25s ease, box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
+.react-flow__node:hover .ca-node:not(.ca-dim) { box-shadow: var(--ca-shadow-hover); border-color: var(--ca-accent); }
+.ca-node.ca-neighbour { border-color: color-mix(in srgb, var(--ca-accent) 45%, var(--ca-node-border)); }
+.ca-node-kind { display: inline-flex; align-items: center; gap: 5px; }
+/* New nodes appear once their container has grown into place (the move takes 420ms). */
+.ca-node.ca-entering, .ca-external.ca-entering { animation: ca-enter 260ms 380ms ease-out both; }
+@keyframes ca-enter { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
 .ca-node.ca-kind-package { border-width: 2px; }
 .ca-node.ca-kind-module { border-radius: 6px; padding: 4px 10px; }
 .ca-node.ca-virtual { border-style: dashed; }
@@ -103,17 +124,29 @@
 .ca-node-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ca-muted); gap: 6px; }
 .ca-expand { background: none; border: 1px solid var(--ca-line); border-radius: 50%; width: 20px; height: 20px; line-height: 16px; padding: 0; cursor: pointer; color: var(--ca-muted); }
 .ca-expand:hover { color: var(--ca-accent); border-color: var(--ca-accent); }
-.ca-container { width: 100%; height: 100%; box-sizing: border-box; border: 1px solid var(--ca-node-border); border-radius: 12px; background: color-mix(in srgb, var(--ca-panel) 70%, transparent); }
-.ca-container-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--ca-line); }
+.ca-container { width: 100%; height: 100%; box-sizing: border-box; border: 1.5px solid var(--ca-node-border); border-radius: 14px; background: color-mix(in srgb, var(--ca-accent) 4%, var(--ca-panel)); transition: opacity 0.25s ease, filter 0.25s ease, border-color 0.15s ease; }
+.ca-container.ca-neighbour { border-color: color-mix(in srgb, var(--ca-accent) 45%, var(--ca-node-border)); }
+.ca-container-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--ca-line); cursor: pointer; }
+.ca-container-head .ca-node-kind { color: var(--ca-muted); }
 .ca-container-head .ca-node-name { flex: 1; }
 .ca-external { width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--ca-node-border); border-radius: 20px; display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--ca-muted); background: var(--ca-bg); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.ca-dim { opacity: 0.25; }
+.ca-dim { opacity: 0.16; filter: saturate(0.4); }
 .ca-handle { opacity: 0; pointer-events: none; }
 .ca-edge .react-flow__edge-path { stroke: var(--ca-edge); }
 .ca-edge-port .react-flow__edge-path { stroke-dasharray: 4 4; }
 .ca-edge-implicit .react-flow__edge-path { stroke-dasharray: 1 4; }
+.ca-edge .react-flow__edge-path { transition: stroke 0.2s ease, opacity 0.25s ease; }
 .ca-edge-selected .react-flow__edge-path, .ca-edge:hover .react-flow__edge-path { stroke: var(--ca-accent); }
-.react-flow__edge.ca-dim { opacity: 0.15; }
+/* Selection flow: its own dependencies animate (React Flow's .animated dashes) in the dependency's direction. */
+.ca-edge-out .react-flow__edge-path { stroke: var(--ca-flow-out); }
+.ca-edge-in .react-flow__edge-path { stroke: var(--ca-flow-in); }
+.ca-edge-internal .react-flow__edge-path { stroke: var(--ca-fg); opacity: 0.6; }
+.ca-edge-out .react-flow__arrowhead, .ca-edge-out marker path { fill: var(--ca-flow-out); stroke: var(--ca-flow-out); }
+.react-flow__edge.ca-faded { opacity: 0.07; }
+@media (prefers-reduced-motion: reduce) {
+    .ca-root .react-flow__edge.animated path { animation: none; stroke-dasharray: none; }
+    .ca-node, .ca-container, .ca-node.ca-entering { transition: none; animation: none; }
+}
 .ca-root .react-flow__edge-textbg { fill: var(--ca-bg); }
 .ca-root .react-flow__edge-text { fill: var(--ca-muted); font-size: 10px; }
 
@@ -182,3 +215,11 @@
 .ca-matrix-cell.ca-heat-7 { background: var(--ca-seq-7); }
 .ca-root .ca-matrix-cell.ca-feedback { box-shadow: inset 0 0 0 2px var(--ca-critical); }
 .ca-root .ca-matrix-cell.ca-selected { outline: 2px solid var(--ca-accent); outline-offset: 1px; z-index: 1; }
+
+/* ── toolbar: flow legend and hint ──────────────────────────────────────── */
+.ca-hint { color: var(--ca-muted); font-size: 12px; }
+.ca-legend { display: inline-flex; gap: 12px; font-size: 12px; color: var(--ca-muted); }
+.ca-legend span::before { content: ''; display: inline-block; width: 18px; height: 0; border-top: 2px dashed currentColor; vertical-align: middle; margin-right: 6px; }
+.ca-legend-out::before { color: var(--ca-flow-out); }
+.ca-legend-in::before { color: var(--ca-flow-in); }
+.ca-root .ca-actions button.ca-primary { background: var(--ca-primary-bg); border-color: var(--ca-primary-bg); color: var(--ca-primary-fg); font-weight: 600; }

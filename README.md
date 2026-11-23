@@ -102,7 +102,7 @@ Understanding *why* a module exists before changing it is the single most effect
 
 | Capability | Details |
 |---|---|
-| **Architecture Map** *(2.0 beta)* | Drill from System to Package, Component and File; expand in place; dependencies leaving the view shown as port stubs; Navigator, Inspector and ⌘K search |
+| **Architecture Map** *(2.0 beta)* | Explore System › Package › Component › File on one canvas: double-click expands in place with smooth transitions; click a node to animate what it uses and what uses it; Navigator, Inspector and ⌘K search |
 | **Matrix and lenses** *(2.0 beta)* | A dependency structure matrix that exposes cycles; Health (cycles, hubs, orphans) and Tests lenses |
 | **Editor integration** *(2.0 beta)* | A status bar entry and a CodeLens show where the current file sits; **Reveal in Map** from the editor or Explorer |
 | **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby via Tree-sitter WASM, with import resolution for each ecosystem |

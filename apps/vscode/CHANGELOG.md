@@ -5,14 +5,17 @@ All notable changes to CodeArchy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2.0.0-beta
+## [2.0.0] - 2026-11-23
+
+**Pre-release: the 2.0 beta.** Install it from the Marketplace's pre-release channel (Switch to Pre-Release Version).
 
 ### Added
 
-- **The Map.** The panel opens on a drill-down architecture map: System › Package › Component › File.
+- **The Map.** The panel opens on an architecture map you explore in place: System › Package › Component › File.
   - Packages come from your manifests. Large folders are grouped by their dependencies, so each level stays readable.
-  - Double-click to drill in, ⊕ to expand in place. Dependencies that leave the current view appear as port stubs.
-  - The Navigator tree, the Inspector (what a node contains, uses and is used by, and the imports behind any edge), ⌘K search and keyboard navigation.
+  - **One canvas.** Double-click (or +) expands a node right where it is; double-click its header to collapse it. Nodes glide to their new places and the view follows, so you never lose your bearings. "Show only this" opens a node on its own when you want to.
+  - **Trace dependencies.** Click a node: what it uses and what uses it are animated in the direction of the dependency, in two colours, and everything else fades. Hovering previews the same.
+  - The Navigator tree, the Inspector (what a node contains, uses and is used by, and the imports behind any arrow), ⌘K search and keyboard navigation. Search and "Reveal in Map" open the path in place.
 - **Matrix and lenses.** A dependency structure matrix of the current view: anything above the diagonal is a cycle. The Health lens marks files in cycles, hubs and orphans; the Tests lens shows how many files have a test depending on them.
 - **In the editor.** The status bar shows where the current file sits, a CodeLens at the top of each file says what it uses and is used by, and **Reveal in Map** jumps to it (editor and Explorer context menus).
 - **Settings.** `codearchy.ui` chooses the Map (default) or the classic views; `codearchy.codeLens` turns the CodeLens off.

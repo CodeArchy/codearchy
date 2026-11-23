@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import * as assert from 'node:assert';
 import type { View, ViewNode } from '@codearchy/protocol';
-import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, type MapModel } from '../src/index.js';
+import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, type MapModel } from '../src/index.js';
 
 const METRICS = { modules: 3, symbols: 0, codeModules: 3, testModules: 0, testedModules: 0, cyclicModules: 0, orphanModules: 0, hubModules: 0, fanIn: 0, fanOut: 0 };
 
@@ -158,5 +158,33 @@ describe('Matrix', () => {
         assert.strictEqual(heatStep(1, 1), 7);
         assert.ok(heatStep(2, 100) < heatStep(50, 100));
         assert.strictEqual(heatStep(100, 100), 7);
+    });
+});
+
+describe('Selection flow and reveal', () => {
+    test('a selection classifies its edges as uses / used by / internal and lights its neighbours', () => {
+        const m = buildMapModel(VIEW);
+        const r = flowRoles(m, 'mod:core/orders/new.ts');
+        assert.deepStrictEqual([...r.out].sort(), ['mod:core/orders/new.ts->dir:core/auth', 'mod:core/orders/new.ts->ext:dir:db']);
+        assert.deepStrictEqual([...r.in], []);
+        assert.ok(r.lit.has('dir:core/auth') && r.lit.has('ext:dir:db'));
+        assert.ok(!r.lit.has('ext:dir:api'), 'unrelated nodes fade');
+    });
+
+    test('selecting an expanded node traces everything drawn inside it', () => {
+        const m = buildMapModel(VIEW);
+        const r = flowRoles(m, 'dir:core/orders');
+        assert.ok(r.selected.has('mod:core/orders/new.ts') && r.selected.has('mod:core/orders/list.ts'));
+        assert.deepStrictEqual([...r.out].sort(), ['mod:core/orders/list.ts->ext:dir:db', 'mod:core/orders/new.ts->dir:core/auth', 'mod:core/orders/new.ts->ext:dir:db']);
+    });
+
+    test('reveal expands ancestors on the current canvas instead of opening a new view', () => {
+        const path = ['sys:root', 'pkg:.', 'dir:web/src', 'mod:web/src/index.ts'];
+        assert.deepStrictEqual(revealPlan(path, 'sys:root', ['pkg:rust']), { scope: 'sys:root', expanded: ['pkg:rust', 'pkg:.', 'dir:web/src'] });
+        assert.deepStrictEqual(revealPlan(path, 'pkg:.', []), { scope: 'pkg:.', expanded: ['dir:web/src'] });
+        // Outside the current scope: back to the system, with the path expanded.
+        assert.deepStrictEqual(revealPlan(path, 'dir:cs', ['dir:cs/x']), { scope: 'sys:root', expanded: ['pkg:.', 'dir:web/src'] });
+        // A top-level node needs nothing expanded.
+        assert.deepStrictEqual(revealPlan(['sys:root', 'pkg:rust'], 'sys:root', []), { scope: 'sys:root', expanded: [] });
     });
 });

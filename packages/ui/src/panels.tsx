@@ -177,7 +177,7 @@ export function Inspector(props: InspectorProps) {
         return (
             <div className="ca-inspector">
                 <div className="ca-panel-title">Inspector</div>
-                <p className="ca-muted">Select a node or an edge. Double-click a node to drill in; ⊕ expands it in place.</p>
+                <p className="ca-muted">Click a node to trace what it uses and what uses it. Double-click (or +) expands it right here; click an arrow to see the imports behind it.</p>
             </div>
         );
     }
@@ -222,11 +222,11 @@ export function Inspector(props: InspectorProps) {
             <div className="ca-actions">
                 {d.hasChildren ? (
                     <>
-                        <button type="button" onClick={() => props.onDrill(d.key)}>
-                            Drill in
+                        <button type="button" className="ca-primary" onClick={() => props.onToggleExpand(d.key)}>
+                            {props.expanded ? 'Collapse' : 'Expand here'}
                         </button>
-                        <button type="button" onClick={() => props.onToggleExpand(d.key)}>
-                            {props.expanded ? 'Collapse' : 'Expand'}
+                        <button type="button" title="Open as its own view (Shift+Enter)" onClick={() => props.onDrill(d.key)}>
+                            Show only this
                         </button>
                     </>
                 ) : null}

@@ -60,9 +60,11 @@ jobs:
           PKG_VERSION=$(node -p "require('./package.json').version")
           echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Detect pre-release: workflow input takes priority, then SemVer pre-release
+          # Pre-release: the workflow input, or a tag with a suffix (v2.0.0-beta publishes
+          # package.json's 2.0.0 to the pre-release channel: the Marketplace takes plain
+          # x.y.z versions only, with pre-release as a flag).
           WF_INPUT="${{ github.event.inputs.pre_release }}"
-          if [[ "$WF_INPUT" == "true" ]] || [[ "$PKG_VERSION" =~ -[a-zA-Z] ]]; then
+          if [[ "$WF_INPUT" == "true" ]] || [[ "$GITHUB_REF_NAME" == v*-* ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
@@ -72,6 +74,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${TAG_VERSION%%-*}"   # v2.0.0-beta → 2.0.0
           PKG_VERSION="${{ steps.meta.outputs.version }}"
 
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
@@ -210,9 +213,13 @@ jobs:
           echo "--- Full package manifest ---"
           pnpm exec vsce ls --no-dependencies | tee package-manifest.txt
 
-          required_files=("dist/extension.js" "package.json" "README.md" "CHANGELOG.md"
+          required_files=("dist/extension.js" "dist/parseWorker.js" "package.json" "README.md" "CHANGELOG.md"
                           "parsers/web-tree-sitter.wasm"
-                          "parsers/tree-sitter-typescript.wasm" "parsers/tree-sitter-python.wasm")
+                          "webview-ui/dist/webview.js" "webview-ui/dist/elk-worker.js")
+          # Every pinned grammar must ship.
+          while IFS= read -r f; do required_files+=("parsers/$f"); done < <(
+            node -e "for (const g of require('../../packages/grammars/grammars.json').grammars) for (const f of g.files) console.log(f)"
+          )
           echo "--- Required files ---"
           for f in "${required_files[@]}"; do
             if grep -q "$f" package-manifest.txt; then
