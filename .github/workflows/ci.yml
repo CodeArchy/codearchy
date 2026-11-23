@@ -107,6 +107,46 @@ jobs:
           retention-days: 3
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # 2b. BROWSER CONFORMANCE
+  #     The shared adapter conformance suite in Chromium, Firefox and WebKit
+  #     (Playwright, no COOP/COEP): OPFS file access, SQLite WASM on OPFS,
+  #     tree-sitter from fetched wasm, the Web Worker parse pool, and the
+  #     golden polyglot graph, which Node reproduces in the Build job.
+  # ─────────────────────────────────────────────────────────────────────────────
+  browser-conformance:
+    name: Browser conformance
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+    defaults:
+      run:
+        working-directory: packages/platform-browser
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -w exec turbo run build --filter=@codearchy/platform-browser... --filter=@codearchy/conformance... --filter=@codearchy/grammars
+
+      - name: Install browsers (Chromium, Firefox, WebKit)
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: Run the conformance suite in all three engines
+        env:
+          CONFORMANCE_TIMEOUT_MS: '180000'
+        run: pnpm run test:browser
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # 3. PACKAGE
   #    Packages the extension into a .vsix and verifies critical files are
   #    present. The VSIX artefact is kept for manual inspection / QA download.

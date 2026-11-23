@@ -10,3 +10,4 @@ coverage/
 parsers/
 .turbo/
 packages/grammars/wasm/
+dist-test/

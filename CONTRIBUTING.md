@@ -58,7 +58,11 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 │   │                                        resolution, graph, inference. Pure TS behind ports
 │   ├── treesitter/ @codearchy/treesitter    ParserRuntime adapter: web-tree-sitter from wasm bytes
 │   ├── grammars/   @codearchy/grammars      pinned, integrity-checked grammar .wasm files
-│   └── platform-node/ @codearchy/platform-node  Node adapters: file system, git discovery, parser
+│   ├── platform-node/ @codearchy/platform-node  Node adapters: file system, git discovery, parser,
+│   │                                        node:sqlite index store, worker_threads parse pool
+│   ├── platform-browser/ @codearchy/platform-browser  browser adapters: File System Access / OPFS,
+│   │                                        SQLite WASM on OPFS, fetched grammars, Web Worker pool
+│   └── conformance/ @codearchy/conformance  shared adapter test suite + golden polyglot graph
 ├── apps/
 │   └── vscode/     the extension (composition root): bundled to dist/extension.js with esbuild
 │       ├── src/            extension host: commands, file watcher, pipeline, webview panel, voice
@@ -71,7 +75,8 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 #### Dependency rules (enforced in CI)
 
 ```
-protocol, sdk   ← core ← treesitter ← platform-node ← apps/*
+protocol, sdk   ← core ← treesitter ← platform-node | platform-browser ← apps/*
+                         ↖ conformance (tests every platform against the same cases)
 ```
 
 - `core` and `sdk` compile with **no DOM and no Node types**: they can't touch the host, even by accident.
@@ -148,6 +153,8 @@ pnpm test                                          # all unit tests (Vitest in p
 pnpm --filter @codearchy/platform-node test:unit   # extraction + resolution against real grammars and fixtures
 pnpm --filter @codearchy/core test:unit            # pure engine tests (globs, heuristics, paths, parsers)
 pnpm --filter codearchy run test                   # VS Code sandbox: the bundled extension analyses fixtures/polyglot
+pnpm test:browser                                  # conformance suite in Chromium, Firefox and WebKit (Playwright)
+pnpm --filter @codearchy/platform-node run golden  # regenerate the golden graph after an intended behaviour change
 pnpm --filter codearchy run bench -- <repo>        # timings, parser coverage, import resolution per language
 ```
 

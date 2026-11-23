@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "Platform adapter layer: DOM types allowed here (and only in platform-* packages). No Node types.",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist", "lib": ["ES2022", "DOM", "DOM.Iterable", "DOM.AsyncIterable"], "types": [] },
+    "include": ["src"]
+}

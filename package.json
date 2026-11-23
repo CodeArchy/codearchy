@@ -17,7 +17,8 @@
         "typecheck": "turbo run typecheck",
         "test:unit": "turbo run test:unit",
         "test": "turbo run test:unit test:webview",
-        "package:vscode": "pnpm --filter codearchy run package"
+        "package:vscode": "pnpm --filter codearchy run package",
+        "test:browser": "pnpm --filter @codearchy/platform-browser run test:browser"
     },
     "devDependencies": {
         "turbo": "2.11.10"

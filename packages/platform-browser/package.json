@@ -1,0 +1,43 @@
+{
+    "name": "@codearchy/platform-browser",
+    "version": "0.1.0",
+    "description": "Browser adapters for @codearchy/core: File System Access/OPFS, SQLite WASM on OPFS, fetch-based tree-sitter, Web Worker parse pool.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./worker": {
+            "types": "./dist/worker.d.ts",
+            "default": "./dist/worker.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test:browser": "tsc -p tsconfig.json && node test/browser/run.mjs"
+    },
+    "dependencies": {
+        "@codearchy/core": "workspace:*",
+        "@codearchy/treesitter": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "3.54.1-build1"
+    },
+    "devDependencies": {
+        "@codearchy/conformance": "workspace:*",
+        "@codearchy/grammars": "workspace:*",
+        "esbuild": "0.25.12",
+        "playwright": "1.65.0",
+        "typescript": "5.9.3"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "packages/platform-browser"
+    }
+}
