@@ -186,6 +186,18 @@ for (const name of wanted) {
         await page.waitForSelector('body[data-state="ready"]');
         if (storage.startsWith('OPFS')) assert.equal(await stat(page, 'parsed'), '0', 'warm reload parses nothing');
 
+        // Host events: a host handler in the engine worker streams events to the page before it answers.
+        const echoed = await page.evaluate(async () => {
+            const engine = globalThis.__codearchyEngine;
+            const events = [];
+            const off = engine.onHostEvent((e) => events.push(e));
+            const result = await engine.call('echoEvents', { count: 3 });
+            off();
+            return { result, events };
+        });
+        assert.deepEqual(echoed.result, { sent: 3 });
+        assert.deepEqual(echoed.events.map((e) => e.i), [1, 2, 3], 'host events arrive in order, before the answer');
+
         // AI UI with the scripted demo client (?ai=demo): cards, chat with citations, settings, ask-before-sending.
         await page.goto(`${url}?ai=demo`);
         await page.click('#load-sample');

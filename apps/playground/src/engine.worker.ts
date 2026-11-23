@@ -116,5 +116,11 @@ runEngineWorker({
     handlers: {
         debug: (ws) => debug(ws),
         file: (ws, params) => fileDetail(ws, String(params.path ?? '')),
+        // Smoke test for host events: streams the workspace name back as events, then answers.
+        echoEvents: (ws, params, ctx) => {
+            const n = Math.min(5, Number(params.count ?? 3));
+            for (let i = 1; i <= n; i++) ctx.emit({ type: 'echo', i, workspace: ws.name });
+            return { sent: n };
+        },
     },
 });

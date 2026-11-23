@@ -6,6 +6,7 @@
  */
 import { runConformance, type ConformanceHarness } from '@codearchy/conformance';
 import { BrowserWorkerPool, HandleFileSystem, createFetchParserRuntime, listHandleFiles, openSqliteWasm } from '../../src/index.js';
+import { storeChecks } from './stores.js';
 
 const scope = self as unknown as { onmessage: ((ev: MessageEvent) => void) | null; postMessage(m: unknown): void };
 
@@ -54,7 +55,7 @@ scope.onmessage = async (ev: MessageEvent<{ platform: string }>) => {
                     minJobsForWorkers: 1,
                 }),
         };
-        scope.postMessage({ type: 'done', results: await runConformance(harness) });
+        scope.postMessage({ type: 'done', results: [...(await runConformance(harness)), ...(await storeChecks())] });
     } catch (err) {
         scope.postMessage({ type: 'fatal', message: (err as Error).stack ?? String(err) });
     }
