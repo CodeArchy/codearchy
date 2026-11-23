@@ -5,6 +5,30 @@ All notable changes to CodeArchy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Ask about your code, in the Map.** An **Ask** panel beside the Inspector answers questions from the map itself. It searches, follows dependencies and, where the privacy tier allows it, reads code. A status line shows what it's looking at. Answers cite the parts and lines they rely on: click a citation to see it on the map or open the file. **Show me** opens what an answer points to, and **Ask about this** in the Inspector asks about the selected node.
+- **Summary cards.** The Inspector shows a short summary for every file, component and package. It's built from docs, names and structure, and marked *auto-summary*. **Summarize with AI** writes a better one, labelled with the model that wrote it. AI summaries are kept with the workspace, so they survive a reload.
+- **Your choice of model.**
+  - **On this machine:** Ollama or LM Studio.
+  - **Your GitHub Copilot plan,** through VS Code's Language Model API. VS Code asks once before CodeArchy may use a model.
+  - **Your own API key:** Anthropic, OpenAI, Google Gemini, OpenRouter, Groq or Mistral. Keys are kept in VS Code's secret storage (your OS keychain), never in settings.
+
+  Set it up from **AI** in the Map's toolbar.
+- **Privacy you can see.** Choose what may leave your machine:
+  - **Local only** (the default): nothing leaves.
+  - **Structure:** names, signatures, docs and dependencies, but no code.
+  - **Structure + code excerpts.**
+
+  Secrets are removed from anything sent to a cloud model. You can turn on **Ask before sending** to review each request first, and set daily token budgets per provider.
+- `codearchy.ollama.url` setting: where Ollama listens.
+
+### Changed
+
+- In the Map, the new Ask panel replaces the v1 chat, and **AI model** is now **Local models** (downloading Ollama models). The classic views keep the v1 chat.
+
 ## [2.0.0] - 2026-11-23
 
 **Pre-release: the 2.0 beta.** Install it from the Marketplace's pre-release channel (Switch to Pre-Release Version).

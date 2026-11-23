@@ -7,6 +7,8 @@ interface Api {
     getGraph(): { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } | undefined;
     engine(method: string, params: Record<string, unknown>): unknown;
     locate(fsPath: string): unknown;
+    ai(method: string, params: Record<string, unknown>): Promise<unknown>;
+    aiAsk(question: string, selection?: string): Promise<unknown[]>;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
@@ -65,6 +67,38 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.ok(has('go/cmd/server/main.go', 'go/internal/store/store.go'));
         assert.ok(has('cs/Orders/OrderService.cs', 'cs/Billing/Invoice.cs'));
         assert.ok(has('rb/bin/run.rb', 'rb/lib/billing.rb'), 'Ruby resolves through its pack hook');
+    });
+
+    test('the AI host: private by default, auto-built cards, keys in SecretStorage, tiers, and chat without a model', async () => {
+        await vscode.commands.executeCommand('codearchy.analyzeWorkspace');
+        type Provider = { id: string; allowed: boolean; hasKey: boolean; onDevice: boolean; state?: string };
+        type State = { settings: { tier: string }; providers: Provider[]; resolved: Record<string, { ok: boolean }> };
+        const state = (await api.ai('state', {})) as State;
+        assert.strictEqual(state.settings.tier, 'local-only', 'nothing leaves the machine until the user chooses');
+        assert.deepStrictEqual(
+            state.providers.map((p) => p.id),
+            ['ollama', 'lmstudio', 'vscode-lm', 'anthropic', 'openai', 'gemini', 'openrouter', 'groq', 'mistral'],
+        );
+        assert.ok(state.providers.filter((p) => !p.onDevice).every((p) => !p.allowed), 'cloud and Copilot are ruled out under local only');
+
+        const card = (await api.ai('card', { key: 'mod:rb/lib/billing.rb' })) as { source: string; purpose: string };
+        assert.strictEqual(card.source, 'deterministic');
+        assert.strictEqual(card.purpose, 'Entry point of the billing gem.');
+
+        const withKey = (await api.ai('setKey', { provider: 'anthropic', key: 'sk-ant-sandbox-not-a-real-key' })) as State;
+        assert.ok(withKey.providers.find((p) => p.id === 'anthropic')!.hasKey);
+        assert.ok(!JSON.stringify(withKey).includes('sk-ant-sandbox'), 'a stored key is never sent back');
+        await api.ai('setKey', { provider: 'anthropic', key: null });
+
+        const opened = (await api.ai('updateSettings', { patch: { tier: 'structure' } })) as State;
+        assert.ok(opened.providers.find((p) => p.id === 'vscode-lm')!.allowed, 'Copilot is allowed once code structure may leave');
+        await api.ai('updateSettings', { patch: { tier: 'local-only' } });
+
+        // No model runs in the sandbox: the chat says so instead of failing.
+        const events = (await api.aiAsk('Where is billing?')) as Array<{ type: string; message?: string }>;
+        const last = events[events.length - 1]!;
+        assert.strictEqual(last.type, 'error');
+        assert.match(last.message ?? '', /provider|model|tier/i);
     });
 
     test('the new UI\'s engine: views, details, explain, search; files located for the status bar and CodeLens', async () => {

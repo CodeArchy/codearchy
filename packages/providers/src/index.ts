@@ -39,6 +39,7 @@ export {
 } from './adapters/openai-compatible.js';
 export { anthropic, type AnthropicOptions } from './adapters/anthropic.js';
 export { gemini, type GeminiOptions } from './adapters/gemini.js';
+export { vscodeLm, type LmChatModel, type VscodeLmApi, type VscodeLmOptions } from './adapters/vscode-lm.js';
 
 // Orchestration: privacy, redaction, budgets, audit, credentials and routing.
 export {

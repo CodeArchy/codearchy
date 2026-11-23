@@ -132,7 +132,8 @@ export class GroundedChat {
             let turn: AssistantTurn | undefined;
             for await (const event of registry.chat(
                 'chat',
-                { system, messages, ...(tools ? { tools, toolChoice: last ? 'none' : 'auto' } : {}), maxOutputTokens: 4000 },
+                // A snapshot: the conversation keeps growing after this request is sent.
+                { system, messages: [...messages], ...(tools ? { tools, toolChoice: last ? 'none' : 'auto' } : {}), maxOutputTokens: 4000 },
                 { contains, nodes: [...ctx.touched], signal: options.signal },
             )) {
                 if (event.type === 'text') yield { type: 'text', delta: event.delta };

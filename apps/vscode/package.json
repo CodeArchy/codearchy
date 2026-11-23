@@ -215,6 +215,11 @@
                     ],
                     "default": "moderate",
                     "description": "AI processing tier. Trades response speed for analytical depth."
+                },
+                "codearchy.ollama.url": {
+                    "type": "string",
+                    "default": "http://localhost:11434",
+                    "markdownDescription": "Where Ollama listens, for the AI provider list (models on this machine). Only a `localhost` address counts as \"on this machine\" for the privacy tier."
                 }
             }
         }
@@ -236,10 +241,12 @@
         "package": "vsce package --no-dependencies"
     },
     "devDependencies": {
+        "@codearchy/ai": "workspace:*",
         "@codearchy/core": "workspace:*",
         "@codearchy/grammars": "workspace:*",
         "@codearchy/platform-node": "workspace:*",
         "@codearchy/protocol": "workspace:*",
+        "@codearchy/providers": "workspace:*",
         "@codearchy/treesitter": "workspace:*",
         "@types/mocha": "^10.0.10",
         "@types/node": "^20.11.0",

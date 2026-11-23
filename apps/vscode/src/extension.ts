@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createVscodeAiHost } from './ai/vscodeAi';
 import { ArchitecturePanel, configuredUi } from './webview/ArchitecturePanel';
 import { EditorIntegration } from './editor/EditorIntegration';
 import { AnalysisPipeline } from './pipeline/AnalysisPipeline';
@@ -25,6 +26,10 @@ export interface CodeArchyApi {
     engine(method: string, params: Record<string, unknown>): unknown;
     /** Where a file sits in the hierarchy (status bar, CodeLens). */
     locate(fsPath: string): unknown;
+    /** The AI host's AiClient methods (state, updateSettings, setKey, card, audit…). */
+    ai(method: string, params: Record<string, unknown>): Promise<unknown>;
+    /** Asks the grounded chat once; resolves with every event. */
+    aiAsk(question: string, selection?: string): Promise<unknown[]>;
 }
 
 export function activate(context: vscode.ExtensionContext): CodeArchyApi {
@@ -40,6 +45,12 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
         request: (method, params) => pipeline?.engine(method as Parameters<AnalysisPipeline['engine']>[0], params),
         toAbsolute: (rel) => pipeline?.toAbsolute(rel),
     };
+    // AI (chat, summary cards, providers): runs here, beside the index; the panel talks to it over postMessage.
+    ArchitecturePanel.aiHost = createVscodeAiHost(
+        context,
+        { index: () => pipeline?.currentIndex(), readFile: async (rel) => pipeline?.readWorkspaceFile(rel) },
+        (event) => ArchitecturePanel.postAiEvent(event),
+    );
     editorIntegration = new EditorIntegration({
         locate: (fsPath) => pipeline?.locate(fsPath),
         reveal: async (key) => {
@@ -211,6 +222,12 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
         getGraph: () => currentGraph,
         engine: (method, params) => pipeline?.engine(method as Parameters<AnalysisPipeline['engine']>[0], params),
         locate: (fsPath) => pipeline?.locate(fsPath),
+        ai: async (method, params) => ArchitecturePanel.aiHost?.handle(method, params),
+        aiAsk: async (question, selection) => {
+            const events: unknown[] = [];
+            await ArchitecturePanel.aiHost?.ask(`api-${Date.now()}`, question, { selection }, (e) => events.push(e));
+            return events;
+        },
     };
 }
 

@@ -132,6 +132,9 @@ importers:
 
   apps/vscode:
     devDependencies:
+      '@codearchy/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@codearchy/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -144,6 +147,9 @@ importers:
       '@codearchy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@codearchy/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@codearchy/treesitter':
         specifier: workspace:*
         version: link:../../packages/treesitter
