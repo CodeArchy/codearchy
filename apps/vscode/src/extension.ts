@@ -23,7 +23,7 @@ export interface CodeArchyApi {
 
 export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     output = vscode.window.createOutputChannel('CodeArchy');
-    pipeline = new AnalysisPipeline(context.extensionPath, output);
+    pipeline = new AnalysisPipeline(context.extensionPath, output, context.storageUri?.fsPath);
     pipeline.initParser().catch((err) => {
         output.appendLine(`Parser init failed: ${err instanceof Error ? err.message : String(err)}`);
     });

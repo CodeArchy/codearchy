@@ -4,7 +4,20 @@
  * settings). Hosts wire it up with platform adapters.
  */
 export * from './ports.js';
-export { Analyzer, AnalysisCancelledError, readManifests, type AnalyzerOptions, type AnalyzeAllOptions, type AnalyzeProgress } from './analyzer.js';
+export {
+    Analyzer,
+    AnalysisCancelledError,
+    readManifests,
+    type AnalyzerOptions,
+    type AnalyzeAllOptions,
+    type AnalyzeProgress,
+    type AnalyzeJob,
+    type AnalyzeResult,
+    type FileState,
+} from './analyzer.js';
+export { IndexStore, FACTS_VERSION, SCHEMA_VERSION, type StoredFileState, type SymbolHit } from './index/store.js';
+export { Indexer, LocalExecutor, type AnalyzeExecutor, type ExecutorOptions, type IndexProgress, type IndexResult, type IndexRunOptions, type IndexStats, type IndexerOptions } from './index/indexer.js';
+export { contentHash } from './util/hash.js';
 export { TreeSitterExtractor } from './extract/treeSitter.js';
 export { analyzeWithRegex, hasRegexFallback } from './extract/regex.js';
 export {

@@ -73,7 +73,7 @@ export class NodeFileSystem implements FileSystemPort {
         if (!abs) return undefined;
         try {
             const s = await fs.promises.stat(abs);
-            return { size: s.size, isFile: s.isFile() };
+            return { size: s.size, isFile: s.isFile(), mtimeMs: Math.trunc(s.mtimeMs) };
         } catch {
             return undefined;
         }
@@ -197,3 +197,6 @@ export async function createNodeAnalyzer(options: NodeEngineOptions): Promise<{ 
     };
     return { analyzer: new Analyzer(analyzerOptions), fs: fsPort };
 }
+
+export { openNodeSqlite, type NodeSqliteOptions } from './storage.js';
+export { NodeWorkerPool, runParseWorker, type NodeWorkerPoolOptions, type ParseWorkerData } from './pool.js';

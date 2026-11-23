@@ -8,9 +8,10 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    Analyzer,
     AnalysisCancelledError,
     ArchitectureInference,
+    IndexStore,
+    Indexer,
     buildGraph,
     classifyFiles,
     compileGlobs,
@@ -23,12 +24,13 @@ import {
 } from '@codearchy/core';
 import {
     NodeFileSystem,
+    NodeWorkerPool,
     createNodeParserRuntime,
     fromPosix,
     gitIgnoredPaths,
     gitListFiles,
+    openNodeSqlite,
     toPosix,
-    yieldToNode,
 } from '@codearchy/platform-node';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
@@ -36,7 +38,10 @@ import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, get
 interface WorkspaceState {
     root: string;
     fs: NodeFileSystem;
-    analyzer: Analyzer;
+    indexer: Indexer;
+    pool: NodeWorkerPool;
+    /** Persistent index (undefined when node:sqlite is unavailable: VS Code < 1.104). */
+    store: IndexStore | undefined;
     analyses: Map<string, FileAnalysis>;
     manifests: Map<string, string>;
     discovery: DiscoveryResult;
@@ -48,12 +53,20 @@ export class AnalysisPipeline {
     private readonly inference = new ArchitectureInference();
     private state: WorkspaceState | undefined;
     private readonly parsersDir: string;
+    private readonly workerScript: string;
+    private lastIndexStats: NonNullable<ArchitectureGraph['metadata']['indexStats']> | undefined;
 
+    /**
+     * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
+     *                   omit to index in memory only.
+     */
     constructor(
         extensionPath: string,
-        private readonly output?: vscode.OutputChannel
+        private readonly output?: vscode.OutputChannel,
+        private readonly storageDir?: string
     ) {
         this.parsersDir = path.join(extensionPath, 'parsers');
+        this.workerScript = path.join(extensionPath, 'dist', 'parseWorker.js');
     }
 
     async initParser(): Promise<void> {
@@ -77,14 +90,8 @@ export class AnalysisPipeline {
     ): Promise<ArchitectureGraph> {
         const config = getConfig();
         const root = workspaceUri.fsPath;
-        const fsPort = new NodeFileSystem(root);
-        const analyzer = new Analyzer({
-            fs: fsPort,
-            parser: await this.getParser(),
-            maxFileSize: config.maxFileSize,
-            log: (m) => this.log(m),
-            yieldToHost: yieldToNode,
-        });
+        await this.getParser(); // logs parser health once
+        const ws = await this.openWorkspace(root, config.maxFileSize);
 
         onProgress({ phase: 'discovery', current: 0, total: 1, message: 'Discovering files...' });
         const discovery = await this.discover(workspaceUri, config);
@@ -95,15 +102,16 @@ export class AnalysisPipeline {
                 `, ${discovery.manifests.length} manifests`
         );
 
-        const manifests = await readManifests(fsPort, discovery.manifests);
-        let analyses: Map<string, FileAnalysis>;
+        let result;
         try {
-            analyses = await analyzer.analyzeAll(discovery.sourceFiles, {
+            result = await ws.indexer.index(discovery.sourceFiles, discovery.manifests, {
                 isCancelled: () => token.isCancellationRequested,
-                onProgress: ({ current, total, file }) => {
-                    // Reporting every file floods the progress UI; every 1% is plenty.
-                    if (current === total || current % Math.max(1, Math.floor(total / 100)) === 0) {
-                        onProgress({ phase: 'parsing', current, total, message: `Parsing: ${file}` });
+                onProgress: ({ phase, current, total, path: file }) => {
+                    if (phase === 'checking') {
+                        onProgress({ phase: 'checking', current, total, message: `Checking for changes (${current}/${total})` });
+                    } else if (phase === 'parsing' && (current === total || current % Math.max(1, Math.floor(total / 100)) === 0)) {
+                        // Reporting every file floods the progress UI; every 1% is plenty.
+                        onProgress({ phase: 'parsing', current, total, message: `Parsing: ${file ?? ''}` });
                     }
                 },
             });
@@ -111,8 +119,23 @@ export class AnalysisPipeline {
             if (err instanceof AnalysisCancelledError) throw new vscode.CancellationError();
             throw err;
         }
+        const st = result.stats;
+        this.log(
+            `index: ${st.parsed} parsed, ${st.reused + st.unchanged} reused (${st.unchanged} re-hashed), ${st.removed} removed ` +
+                `in ${st.durationMs} ms` +
+                (ws.store ? `; persistent (${ws.store.searchEnabled ? 'FTS5' : 'no FTS5'})` : '; in memory (node:sqlite unavailable)') +
+                `; ${ws.pool.lastRunWorkers ? `${ws.pool.lastRunWorkers} parse workers` : 'parsed in-process'}`
+        );
 
-        this.state = { root, fs: fsPort, analyzer, analyses, manifests, discovery };
+        this.state = { ...ws, analyses: result.analyses, manifests: result.manifests, discovery };
+        this.lastIndexStats = {
+            parsed: st.parsed,
+            reused: st.reused + st.unchanged,
+            removed: st.removed,
+            durationMs: st.durationMs,
+            persistent: !!ws.store,
+            workers: ws.pool.lastRunWorkers,
+        };
         onProgress({ phase: 'graphing', current: 0, total: 1, message: 'Building dependency graph...' });
         const graph = this.buildGraph();
         onProgress({ phase: 'complete', current: 1, total: 1, message: 'Analysis complete.' });
@@ -143,16 +166,17 @@ export class AnalysisPipeline {
         for (const uri of deleted) {
             const p = rel(uri);
             if (!p) continue;
-            if (state.analyses.delete(p) || state.manifests.delete(p)) {
+            if (state.manifests.delete(p)) {
+                state.store?.removeManifest(p);
                 dirty = true;
                 continue;
             }
-            // Not a known file: maybe a deleted directory, which arrives as one event.
-            for (const key of [...state.analyses.keys()]) {
-                if (key.startsWith(`${p}/`)) {
-                    state.analyses.delete(key);
-                    dirty = true;
-                }
+            // A file, or a deleted directory (which arrives as one event).
+            const gone = state.analyses.has(p) ? [p] : [...state.analyses.keys()].filter((k) => k.startsWith(`${p}/`));
+            if (gone.length) {
+                for (const k of gone) state.analyses.delete(k);
+                state.indexer.remove(gone);
+                dirty = true;
             }
         }
 
@@ -163,32 +187,76 @@ export class AnalysisPipeline {
         const ignored =
             state.discovery.method === 'git' && fresh.length > 0 ? await gitIgnoredPaths(state.root, fresh) : new Set<string>();
 
+        const sources: string[] = [];
         for (const p of changedPaths) {
             const kind = relevant(p);
             if (!kind || ignored.has(p)) continue;
             if (kind === 'manifest') {
                 const text = (await readManifests(state.fs, [p])).get(p);
-                if (text !== undefined) state.manifests.set(p, text);
+                if (text !== undefined) {
+                    state.manifests.set(p, text);
+                    state.store?.putManifest(p, text);
+                }
                 dirty = true;
                 continue;
             }
             const isNew = !state.analyses.has(p);
-            if (isNew && config.maxFiles > 0 && state.analyses.size >= config.maxFiles) continue;
-            const analysis = await state.analyzer.analyzeFile(p);
-            if (analysis) {
-                state.analyses.set(p, analysis);
-                dirty = true;
-            } else if (state.analyses.delete(p)) {
-                dirty = true;
-            }
+            if (isNew && config.maxFiles > 0 && state.analyses.size + sources.length >= config.maxFiles) continue;
+            sources.push(p);
+        }
+        // Re-checked through the indexer so the persistent index stays current too.
+        for (const [p, analysis] of await state.indexer.update(sources)) {
+            if (analysis) state.analyses.set(p, analysis);
+            else state.analyses.delete(p);
+            dirty = true;
         }
 
         return dirty ? this.buildGraph() : undefined;
     }
 
     dispose(): void {
+        this.closeWorkspace();
         this.parser?.dispose();
         this.parser = undefined;
+    }
+
+    /** Store, worker pool and indexer for a workspace root (reused across analyses of the same root). */
+    private async openWorkspace(root: string, maxFileSize: number): Promise<Omit<WorkspaceState, 'analyses' | 'manifests' | 'discovery'>> {
+        if (this.state && this.state.root === root) {
+            const { fs: fsPort, indexer, pool, store } = this.state;
+            return { root, fs: fsPort, indexer, pool, store };
+        }
+        this.closeWorkspace();
+        const fsPort = new NodeFileSystem(root);
+        let store: IndexStore | undefined;
+        if (this.storageDir) {
+            try {
+                const db = await openNodeSqlite({ file: path.join(this.storageDir, 'codearchy-index.db') });
+                if (db) {
+                    store = new IndexStore(db);
+                    if (store.wasReset) this.log('index format changed; rebuilt the persistent index');
+                }
+            } catch (err) {
+                this.log(`persistent index unavailable (${(err as Error).message}); indexing in memory`);
+            }
+        }
+        const pool = new NodeWorkerPool({
+            root,
+            maxFileSize,
+            grammarDir: this.parsersDir,
+            runtimeWasmPath: path.join(this.parsersDir, 'web-tree-sitter.wasm'),
+            workerScript: this.workerScript,
+            // Tests lower the threshold so the bundled worker runs on small fixtures.
+            minJobsForWorkers: Number(process.env.CODEARCHY_MIN_FILES_FOR_WORKERS) || undefined,
+            log: (m) => this.log(m),
+        });
+        const indexer = new Indexer({ fs: fsPort, store, executor: pool });
+        return { root, fs: fsPort, indexer, pool, store };
+    }
+
+    private closeWorkspace(): void {
+        this.state?.pool.dispose();
+        this.state?.store?.close();
         this.state = undefined;
     }
 
@@ -203,6 +271,7 @@ export class AnalysisPipeline {
             projectPath: state.root,
             discoveredFiles: state.discovery.discovered,
             ...(state.discovery.truncated ? { truncatedAt: state.discovery.sourceFiles.length } : {}),
+            ...(this.lastIndexStats ? { indexStats: this.lastIndexStats } : {}),
         };
         const stats = graph.metadata.parserStats;
         if (stats) stats.skipped = Math.max(0, state.discovery.sourceFiles.length - state.analyses.size);

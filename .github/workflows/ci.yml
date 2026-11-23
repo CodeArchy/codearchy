@@ -237,12 +237,16 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y libgbm-dev xvfb
 
+      # Must run in apps/vscode: the root `test` script is the unit-test suite,
+      # not the VS Code extension-host tests.
       - name: Run sandbox tests — Linux (Xvfb)
         if: runner.os == 'Linux'
+        working-directory: apps/vscode
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" pnpm run test
         env:
           DISPLAY: ':99.0'
 
       - name: Run sandbox tests — macOS / Windows
         if: runner.os != 'Linux'
+        working-directory: apps/vscode
         run: pnpm run test

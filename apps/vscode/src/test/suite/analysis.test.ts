@@ -64,6 +64,35 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.ok(has('cs/Orders/OrderService.cs', 'cs/Billing/Invoice.cs'));
     });
 
+    test('persistent index: touched files are re-hashed by the bundled parse workers, nothing re-parsed', async () => {
+        type Meta = { fileCount: number; indexStats?: { parsed: number; reused: number; persistent: boolean; workers: number } };
+        const analyze = async () => (await vscode.commands.executeCommand('codearchy.analyzeWorkspace')) as Meta;
+        const baseline = await analyze(); // cold on a fresh profile, warm otherwise
+        assert.strictEqual(baseline.indexStats?.persistent, true, 'VS Code >= 1.104 has node:sqlite: the index should persist');
+
+        // Bump every source file's mtime without changing content (git sees nothing).
+        const root = folder!.uri.fsPath;
+        const later = new Date(Date.now() + 120_000);
+        const touch = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) touch(p);
+                else fs.utimesSync(p, later, later);
+            }
+        };
+        touch(root);
+
+        const rehashed = await analyze();
+        assert.ok((rehashed.indexStats?.workers ?? 0) > 0, 'jobs should run on the bundled worker threads');
+        assert.strictEqual(rehashed.indexStats?.parsed, 0, 'unchanged content must not be re-parsed');
+        assert.strictEqual(rehashed.indexStats?.reused, rehashed.fileCount);
+
+        const warm = await analyze();
+        assert.strictEqual(warm.indexStats?.parsed, 0);
+        assert.strictEqual(warm.indexStats?.workers, 0, 'a fully warm run reads nothing, so no workers are needed');
+        assert.strictEqual(warm.indexStats?.reused, warm.fileCount);
+    });
+
     test('picks up files created and deleted on disk, edges included', async () => {
         fs.writeFileSync(added, "import { util } from './lib/util';\nexport const added = util;\n");
         await waitFor(() =>

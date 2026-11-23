@@ -3,6 +3,7 @@
  * Builds the extension host bundle and its runtime assets.
  *
  *   dist/extension.js   esbuild bundle of src/extension.ts + the @codearchy/* packages
+ *   dist/parseWorker.js the parse-worker entry for the worker_threads pool
  *                       (CommonJS, `vscode` external). Bundling is required: the VSIX
  *                       is packaged with --no-dependencies, so nothing may be
  *                       resolved from node_modules at runtime.
@@ -49,8 +50,9 @@ async function bundle() {
     const treesitterPkg = path.dirname(require.resolve('@codearchy/treesitter/package.json'));
     const webTreeSitterCjs = createRequire(path.join(treesitterPkg, 'package.json')).resolve('web-tree-sitter');
     const options = {
-        entryPoints: [path.join(ROOT, 'src', 'extension.ts')],
-        outfile: path.join(ROOT, 'dist', 'extension.js'),
+        // extension.js (host) + parseWorker.js (worker_threads parse pool)
+        entryPoints: { extension: path.join(ROOT, 'src', 'extension.ts'), parseWorker: path.join(ROOT, 'src', 'parseWorker.ts') },
+        outdir: path.join(ROOT, 'dist'),
         bundle: true,
         platform: 'node',
         format: 'cjs',
