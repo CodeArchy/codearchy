@@ -362,12 +362,14 @@ function nonEmpty(record: Record<string, number>): Record<string, number> | unde
     return Object.keys(record).length ? record : undefined;
 }
 
-/** Can this model do the role at all? Unknown capabilities count as "maybe". */
+/**
+ * Can this model do the role at all? Unknown capabilities count as "maybe".
+ * Chat takes models without tool calling too (it falls back to retrieval);
+ * `best` prefers the ones that have it.
+ */
 function fits(role: Role, m: ModelInfo): boolean {
     if (role === 'embedder') return m.supports.embeddings === true;
-    if (m.supports.embeddings === true && m.supports.tools !== true) return false; // an embedding-only model
-    if (role === 'chat') return m.supports.tools !== false;
-    return true;
+    return !(m.supports.embeddings === true && m.supports.tools !== true); // not an embedding-only model
 }
 
 /** Among fitting models: confirmed capabilities first, then the larger context window, then list order. */
