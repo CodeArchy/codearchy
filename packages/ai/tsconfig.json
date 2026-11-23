@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "No DOM and no Node types, like the core: file access comes in through a reader the host passes.",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+    "include": ["src"]
+}
