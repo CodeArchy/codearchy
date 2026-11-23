@@ -9,3 +9,4 @@ coverage/
 .env
 parsers/
 .turbo/
+packages/grammars/wasm/

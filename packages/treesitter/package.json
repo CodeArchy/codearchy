@@ -1,0 +1,35 @@
+{
+    "name": "@codearchy/treesitter",
+    "version": "0.1.0",
+    "description": "CodeArchy ParserRuntime adapter: web-tree-sitter loaded from bytes, for Node and browsers.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "@codearchy/core": "workspace:*",
+        "@codearchy/sdk": "workspace:*",
+        "web-tree-sitter": "~0.27.2"
+    },
+    "devDependencies": {
+        "@types/emscripten": "1.41.6",
+        "typescript": "5.9.3"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "packages/treesitter"
+    }
+}

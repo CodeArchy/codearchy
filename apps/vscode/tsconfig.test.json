@@ -1,0 +1,17 @@
+{
+    "$comment": "Compiles the test suites (and the modules they import directly) to CommonJS in out/ for mocha and @vscode/test-cli.",
+    "compilerOptions": {
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "outDir": "out",
+        "rootDir": "src",
+        "sourceMap": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "types": ["node", "mocha"]
+    },
+    "include": ["src/test", "src/voice"]
+}

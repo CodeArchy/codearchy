@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "Adapter layer: web-tree-sitter's types need URL/WebAssembly (DOM lib) and Emscripten types; both exist in Node and browsers.",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist", "lib": ["ES2022", "DOM"], "types": ["emscripten"] },
+    "include": ["src"]
+}

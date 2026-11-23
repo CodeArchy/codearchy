@@ -5,8 +5,8 @@
  * Runs as `vscode:prepublish` before `vsce package` or `vsce publish`.
  *
  * Behaviour:
- *  - Fetches the pinned tree-sitter grammars into parsers/.
- *  - Builds the webview and compiles the extension host.
+ *  - Builds the extension bundle (dist/extension.js), its parsers/ and the
+ *    webview, plus every workspace package they depend on (Turborepo, cached).
  *
  * The Kokoro voice model is NOT bundled: the extension downloads it on first
  * activation (verified against pinned hashes, cached in global storage). For
@@ -19,6 +19,4 @@ const { execSync } = require('child_process');
 
 const run = (cmd) => execSync(cmd, { stdio: 'inherit', shell: true });
 
-run('npm run grammars');
-run('npm run build:webview');
-run('npm run compile');
+run('pnpm -w exec turbo run build --filter=codearchy... --filter=codearchy-webview-ui');

@@ -52,14 +52,12 @@ jobs:
       - name: Install dependencies (pnpm workspace)
         run: pnpm install --frozen-lockfile
 
+      # Turborepo at the workspace root: builds each package's dependencies first.
       - name: Lint (ESLint)
-        run: pnpm run lint
+        run: pnpm -w run lint
 
-      - name: Typecheck extension
-        run: pnpm run typecheck
-
-      - name: Typecheck webview
-        run: pnpm --filter codearchy-webview-ui run typecheck
+      - name: Typecheck (all packages, extension and webview)
+        run: pnpm -w run typecheck
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 2. BUILD
@@ -88,29 +86,23 @@ jobs:
       - name: Install dependencies (pnpm workspace)
         run: pnpm install --frozen-lockfile
 
-      - name: Build Webview UI
-        run: pnpm run build:webview
+      # Builds every package in dependency order: protocol → sdk → core →
+      # treesitter/grammars → platform-node → extension bundle (+ parsers/) and webview.
+      - name: Build workspace
+        run: pnpm -w run build
 
-      - name: Compile extension host (TypeScript)
-        run: pnpm run compile
-
-      - name: Fetch tree-sitter grammars
-        run: pnpm run grammars
-
-      # Parser/resolver golden tests: plain Node, no VS Code needed.
+      # core + platform-node (extraction, resolution, graph; Vitest), the extension's
+      # voice store (mocha) and the webview's pure modules (node --test).
       - name: Unit tests
-        run: pnpm exec mocha --ui tdd "out/test/unit/**/*.test.js"
-
-      # Webview pure modules (phrase chunker); Node 22.18+ strips TS types natively.
-      - name: Webview unit tests
-        run: pnpm run test:webview
+        run: pnpm -w run test
 
       - name: Upload compiled artefacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-output-${{ github.sha }}
           path: |
-            apps/vscode/out/
+            apps/vscode/dist/
+            apps/vscode/parsers/
             apps/vscode/webview-ui/dist/
           retention-days: 3
 
@@ -161,10 +153,9 @@ jobs:
 
           echo "--- Verifying required files are present ---"
           required_files=(
-            "out/extension.js"
+            "dist/extension.js"
             "package.json"
             "README.md"
-            "parsers/web-tree-sitter.cjs"
             "parsers/web-tree-sitter.wasm"
             "parsers/tree-sitter-typescript.wasm"
             "parsers/tree-sitter-python.wasm"
@@ -185,8 +176,8 @@ jobs:
             "node_modules/"
             "tsconfig.json"
             ".eslintrc"
-            "test-fixtures/"
-            "out/test/"
+            "fixtures/"
+            "out/"
           )
           for p in "${excluded_patterns[@]}"; do
             if grep -q "$p" package-manifest.txt; then

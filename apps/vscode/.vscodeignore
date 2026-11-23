@@ -20,8 +20,9 @@ scripts/**
 test-profile/**
 test-extensions/**
 
-# Exclude compiled test suite — tests have no role in a production extension
-out/test/**
+# out/ holds only the compiled test suites (the extension ships as dist/extension.js)
+out/**
+tsconfig.test.json
 
 # Exclude webview build tooling — only webview-ui/dist/ is needed at runtime
 webview-ui/esbuild.js
@@ -36,7 +37,5 @@ webview-ui/tsconfig.json
 webview-ui/dist/kokoro-model/**/model.onnx
 
 # Unit-test fixtures and benchmark tooling
-test-fixtures/**
-parsers/.grammars-stamp.json
 .vscode-test.mjs
 webview-ui/test/**
