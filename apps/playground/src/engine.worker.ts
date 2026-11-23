@@ -212,6 +212,8 @@ scope.onmessage = async (ev) => {
         else if (req.type === 'file') result = fileDetail(req.path);
         else if (req.type === 'view') result = current?.hierarchy.project(req.request);
         else if (req.type === 'explain') result = current?.hierarchy.explainEdge(req.source, req.target);
+        else if (req.type === 'children') result = current?.hierarchy.children(req.key);
+        else if (req.type === 'describe') result = current?.hierarchy.describe(req.key);
         else result = search(req.query);
         scope.postMessage({ type: 'result', id: req.id, result });
     } catch (err) {

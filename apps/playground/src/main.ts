@@ -3,7 +3,11 @@
  * Everything a repository supplies (paths, names, import specifiers) is
  * rendered as text, never as HTML.
  */
-import type { EdgeExplanation, View } from '@codearchy/protocol';
+import { createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from '@codearchy/protocol';
+import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
+import '@codearchy/ui/styles.css';
 import type { FileDetail, FileRow, Request, Response, SearchHit, Source, Summary, TreeRow } from './protocol.js';
 
 // ─── engine connection ──────────────────────────────────────────────────────
@@ -72,13 +76,43 @@ function table<T>(rows: T[], headers: string[], cells: (r: T) => Array<string | 
 
 // ─── state + views ──────────────────────────────────────────────────────────
 
-type Tab = 'tree' | 'view' | 'files' | 'edges' | 'unresolved' | 'search';
-const TABS: Tab[] = ['tree', 'view', 'files', 'edges', 'unresolved', 'search'];
+type Tab = 'map' | 'tree' | 'view' | 'files' | 'edges' | 'unresolved' | 'search';
+const TABS: Tab[] = ['map', 'tree', 'view', 'files', 'edges', 'unresolved', 'search'];
 /** The View tab's request: what the Map will ask the engine for. */
 let viewScope = 'sys:root';
 let viewExpanded: string[] = [];
 let summary: Summary | undefined;
-let tab: Tab = 'tree';
+let tab: Tab = 'map';
+let loads = 0;
+let mapRoot: Root | undefined;
+
+/** The UI's way to the engine: the same worker requests the tabs use. */
+const engineClient: EngineClient = {
+    view: (request: ViewRequest) => call<View | undefined>({ type: 'view', request }),
+    children: (key: string) => call<NodeSummary[] | undefined>({ type: 'children', key }),
+    describe: (key: string) => call<NodeDetails | undefined>({ type: 'describe', key }),
+    explain: (source: string, target: string) => call<EdgeExplanation | undefined>({ type: 'explain', source, target }),
+    search: async (query: string) =>
+        (await call<SearchHit[]>({ type: 'search', query })).map((h) => ({
+            key: `mod:${h.path}`,
+            name: h.container ? `${h.container}.${h.name}` : h.name,
+            kind: h.kind,
+            path: h.path,
+            line: h.line,
+        })),
+};
+
+function renderMap(): void {
+    mapRoot ??= createRoot($('map'));
+    mapRoot.render(
+        createElement(CodeArchyMap, {
+            client: engineClient,
+            layoutWorkerUrl: new URL('elk-worker.js', location.href).href,
+            hostKind: 'web',
+            revision: `${summary?.name ?? ''}#${loads}`,
+        })
+    );
+}
 /** Expanded rows of the hierarchy tree (indexes into summary.tree). */
 let expanded = new Set<number>();
 let treeChildren: number[][] = [];
@@ -115,6 +149,11 @@ function renderList(): void {
     const filter = $<HTMLInputElement>('filter').value;
     $<HTMLInputElement>('filter').placeholder = tab === 'search' ? 'Symbol name prefix (e.g. OrderSer)' : 'Filter';
     const list = $('list');
+    const onMap = tab === 'map' && !!summary;
+    $('map').hidden = !onMap;
+    document.querySelector('main')!.hidden = onMap;
+    $<HTMLInputElement>('filter').hidden = onMap;
+    if (onMap) return renderMap();
     if (!summary) return list.replaceChildren(el('p', { className: 'note', textContent: 'Load the sample or open a folder.' }));
     if (tab === 'tree') {
         list.replaceChildren(renderTree(summary.tree, filter));
@@ -261,6 +300,7 @@ async function load(source: Source, label: string): Promise<void> {
         expanded = new Set([0, ...treeChildren[0] ?? []]);
         viewScope = 'sys:root';
         viewExpanded = [];
+        loads++;
         $('detail').replaceChildren(el('p', { className: 'note', textContent: 'Pick a row to inspect a file.' }));
         renderList();
     } catch (err) {

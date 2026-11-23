@@ -1,0 +1,103 @@
+/**
+ * Layout with ELK (layered, left to right) in a Web Worker, so it never runs
+ * on the UI thread. Results are cached by the view's frontier hash: going
+ * back to a view, or re-expanding the same node, reuses the same positions.
+ */
+import * as elkApi from 'elkjs/lib/elk-api.js';
+import type { ELK as ElkInstance, ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api.js';
+import type { MapModel } from './model.js';
+
+export interface Box {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+/** Positions relative to the parent container (or the canvas), as React Flow expects. */
+export type Layout = Map<string, Box>;
+
+const ROOT_OPTIONS: Record<string, string> = {
+    'elk.algorithm': 'layered',
+    'elk.direction': 'RIGHT',
+    'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+    'elk.edgeRouting': 'ORTHOGONAL',
+    'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+    'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+    'elk.spacing.nodeNode': '36',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+    'elk.spacing.edgeNode': '24',
+};
+const CONTAINER_OPTIONS: Record<string, string> = {
+    'elk.padding': '[top=44,left=20,bottom=20,right=20]',
+};
+
+/** The ELK graph for a model: containers hold their children; edges live at the root. */
+export function toElkGraph(model: MapModel): ElkNode {
+    const byId = new Map<string, ElkNode>();
+    const root: ElkNode = { id: '__root', layoutOptions: ROOT_OPTIONS, children: [], edges: [] };
+    for (const n of model.nodes) {
+        const node: ElkNode = n.type === 'container' ? { id: n.id, layoutOptions: CONTAINER_OPTIONS, children: [] } : { id: n.id, width: n.width, height: n.height };
+        byId.set(n.id, node);
+    }
+    for (const n of model.nodes) {
+        const parent = n.parent ? byId.get(n.parent) : undefined;
+        (parent ?? root).children!.push(byId.get(n.id)!);
+    }
+    root.edges = model.edges.map((e): ElkExtendedEdge => ({ id: e.id, sources: [e.source], targets: [e.target] }));
+    return root;
+}
+
+export function fromElkGraph(root: ElkNode): Layout {
+    const out: Layout = new Map();
+    const walk = (n: ElkNode) => {
+        for (const c of n.children ?? []) {
+            out.set(c.id, { x: c.x ?? 0, y: c.y ?? 0, width: c.width ?? 0, height: c.height ?? 0 });
+            walk(c);
+        }
+    };
+    walk(root);
+    return out;
+}
+
+type ElkConstructor = new (args: { workerUrl?: string }) => ElkInstance;
+/** elkjs is CommonJS: depending on the bundler the class is the module or its `default`. */
+const ELK: ElkConstructor = ((elkApi as unknown as { default?: unknown }).default ?? elkApi) as ElkConstructor;
+
+export interface LayoutEngineOptions {
+    /** URL of elkjs's `lib/elk-worker.min.js`, served by the host. */
+    workerUrl: string;
+    /** Layouts kept in memory (default 40). */
+    cacheSize?: number;
+}
+
+export class LayoutEngine {
+    private readonly elk: ElkInstance;
+    private readonly cache = new Map<string, Promise<Layout>>();
+    private readonly cacheSize: number;
+
+    constructor(options: LayoutEngineOptions) {
+        this.elk = new ELK({ workerUrl: options.workerUrl });
+        this.cacheSize = options.cacheSize ?? 40;
+    }
+
+    /** Lays out `model`; `key` (the frontier hash) identifies it for the cache. */
+    layout(key: string, model: MapModel): Promise<Layout> {
+        const hit = this.cache.get(key);
+        if (hit) {
+            this.cache.delete(key);
+            this.cache.set(key, hit); // most recently used
+            return hit;
+        }
+        const pending = this.elk.layout(toElkGraph(model)).then(fromElkGraph);
+        pending.catch(() => this.cache.delete(key));
+        this.cache.set(key, pending);
+        while (this.cache.size > this.cacheSize) this.cache.delete(this.cache.keys().next().value!);
+        return pending;
+    }
+
+    dispose(): void {
+        this.elk.terminateWorker();
+        this.cache.clear();
+    }
+}

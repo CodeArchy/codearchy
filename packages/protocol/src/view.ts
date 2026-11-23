@@ -85,3 +85,40 @@ export interface EdgeExplanation {
         evidence: Array<{ source: string; line?: number }>;
     }>;
 }
+
+/** One hierarchy node, as the Navigator and search results show it. */
+export interface NodeSummary {
+    key: string;
+    kind: HierarchyKind;
+    name: string;
+    path: string;
+    modules: number;
+    /** Can be drilled into or expanded. */
+    hasChildren: boolean;
+    role?: ComponentRole;
+    roleConfidence?: number;
+    roleReason?: string;
+    virtual?: boolean;
+    language?: string;
+}
+
+/** A neighbour in the Inspector's "Depends on" / "Used by" lists. */
+export interface NodeLink {
+    key: string;
+    name: string;
+    weight: number;
+    /** Outside the node's parent: reached through a port stub. */
+    outside?: boolean;
+}
+
+/** Everything the Inspector shows for one node. */
+export interface NodeDetails extends NodeSummary {
+    breadcrumb: Array<{ key: string; name: string; kind: HierarchyKind }>;
+    /** Direct children (containers). */
+    children: NodeSummary[];
+    /** Symbols of a module, in source order; `depth` 0 is top level. */
+    symbols: Array<{ key: string; name: string; kind: string; exported: boolean; startLine: number; endLine: number; depth: number }>;
+    /** At the level of the node's siblings (and beyond, through port stubs). */
+    dependsOn: NodeLink[];
+    usedBy: NodeLink[];
+}

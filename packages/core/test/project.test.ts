@@ -161,4 +161,18 @@ describe('Projector', () => {
             assert.strictEqual(v.ports.reduce((s, p) => s + p.weight, 0), crossing, `ports of ${scope.key}`);
         }
     });
+
+    test('describe: summary, breadcrumb, children, symbols and neighbours at the sibling level', () => {
+        const idx = index();
+        const core = idx.describe('dir:core')!;
+        assert.deepStrictEqual(core.breadcrumb.map((b) => b.key), ['sys:root', 'dir:core']);
+        assert.deepStrictEqual(core.children.map((c) => c.key), ['dir:core/auth', 'dir:core/orders']);
+        assert.deepStrictEqual(core.dependsOn, [{ key: 'dir:db', name: 'db', weight: 4 }]);
+        assert.deepStrictEqual(core.usedBy, [{ key: 'dir:api', name: 'api', weight: 3 }]);
+        const orders = idx.describe('dir:core/orders')!;
+        assert.deepStrictEqual(orders.dependsOn.map((l) => `${l.name}${l.outside ? ' (outside)' : ''} ${l.weight}`), ['db (outside) 4', 'auth 1']);
+        assert.deepStrictEqual(orders.usedBy.map((l) => `${l.name}${l.outside ? ' (outside)' : ''}`), ['api (outside)']);
+        assert.deepStrictEqual(idx.children('dir:core')!.map((c) => c.name), ['auth', 'orders']);
+        assert.strictEqual(idx.describe('nope'), undefined);
+    });
 });

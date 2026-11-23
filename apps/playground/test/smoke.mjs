@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Playground smoke test in Chromium, Firefox and WebKit: load the sample,
- * check the numbers against the golden graph, expand the hierarchy, search,
+ * check the numbers against the golden graph, drive the Map (drill, expand,
+ * inspect, explain an edge, keyboard, ⌘K, Navigator), expand the hierarchy, search,
  * open a file, then
  * reload and check that the OPFS index makes the second run parse nothing.
  *
@@ -44,6 +45,30 @@ for (const name of wanted) {
         assert.equal(await stat(page, 'edges'), String(GOLDEN_POLYGLOT.edges.length), 'edges');
         assert.equal(await stat(page, 'symbols'), String(GOLDEN_POLYGLOT.symbols), 'symbols');
         const storage = await stat(page, 'storage');
+
+        // Map (the default tab): @codearchy/ui's CodeArchyMap over the engine worker.
+        const mapNode = (key) => page.locator(`.react-flow__node[data-id="${key}"]`);
+        const crumb = () => page.locator('.ca-breadcrumb').textContent();
+        await mapNode('pkg:rust').waitFor();
+        await mapNode('pkg:.').dblclick();
+        await mapNode('dir:web/src').waitFor();
+        assert.match(await crumb(), /poly$/);
+        await mapNode('dir:web/src').locator('.ca-expand').click();
+        await mapNode('mod:web/src/index.ts').click();
+        await page.locator('.ca-inspector h3', { hasText: 'Depends on (4)' }).waitFor();
+        await page.locator('.react-flow__edge[data-id="mod:web/src/index.ts->mod:web/src/esm.ts"]').click({ force: true });
+        await page.locator('.ca-inspector', { hasText: 'Dependency' }).locator('h2', { hasText: 'index.ts → esm.ts' }).waitFor();
+        await page.locator('.ca-root').focus();
+        await page.keyboard.press('Backspace');
+        await mapNode('pkg:rust').waitFor();
+        await page.keyboard.press('Control+k');
+        await page.locator('.ca-search input').fill('OrderSer');
+        await page.locator('.ca-search li', { hasText: 'OrderService' }).first().waitFor();
+        await page.keyboard.press('Enter');
+        await mapNode('mod:cs/Orders/OrderService.cs').waitFor();
+        await page.locator('.ca-navigator [data-key="pkg:rust"]').click();
+        await page.locator('.ca-inspector[data-key="pkg:rust"]').waitFor();
+        await page.click('#tab-tree');
 
         // Hierarchy (the default tab): packages open under the system; a click collapses and re-expands.
         const rustPkg = page.locator('.tree [data-key="pkg:rust"]');

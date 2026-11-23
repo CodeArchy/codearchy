@@ -1,0 +1,123 @@
+@import '@xyflow/react/dist/style.css';
+
+/*
+ * Theme tokens. In VS Code the --vscode-* variables exist, so the UI follows
+ * the editor theme (light, dark, high contrast); on the web the fallbacks
+ * apply, with a dark set under prefers-color-scheme. Structure stays neutral:
+ * colour is reserved for lenses.
+ */
+.ca-root {
+    --ca-bg: var(--vscode-editor-background, #ffffff);
+    --ca-fg: var(--vscode-editor-foreground, #1d2330);
+    --ca-muted: var(--vscode-descriptionForeground, #5d6677);
+    --ca-line: var(--vscode-panel-border, #e3e6ec);
+    --ca-panel: var(--vscode-sideBar-background, #f6f7f9);
+    --ca-node: var(--vscode-editorWidget-background, #ffffff);
+    --ca-node-border: var(--vscode-editorWidget-border, #c9ced8);
+    --ca-accent: var(--vscode-focusBorder, #3b5bdb);
+    --ca-hover: var(--vscode-list-hoverBackground, #eef2ff);
+    --ca-selected: var(--vscode-list-activeSelectionBackground, #dbe4ff);
+    --ca-edge: var(--vscode-editorLineNumber-foreground, #98a1b3);
+    --ca-font: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+    --ca-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+    color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+    .ca-root[data-host="web"] {
+        --ca-bg: #15171c;
+        --ca-fg: #e6e8ee;
+        --ca-muted: #9aa3b5;
+        --ca-line: #2b2f38;
+        --ca-panel: #1c1f26;
+        --ca-node: #20242c;
+        --ca-node-border: #3a404c;
+        --ca-accent: #8ea2ff;
+        --ca-hover: #23283a;
+        --ca-selected: #2b3352;
+        --ca-edge: #6b7486;
+        color-scheme: dark;
+    }
+}
+
+.ca-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ca-bg); color: var(--ca-fg); font: 13px/1.4 var(--ca-font); outline: none; }
+.ca-root button { font: inherit; color: inherit; }
+.ca-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--ca-line); min-height: 36px; flex-wrap: wrap; }
+.ca-toolbar-gap { flex: 1; }
+.ca-breadcrumb { overflow-wrap: anywhere; }
+.ca-sep { color: var(--ca-muted); }
+.ca-root .ca-link { background: none; border: 0; padding: 0; color: var(--ca-accent); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.ca-root .ca-link:hover { text-decoration: underline; }
+.ca-search-button { background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.ca-search-button kbd { font: 11px var(--ca-mono); color: var(--ca-muted); margin-left: 6px; }
+.ca-chip { display: inline-block; font-size: 11px; border: 1px solid var(--ca-line); border-radius: 10px; padding: 0 6px; color: var(--ca-muted); white-space: nowrap; }
+.ca-muted { color: var(--ca-muted); }
+.ca-path { font: 12px var(--ca-mono); overflow-wrap: anywhere; }
+
+.ca-body { flex: 1; display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(220px, 320px); min-height: 0; }
+.ca-navigator, .ca-side { overflow: auto; background: var(--ca-panel); min-width: 0; }
+.ca-navigator { border-right: 1px solid var(--ca-line); }
+.ca-side { border-left: 1px solid var(--ca-line); }
+@media (max-width: 860px) {
+    .ca-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(360px, 1fr) auto auto; }
+    .ca-navigator { order: 2; border-right: 0; border-top: 1px solid var(--ca-line); max-height: 240px; }
+    .ca-side { order: 3; border-left: 0; border-top: 1px solid var(--ca-line); }
+}
+.ca-panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ca-muted); padding: 10px 12px 4px; }
+.ca-navigator ul { list-style: none; margin: 0; padding: 0; }
+.ca-nav-row { display: flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; cursor: pointer; border-radius: 4px; margin: 0 4px; }
+.ca-nav-row:hover, .ca-nav-row:focus { background: var(--ca-hover); outline: none; }
+.ca-nav-row.ca-on-path .ca-nav-name { font-weight: 600; }
+.ca-nav-row.ca-selected { background: var(--ca-selected); }
+.ca-nav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ca-twisty { width: 16px; background: none; border: 0; padding: 0; color: var(--ca-muted); cursor: pointer; }
+
+.ca-canvas { position: relative; min-width: 0; min-height: 0; }
+.ca-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 12px; padding: 2px 10px; color: var(--ca-muted); }
+.ca-canvas > .react-flow { position: absolute; inset: 0; width: auto; height: auto; background: var(--ca-bg); }
+.ca-canvas .react-flow__background { color: var(--ca-line); }
+.ca-canvas .react-flow__controls button { background: var(--ca-panel); color: var(--ca-fg); border-color: var(--ca-line); fill: var(--ca-fg); }
+.ca-root .react-flow__minimap { background: var(--ca-panel); border: 1px solid var(--ca-line); }
+.ca-root .react-flow__minimap-mask { fill: color-mix(in srgb, var(--ca-bg) 65%, transparent); }
+.ca-root .react-flow__minimap-node { fill: var(--ca-node-border); stroke: none; }
+
+.ca-node { width: 100%; height: 100%; box-sizing: border-box; background: var(--ca-node); border: 1px solid var(--ca-node-border); border-radius: 10px; padding: 6px 10px; display: flex; flex-direction: column; justify-content: space-between; transition: opacity 0.15s; }
+.ca-node.ca-kind-package { border-width: 2px; }
+.ca-node.ca-kind-module { border-radius: 6px; padding: 4px 10px; }
+.ca-node.ca-virtual { border-style: dashed; }
+.ca-node.ca-selected, .ca-container.ca-selected, .ca-external.ca-selected { border-color: var(--ca-accent); box-shadow: 0 0 0 2px var(--ca-accent); }
+.ca-node-head { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ca-muted); }
+.ca-node-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-node-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ca-muted); gap: 6px; }
+.ca-expand { background: none; border: 1px solid var(--ca-line); border-radius: 50%; width: 20px; height: 20px; line-height: 16px; padding: 0; cursor: pointer; color: var(--ca-muted); }
+.ca-expand:hover { color: var(--ca-accent); border-color: var(--ca-accent); }
+.ca-container { width: 100%; height: 100%; box-sizing: border-box; border: 1px solid var(--ca-node-border); border-radius: 12px; background: color-mix(in srgb, var(--ca-panel) 70%, transparent); }
+.ca-container-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--ca-line); }
+.ca-container-head .ca-node-name { flex: 1; }
+.ca-external { width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--ca-node-border); border-radius: 20px; display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--ca-muted); background: var(--ca-bg); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ca-dim { opacity: 0.25; }
+.ca-handle { opacity: 0; pointer-events: none; }
+.ca-edge .react-flow__edge-path { stroke: var(--ca-edge); }
+.ca-edge-port .react-flow__edge-path { stroke-dasharray: 4 4; }
+.ca-edge-implicit .react-flow__edge-path { stroke-dasharray: 1 4; }
+.ca-edge-selected .react-flow__edge-path, .ca-edge:hover .react-flow__edge-path { stroke: var(--ca-accent); }
+.react-flow__edge.ca-dim { opacity: 0.15; }
+.ca-root .react-flow__edge-textbg { fill: var(--ca-bg); }
+.ca-root .react-flow__edge-text { fill: var(--ca-muted); font-size: 10px; }
+
+.ca-inspector { padding: 0 12px 16px; }
+.ca-inspector h2 { font-size: 15px; margin: 4px 0; overflow-wrap: anywhere; }
+.ca-inspector h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ca-muted); margin: 14px 0 4px; font-weight: 500; }
+.ca-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.ca-actions button { background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.ca-actions button:hover { border-color: var(--ca-accent); }
+.ca-list { list-style: none; margin: 0; padding: 0; }
+.ca-list li { padding: 2px 0; overflow-wrap: anywhere; }
+.ca-deps li { padding: 4px 0; border-bottom: 1px solid var(--ca-line); }
+.ca-evidence code { font: 11px var(--ca-mono); margin-right: 8px; }
+
+.ca-search-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.25); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; z-index: 10; }
+.ca-search { width: min(560px, calc(100vw - 32px)); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25); overflow: hidden; }
+.ca-search input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--ca-line); padding: 12px 14px; font: 15px var(--ca-font); background: var(--ca-bg); color: var(--ca-fg); outline: none; }
+.ca-search .ca-list { max-height: 50vh; overflow: auto; }
+.ca-search li { padding: 6px 14px; cursor: pointer; }
+.ca-search li.ca-active { background: var(--ca-selected); }

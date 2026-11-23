@@ -1,0 +1,46 @@
+{
+    "name": "@codearchy/ui",
+    "version": "0.1.0",
+    "description": "CodeArchy's shared UI (React): the Map canvas, Navigator, Inspector and search, rendered from engine views. Used by the VS Code webview and the web app.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./styles.css": "./src/styles.css",
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist",
+        "src/styles.css"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test:unit": "vitest run"
+    },
+    "dependencies": {
+        "@codearchy/protocol": "workspace:*",
+        "@xyflow/react": "12.10.2",
+        "elkjs": "0.11.1"
+    },
+    "peerDependencies": {
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0"
+    },
+    "devDependencies": {
+        "@types/react": "18.3.31",
+        "@types/react-dom": "18.3.7",
+        "react": "18.3.1",
+        "react-dom": "18.3.1",
+        "typescript": "5.9.3",
+        "vitest": "5.1.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "packages/ui"
+    }
+}

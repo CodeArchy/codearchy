@@ -8,6 +8,7 @@
  *   treesitter            core + sdk                      (shared adapter)
  *   grammars              nothing                          (assets)
  *   platform-*            core, protocol, sdk, treesitter, grammars
+ *   ui                    protocol only                   (renders views from an EngineClient)
  *   apps/*                anything (composition roots)
  *
  * Also checked by the compiler: core and sdk build with no DOM and no Node
@@ -26,6 +27,8 @@ const ALLOWED = {
     '@codearchy/platform-node': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk', '@codearchy/treesitter', '@codearchy/grammars'],
     '@codearchy/platform-browser': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk', '@codearchy/treesitter'],
     '@codearchy/conformance': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk'],
+    // The UI renders views; it never runs the engine itself (data comes through EngineClient).
+    '@codearchy/ui': ['@codearchy/protocol'],
 };
 /** Packages that must not depend on vscode, DOM-only or Node-only runtime libraries. */
 const NO_HOST_DEPS = ['@codearchy/protocol', '@codearchy/sdk', '@codearchy/core'];

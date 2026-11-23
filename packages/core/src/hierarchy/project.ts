@@ -10,7 +10,7 @@
  * attributed to the outside node at the level of the scope's (or an
  * ancestor's) siblings.
  */
-import type { EdgeExplanation, Hierarchy, HierarchyEdge, HierarchyNode, PortStub, View, ViewEdge, ViewNode, ViewRequest } from '@codearchy/protocol';
+import type { EdgeExplanation, Hierarchy, HierarchyEdge, HierarchyNode, NodeDetails, NodeLink, NodeSummary, PortStub, View, ViewEdge, ViewNode, ViewRequest } from '@codearchy/protocol';
 import { contentHash } from '../util/hash.js';
 
 export const DEFAULT_VIEW_BUDGET = 300;
@@ -204,6 +204,70 @@ export class HierarchyIndex {
             ports: [...ports.values()].sort((a, b) => cmp(a.node, b.node) || cmp(a.external, b.external) || cmp(a.direction, b.direction)),
             skipped,
             frontierHash: contentHash(`${s.key}\n${containers.map((i) => nodes[i].key).join('\n')}\n${frontier.map((i) => nodes[i].key).join('\n')}`),
+        };
+    }
+
+    summary(index: number): NodeSummary {
+        const n = this.hierarchy.nodes[index];
+        return {
+            key: n.key,
+            kind: n.kind,
+            name: n.name,
+            path: n.path,
+            modules: n.modules,
+            hasChildren: this.hasChildren(index),
+            ...(n.role ? { role: n.role.role, roleConfidence: n.role.confidence, roleReason: n.role.reason } : {}),
+            ...(n.virtual ? { virtual: true } : {}),
+            ...(n.language ? { language: n.language } : {}),
+        };
+    }
+
+    /** Child summaries of a node (Navigator); undefined for an unknown key. */
+    children(key: string): NodeSummary[] | undefined {
+        const i = this.byKey.get(key);
+        return i === undefined ? undefined : this.kids[i].map((c) => this.summary(c));
+    }
+
+    /**
+     * Inspector data: the node, its breadcrumb and children, a module's
+     * symbols, and what it depends on / is used by at its siblings' level
+     * (dependencies leaving the parent appear through their port stubs).
+     */
+    describe(key: string): NodeDetails | undefined {
+        const i = this.byKey.get(key);
+        if (i === undefined) return undefined;
+        const { nodes } = this.hierarchy;
+        const n = nodes[i];
+        const symbols: NodeDetails['symbols'] = [];
+        if (n.kind === 'module') {
+            for (let j = n.tin + 1; j <= n.tout; j++) {
+                const s = nodes[j];
+                symbols.push({ key: s.key, name: s.name, kind: s.symbolKind ?? 'symbol', exported: !!s.exported, startLine: s.startLine ?? 0, endLine: s.endLine ?? 0, depth: s.depth - n.depth - 1 });
+            }
+        }
+        const dependsOn: NodeLink[] = [];
+        const usedBy: NodeLink[] = [];
+        if (n.parent >= 0 && n.kind !== 'symbol') {
+            const view = this.project({ scope: nodes[n.parent].key, budget: Number.MAX_SAFE_INTEGER });
+            const nameOf = (k: string) => this.node(k)?.name ?? k;
+            for (const e of view.edges) {
+                if (e.source === key) dependsOn.push({ key: e.target, name: nameOf(e.target), weight: e.weight });
+                if (e.target === key) usedBy.push({ key: e.source, name: nameOf(e.source), weight: e.weight });
+            }
+            for (const p of view.ports) {
+                if (p.node !== key) continue;
+                (p.direction === 'out' ? dependsOn : usedBy).push({ key: p.external, name: p.externalName, weight: p.weight, outside: true });
+            }
+            dependsOn.sort((a, b) => b.weight - a.weight);
+            usedBy.sort((a, b) => b.weight - a.weight);
+        }
+        return {
+            ...this.summary(i),
+            breadcrumb: this.ancestors(i).map((a) => ({ key: nodes[a].key, name: nodes[a].name, kind: nodes[a].kind })),
+            children: this.kids[i].map((c) => this.summary(c)),
+            symbols,
+            dependsOn,
+            usedBy,
         };
     }
 
