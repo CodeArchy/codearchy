@@ -27,3 +27,9 @@ export {
     type CrawlResult,
     type SummarizerOptions,
 } from './summarizer.js';
+
+// 3.4: grounded chat.
+export { GroundedChat, type AskOptions, type ChatStreamEvent, type GroundedChatOptions } from './chat.js';
+export { checkCitations, type Citation } from './citations.js';
+export { NodeSearch, stem, terms, tokens, type SearchHit } from './search.js';
+export { READ_CODE_BUDGET, READ_CODE_MAX_LINES, runTool, TOOL_SPECS, ToolArgumentError, toolStatus, type CanvasAction, type ToolContext } from './tools.js';

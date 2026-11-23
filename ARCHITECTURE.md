@@ -303,6 +303,42 @@ bounded by fan-out, never by the size of the repository.
 `scripts/live.mjs` indexes a folder and prints its cards, using a model taken
 from the environment.
 
+## Grounded chat
+
+`GroundedChat` (also in `packages/ai`) answers questions about the codebase
+from the index, with citations.
+
+- **Tools mode.** For models that can call tools, the chat gives it six:
+  `search` (names, paths and card text), `get_node` (a card plus its children,
+  or a file's symbols with their signatures and docs, and its strongest
+  dependencies), `neighbors`, `explain_edge` (the file-level dependencies and
+  import sites behind an edge), `read_code` and `show_in_map`. `show_in_map` is
+  a canvas action: the UI turns it into a "Show me" button. Lookups stream as
+  status lines, the loop stops after 8 rounds, and tool arguments are
+  validated. A bad call goes back to the model as an error result.
+- **Retrieval.** Every question starts from a search of it. Models without tool
+  calling answer from the top hits and their cards (RAG). In tools mode, the top
+  hits give the model somewhere to start. Search is BM25 over word tokens
+  (camelCase, snake_case and paths split; stopwords removed; light stemming),
+  plus card text when cards are available.
+- **Code only where the tier allows it.** `read_code` is offered only when
+  excerpts may reach the chat model: a model on this machine, or the
+  `excerpts` tier. It reads only indexed files, at most 120 lines per call and
+  600 per conversation. Once code has been read, later requests declare
+  `excerpts`.
+- **A cacheable prompt.** The system prompt holds only stable text: the rules,
+  the system card and the top-level parts. The map selection and the question
+  go in the user turn.
+- **Checked citations.** Answers cite with `[Name](node:<key>)` and
+  `[file.ts:42](file:<path>#L42)`. Before the answer is handed over, links the
+  index doesn't know become plain text. Inline-code names that match exactly
+  one file or symbol become links. Links with no scheme that point to an
+  indexed file become `file:` links. The `done` event carries the checked
+  answer, its citations, the canvas actions and the history to continue from.
+
+`scripts/ask.mjs` indexes a folder and asks a question with a model taken from
+the environment.
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs

@@ -90,6 +90,9 @@ describe('ProviderRegistry', () => {
         await registry.refresh();
         expect(registry.resolve('summarizer')).toMatchObject({ ok: true, provider: 'ollama', model: 'small', why: expect.stringContaining('runs on this machine') });
         expect(registry.resolve('chat')).toMatchObject({ ok: true, provider: 'cloud', model: 'a', why: expect.stringContaining('your chosen model') });
+        registry.configure({ policy: { tier: 'structure' }, defaults: {} });
+        expect(registry.resolve('chat')).toMatchObject({ provider: 'cloud', model: 'b' }); // tool-capable and the largest context
+        registry.configure({ policy: { tier: 'structure' }, defaults: { cloud: 'a' } });
         expect(registry.resolve('embedder')).toMatchObject({ ok: true, provider: 'cloud', model: 'emb' });
 
         registry.configure({ policy: { tier: 'structure' } }); // no defaults: the largest context wins
@@ -99,7 +102,10 @@ describe('ProviderRegistry', () => {
         expect(registry.resolve('chat')).toMatchObject({ ok: true, provider: 'ollama', why: 'Assigned to Chat in settings' });
 
         registry.configure({ policy: { tier: 'local-only' } });
-        expect(registry.resolve('chat')).toEqual({ ok: false, reason: 'No ready provider has a model for the Chat role' }); // the local model can't call tools
+        // The local model can't call tools: chat still takes it (and answers by retrieval)…
+        expect(registry.resolve('chat')).toMatchObject({ ok: true, provider: 'ollama', model: 'small' });
+        // …but nothing can embed.
+        expect(registry.resolve('embedder')).toEqual({ ok: false, reason: 'No ready provider has a model for the Embedder role' });
     });
 
     it('blocks code excerpts under the structure tier and treats undeclared content as excerpts', async () => {
