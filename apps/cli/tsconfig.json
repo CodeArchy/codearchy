@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "A Node composition root: Node types are fine here (unlike the packages).",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist", "types": ["node"] },
+    "include": ["src"]
+}

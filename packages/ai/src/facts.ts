@@ -155,7 +155,9 @@ export function moduleFacts(index: HierarchyIndex, i: number, text: string | und
     const shown = (exported.length ? exported : symbols.filter((s) => !s.nested)).slice(0, 4);
     const declares = shown.length ? `defining ${shown.map((s) => s.name).join(', ')}${all.length > shown.length ? ', …' : ''}` : 'with no top-level declarations';
     const label = node.role ? ROLE_LABEL[node.role.role] : 'A';
-    const purpose = facts.doc ? firstSentence(facts.doc) : `${label === 'A' ? 'A' : `${label}:`} ${node.language ?? ''} module ${declares}.`.replace(/\s+/g, ' ');
+    // No header doc? The doc of the first documented top-level symbol often describes the file (Ruby, Python).
+    const leadDoc = facts.doc ?? symbols.find((s) => !s.nested && s.doc)?.doc;
+    const purpose = leadDoc ? firstSentence(leadDoc) : `${label === 'A' ? 'A' : `${label}:`} ${node.language ?? ''} module ${declares}.`.replace(/\s+/g, ' ');
     const risks: string[] = [];
     if (m?.cyclic) risks.push('Part of a dependency cycle');
     if (m?.hub) risks.push('Many modules depend on it or it on them (a hub)');
@@ -169,7 +171,7 @@ export function moduleFacts(index: HierarchyIndex, i: number, text: string | und
             responsibilities: shown.slice(0, 3).map((s) => s.signature ?? `${s.kind} ${s.name}`),
             keyNodes: shown.slice(0, 3).map((s) => refs.get(s.ref)!),
             risks,
-            confidence: facts.doc ? 0.35 : 0.2,
+            confidence: facts.doc ? 0.35 : leadDoc ? 0.3 : 0.2,
         },
     };
 }

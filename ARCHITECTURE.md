@@ -376,6 +376,16 @@ the environment.
   sample or open a local folder, then inspect stats, files, edges, unresolved
   imports and symbol search. It uses the same browser adapters as the web app,
   and it is the quickest way to see what the engine makes of a repository.
+- **`apps/cli`** is the `codearchy` command line. `codearchy mcp` serves the
+  map to the user's own AI agent over the Model Context Protocol (stdio, with
+  the official TypeScript SDK). It offers `overview` plus the grounded-chat
+  tools (`search`, `get_node`, `neighbors`, `explain_edge` and, unless
+  `--no-code` is passed, `read_code`), all read-only. The agent works under
+  its own subscription, and CodeArchy makes no model calls. The workspace is
+  indexed at start-up (`git ls-files` when available). A file watcher marks
+  the index stale, and the next call rebuilds it. stdout carries the
+  protocol and logs go to stderr. Setup per agent:
+  [docs/guides/mcp.md](docs/guides/mcp.md).
 
 ## Design rules
 
