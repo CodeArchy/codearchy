@@ -83,6 +83,9 @@ importers:
       esbuild:
         specifier: 0.25.12
         version: 0.25.12
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       playwright:
         specifier: 1.65.0
         version: 1.65.0
@@ -380,12 +383,18 @@ importers:
       '@codearchy/core':
         specifier: workspace:*
         version: link:../core
+      '@codearchy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@codearchy/treesitter':
         specifier: workspace:*
         version: link:../treesitter
       '@sqlite.org/sqlite-wasm':
         specifier: 3.54.1-build1
         version: 3.54.1-build1
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
     devDependencies:
       '@codearchy/conformance':
         specifier: workspace:*
@@ -1874,6 +1883,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   file-entry-cache@6.0.1:
     resolution: {integrity: sha512-7Gps/XWymbLk2QLYK4NzpMOrYjMhdIxXuIvy2QBsLE6ljuodKvdkWs/cpyJJ3CVIVpH0Oi1Hvg1ovbMzLdFBBg==}
@@ -4244,6 +4256,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
+
+  fflate@0.8.3: {}
 
   file-entry-cache@6.0.1:
     dependencies:

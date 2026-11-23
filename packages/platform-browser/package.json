@@ -13,6 +13,14 @@
             "types": "./dist/worker.d.ts",
             "default": "./dist/worker.js"
         },
+        "./engine": {
+            "types": "./dist/engine/worker.d.ts",
+            "default": "./dist/engine/worker.js"
+        },
+        "./client": {
+            "types": "./dist/client.d.ts",
+            "default": "./dist/client.js"
+        },
         "./package.json": "./package.json"
     },
     "files": [
@@ -25,8 +33,10 @@
     },
     "dependencies": {
         "@codearchy/core": "workspace:*",
+        "@codearchy/protocol": "workspace:*",
         "@codearchy/treesitter": "workspace:*",
-        "@sqlite.org/sqlite-wasm": "3.54.1-build1"
+        "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+        "fflate": "0.8.3"
     },
     "devDependencies": {
         "@codearchy/conformance": "workspace:*",
