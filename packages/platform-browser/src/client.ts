@@ -14,6 +14,7 @@ export type { EngineSource } from './engine/messages.js';
 export class WorkerEngine implements EngineClient {
     private readonly pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
     private readonly listeners = new Set<(e: EngineEvent) => void>();
+    private readonly hostListeners = new Set<(e: unknown) => void>();
     private nextId = 1;
 
     constructor(private readonly worker: Worker) {
@@ -21,6 +22,10 @@ export class WorkerEngine implements EngineClient {
             const msg = ev.data;
             if ('event' in msg) {
                 for (const l of this.listeners) l(msg.event);
+                return;
+            }
+            if ('hostEvent' in msg) {
+                for (const l of this.hostListeners) l(msg.hostEvent);
                 return;
             }
             const p = this.pending.get(msg.id);
@@ -47,6 +52,12 @@ export class WorkerEngine implements EngineClient {
     /** Opens (indexes) a workspace; replaces the previous one. */
     open(source: EngineSource): Promise<WorkspaceSummary> {
         return this.call('open', { source }, source.kind === 'zip' ? [source.data] : []);
+    }
+
+    /** Events a host handler sent (HandlerContext.emit); their shape is the host's. Returns an unsubscribe. */
+    onHostEvent(listener: (event: unknown) => void): () => void {
+        this.hostListeners.add(listener);
+        return () => this.hostListeners.delete(listener);
     }
 
     /** Progress while opening; `changed` when a watched folder changes. Returns an unsubscribe. */

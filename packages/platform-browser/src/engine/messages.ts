@@ -24,4 +24,6 @@ export interface EngineRequest {
 export type EngineReply =
     | { id: number; result: unknown }
     | { id: number; error: string }
-    | { event: EngineEvent };
+    | { event: EngineEvent }
+    /** Sent by a host handler (HandlerContext.emit): the host defines its shape. */
+    | { hostEvent: unknown };

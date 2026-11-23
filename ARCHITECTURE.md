@@ -379,10 +379,19 @@ the environment.
     `readFile`. A picked folder can be watched: `FileSystemObserver` where the
     browser has it, adaptive polling otherwise; changes go through
     `Indexer.update`, and a `changed` event tells the UI to refresh in place.
-    Hosts can add their own requests (`handlers`).
+    Hosts can add their own requests (`handlers`). A handler can also push its
+    own events to the page (`ctx.emit`; the page listens with
+    `WorkerEngine.onHostEvent`), for example to stream an answer.
   - `./client` — `WorkerEngine` (the UI-thread `EngineClient`) and helpers that
     turn a folder picker, an `<input webkitdirectory>` or a drag-and-drop into
     a source. It imports no engine code.
+  - `./stores` — `IdbKeyValue` (IndexedDB) and `IdbSecretStore`, for a
+    browser host's settings and API keys. Secrets are encrypted with AES-GCM
+    under a non-extractable WebCrypto key kept in IndexedDB, so the raw key
+    material can never be read out and stored data copied from disk is useless
+    on its own. This doesn't protect against script running on the page itself,
+    so the host's content security policy still matters. Without IndexedDB
+    (some private modes), both stores fall back to memory and say so.
 - **`apps/playground`** is a browser debug UI for the engine. Load the
   sample or open a local folder, then inspect stats, files, edges, unresolved
   imports and symbol search. It uses the same browser adapters as the web app,

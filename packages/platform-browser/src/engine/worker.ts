@@ -54,7 +54,12 @@ export interface EngineWorkerConfig {
     handlers?: Record<string, EngineHandler>;
 }
 
-export type EngineHandler = (ws: EngineWorkspace, params: Record<string, unknown>) => unknown;
+export type EngineHandler = (ws: EngineWorkspace, params: Record<string, unknown>, ctx: HandlerContext) => unknown;
+
+/** What a host handler can do besides answering: push its own events to the page (e.g. a streamed answer). */
+export interface HandlerContext {
+    emit(event: unknown): void;
+}
 
 /** The open workspace, as host handlers see it. */
 export interface EngineWorkspace {
@@ -87,6 +92,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
     // Object.prototype (`constructor`, `__proto__`, ...).
     const handlers = new Map(Object.entries(config.handlers ?? {}).filter(([, h]) => typeof h === 'function'));
     const emit = (event: EngineEvent) => scope.postMessage({ event });
+    const ctx: HandlerContext = { emit: (hostEvent) => scope.postMessage({ hostEvent }) };
 
     let ws: (EngineWorkspace & { indexer: Indexer; pool: BrowserWorkerPool; live: boolean; lazy: { hierarchy?: HierarchyIndex; resolver?: ImportResolver } }) | undefined;
     let stopWatch: (() => void) | undefined;
@@ -313,7 +319,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             default: {
                 const custom = typeof method === 'string' ? handlers.get(method) : undefined;
                 if (typeof custom !== 'function') throw new Error(`unknown engine request: ${String(method).slice(0, 60)}`);
-                return custom(w, params);
+                return custom(w, params, ctx);
             }
         }
     }

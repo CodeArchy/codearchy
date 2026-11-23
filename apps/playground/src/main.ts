@@ -72,6 +72,8 @@ let loads = 0;
 /** Bumped when a watched folder changes: the Map refetches in place. */
 let dataVersion = 0;
 let mapRoot: Root | undefined;
+// The smoke test drives host events through the real engine worker.
+(globalThis as { __codearchyEngine?: unknown }).__codearchyEngine = engine;
 /** `?ai=demo`: a scripted AI side, to see and test the chat, cards and settings. */
 const ai = new URLSearchParams(location.search).get('ai') === 'demo' ? demoAi(engine) : undefined;
 
