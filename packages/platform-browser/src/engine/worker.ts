@@ -311,8 +311,8 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             case 'readFile':
                 return w.fs.readText(s('path'));
             default: {
-                const custom = handlers.get(method);
-                if (!custom) throw new Error(`unknown engine request: ${String(method).slice(0, 60)}`);
+                const custom = typeof method === 'string' ? handlers.get(method) : undefined;
+                if (typeof custom !== 'function') throw new Error(`unknown engine request: ${String(method).slice(0, 60)}`);
                 return custom(w, params);
             }
         }
