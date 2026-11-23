@@ -29,6 +29,19 @@ export interface Unresolved {
     line?: number;
 }
 
+/** A hierarchy node without symbols; `parent` indexes this list. */
+export interface TreeRow {
+    key: string;
+    kind: string;
+    name: string;
+    path: string;
+    parent: number;
+    modules: number;
+    role?: string;
+    roleReason?: string;
+    virtual?: boolean;
+}
+
 export interface Summary {
     name: string;
     storage: 'opfs' | 'memory';
@@ -39,6 +52,8 @@ export interface Summary {
         edges: number;
         imports: number;
         unresolved: number;
+        components: number;
+        hierarchyMs: number;
         parsed: number;
         reused: number;
         unchanged: number;
@@ -50,6 +65,8 @@ export interface Summary {
     files: FileRow[];
     edges: Array<[string, string]>;
     unresolved: Unresolved[];
+    /** System › Package › Component › Module (symbols left out), DFS pre-order. */
+    tree: TreeRow[];
 }
 
 export interface FileDetail {

@@ -77,3 +77,12 @@ tbody tr:hover, tbody tr:focus { background: var(--row); outline: none; }
 #detail li { overflow-wrap: anywhere; }
 a { color: var(--accent); }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.tree .row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 13px; }
+.tree .row:hover, .tree .row:focus { background: var(--row); outline: none; }
+.tree .twisty { width: 12px; color: var(--muted); flex: none; }
+.tree .badge { font-size: 10px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; flex: none; }
+.tree .name { overflow-wrap: anywhere; }
+.tree .row.package .name, .tree .row.system .name { font-weight: 600; }
+.tree .meta { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.tree .tag { font-size: 11px; color: var(--accent); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; white-space: nowrap; }

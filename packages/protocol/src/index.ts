@@ -6,7 +6,9 @@
  * Hosts translate them to and from their own path format at the edge.
  */
 
-export const PROTOCOL_VERSION = '0.1.0';
+export const PROTOCOL_VERSION = '0.2.0';
+
+export * from './hierarchy.js';
 
 export interface SymbolInfo {
     name: string;

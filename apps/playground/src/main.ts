@@ -3,7 +3,7 @@
  * Everything a repository supplies (paths, names, import specifiers) is
  * rendered as text, never as HTML.
  */
-import type { FileDetail, FileRow, Request, Response, SearchHit, Source, Summary } from './protocol.js';
+import type { FileDetail, FileRow, Request, Response, SearchHit, Source, Summary, TreeRow } from './protocol.js';
 
 // ─── engine connection ──────────────────────────────────────────────────────
 
@@ -71,9 +71,13 @@ function table<T>(rows: T[], headers: string[], cells: (r: T) => Array<string | 
 
 // ─── state + views ──────────────────────────────────────────────────────────
 
-type Tab = 'files' | 'edges' | 'unresolved' | 'search';
+type Tab = 'tree' | 'files' | 'edges' | 'unresolved' | 'search';
+const TABS: Tab[] = ['tree', 'files', 'edges', 'unresolved', 'search'];
 let summary: Summary | undefined;
-let tab: Tab = 'files';
+let tab: Tab = 'tree';
+/** Expanded rows of the hierarchy tree (indexes into summary.tree). */
+let expanded = new Set<number>();
+let treeChildren: number[][] = [];
 let searchSeq = 0;
 
 function renderStats(s: Summary): void {
@@ -88,13 +92,14 @@ function renderStats(s: Summary): void {
             card('edges', t.edges, 'edges'),
             card('imports', t.imports, 'imports'),
             card('unresolved', t.unresolved, 'unresolved'),
+            card('components', t.components, 'components'),
             card('parsed', t.parsed, 'parsed'),
             card('reused', t.reused + t.unchanged, 'reused'),
             card('ms', t.durationMs, 'ms'),
         ),
         el('p', { className: 'note' },
             `${s.name} · storage: `, el('strong', { textContent: s.storage === 'opfs' ? 'OPFS (persistent)' : 'memory', dataset: { stat: 'storage' } }),
-            ` · ${t.workers ? `${t.workers} parse workers` : 'parsed in-process'} · ${s.discovered.toLocaleString()} source files discovered · ${langs}`),
+            ` · ${t.workers ? `${t.workers} parse workers` : 'parsed in-process'} · hierarchy ${t.hierarchyMs} ms · ${s.discovered.toLocaleString()} source files discovered · ${langs}`),
     );
     for (const [id, n] of [['files', t.files], ['edges', t.edges], ['unresolved', t.unresolved]] as const) {
         $(`tab-${id}`).textContent = `${id[0].toUpperCase()}${id.slice(1)} (${n.toLocaleString()})`;
@@ -102,12 +107,14 @@ function renderStats(s: Summary): void {
 }
 
 function renderList(): void {
-    for (const t of ['files', 'edges', 'unresolved', 'search'] as const) $(`tab-${t}`).setAttribute('aria-selected', String(t === tab));
+    for (const t of TABS) $(`tab-${t}`).setAttribute('aria-selected', String(t === tab));
     const filter = $<HTMLInputElement>('filter').value;
     $<HTMLInputElement>('filter').placeholder = tab === 'search' ? 'Symbol name prefix (e.g. OrderSer)' : 'Filter';
     const list = $('list');
     if (!summary) return list.replaceChildren(el('p', { className: 'note', textContent: 'Load the sample or open a folder.' }));
-    if (tab === 'files') {
+    if (tab === 'tree') {
+        list.replaceChildren(renderTree(summary.tree, filter));
+    } else if (tab === 'files') {
         list.replaceChildren(table<FileRow>(summary.files, ['path', 'language', 'symbols', 'imports', 'out', 'in'], (r) => [r.path, r.language, r.symbols, r.imports, r.out, r.in], filter, (r) => showFile(r.path)));
     } else if (tab === 'edges') {
         list.replaceChildren(table(summary.edges, ['from', 'to'], (e) => [e[0], e[1]], filter, (e) => showFile(e[0])));
@@ -123,6 +130,50 @@ function renderList(): void {
             list.replaceChildren(table(hits, ['symbol', 'kind', 'file', 'line'], (h) => [h.container ? `${h.container}.${h.name}` : h.name, h.kind, h.path, h.line + 1], '', (h) => showFile(h.path)));
         });
     }
+}
+
+const KIND_BADGE: Record<string, string> = { system: 'S', package: 'P', component: 'C', module: 'M' };
+
+/** The hierarchy as an expandable tree; with a filter, the matching rows as a flat list. */
+function renderTree(rows: TreeRow[], filter: string): HTMLElement {
+    const box = el('div', { className: 'tree', role: 'tree' });
+    const line = (i: number, depth: number) => {
+        const r = rows[i];
+        const hasKids = treeChildren[i].length > 0;
+        const open = expanded.has(i);
+        const row = el('div', { className: `row ${r.kind}`, role: 'treeitem', tabIndex: 0, dataset: { key: r.key } },
+            el('span', { className: 'twisty', textContent: hasKids ? (open ? '▾' : '▸') : ' ' }),
+            el('span', { className: 'badge', textContent: KIND_BADGE[r.kind] ?? '?', title: r.kind }),
+            el('span', { className: 'name', textContent: r.name }),
+            el('span', { className: 'meta', textContent: `${r.modules.toLocaleString()} file${r.modules === 1 ? '' : 's'}` }),
+            ...(r.virtual ? [el('span', { className: 'tag', textContent: 'cluster', title: 'grouped by dependency communities (or alphabetically)' })] : []),
+            ...(r.role ? [el('span', { className: 'tag', textContent: r.role, title: r.roleReason ?? '' })] : []),
+        );
+        row.style.paddingLeft = `${depth * 16 + 4}px`;
+        row.setAttribute('aria-expanded', String(open));
+        row.onclick = () => {
+            if (r.kind === 'module') return void showFile(r.path);
+            if (open) expanded.delete(i);
+            else expanded.add(i);
+            renderList();
+        };
+        row.onkeydown = (e) => e.key === 'Enter' && row.click();
+        return row;
+    };
+    const f = filter.trim().toLowerCase();
+    if (f) {
+        const hits = rows.map((_, i) => i).filter((i) => rows[i].name.toLowerCase().includes(f) || rows[i].path.toLowerCase().includes(f));
+        for (const i of hits.slice(0, ROW_LIMIT)) box.append(line(i, 0));
+        return el('div', {}, el('p', { className: 'note', textContent: `${hits.length.toLocaleString()} matching nodes` }), box);
+    }
+    let shown = 0;
+    const walk = (i: number, depth: number) => {
+        if (shown++ >= ROW_LIMIT) return;
+        box.append(line(i, depth));
+        if (expanded.has(i)) for (const c of treeChildren[i]) walk(c, depth + 1);
+    };
+    if (rows.length) walk(0, 0);
+    return el('div', {}, el('p', { className: 'note', textContent: 'System › Package › Component › Module. Hover a role for its reason.' }), box);
 }
 
 async function showFile(path: string): Promise<void> {
@@ -149,6 +200,9 @@ async function load(source: Source, label: string): Promise<void> {
         setStatus(`indexed ${summary.name} in ${summary.stats.durationMs.toLocaleString()} ms`);
         document.body.dataset.state = 'ready';
         renderStats(summary);
+        treeChildren = summary.tree.map(() => []);
+        summary.tree.forEach((r, i) => r.parent >= 0 && treeChildren[r.parent].push(i));
+        expanded = new Set([0, ...treeChildren[0] ?? []]);
         $('detail').replaceChildren(el('p', { className: 'note', textContent: 'Pick a row to inspect a file.' }));
         renderList();
     } catch (err) {
@@ -180,7 +234,7 @@ $<HTMLInputElement>('folder-input').onchange = (ev) => {
     input.value = '';
     void load({ kind: 'files', name, files }, name);
 };
-for (const t of ['files', 'edges', 'unresolved', 'search'] as const) {
+for (const t of TABS) {
     $(`tab-${t}`).onclick = () => {
         tab = t;
         renderList();

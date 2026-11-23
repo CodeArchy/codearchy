@@ -11,6 +11,7 @@ import {
     IndexStore,
     Indexer,
     buildGraph,
+    buildHierarchy,
     classifyFiles,
     type FileSystemPort,
 } from '@codearchy/core';
@@ -25,7 +26,7 @@ import {
     type MemoryEntry,
     type WorkspaceSource,
 } from '@codearchy/platform-browser';
-import type { FileDetail, Request, Response, SearchHit, Source, Summary, Unresolved } from './protocol.js';
+import type { FileDetail, Request, Response, SearchHit, Source, Summary, TreeRow, Unresolved } from './protocol.js';
 
 const scope = self as unknown as { onmessage: ((ev: MessageEvent<Request>) => void) | null; postMessage(m: Response): void };
 const asset = (p: string) => new URL(p, self.location.href).href;
@@ -101,6 +102,27 @@ async function open(source: Source): Promise<Summary> {
     }
 
     const graph = buildGraph(result.analyses.values(), result.manifests);
+    const hierarchyStarted = Date.now();
+    const hierarchy = buildHierarchy(graph, { systemName: name, packageMarkers: d.packageMarkers, manifests: result.manifests });
+    const hierarchyMs = Date.now() - hierarchyStarted;
+    // Symbols are leaves, so dropping them keeps DFS pre-order; parents are re-indexed.
+    const tree: TreeRow[] = [];
+    const rowOf = new Map<number, number>();
+    for (const n of hierarchy.nodes) {
+        if (n.kind === 'symbol') continue;
+        rowOf.set(n.tin, tree.length);
+        tree.push({
+            key: n.key,
+            kind: n.kind,
+            name: n.name,
+            path: n.path,
+            parent: n.parent < 0 ? -1 : rowOf.get(n.parent)!,
+            modules: n.modules,
+            // A file's role inherited from a folder above only repeats that folder: show own evidence only.
+            ...(n.role && (n.kind !== 'module' || n.role.confidence >= 0.8) ? { role: n.role.role, roleReason: `${n.role.reason} (confidence ${n.role.confidence})` } : {}),
+            ...(n.virtual ? { virtual: true } : {}),
+        });
+    }
     const resolver = new ImportResolver(result.analyses.values(), result.manifests);
     const out = new Map<string, number>();
     const dependents = new Map<string, string[]>();
@@ -136,6 +158,8 @@ async function open(source: Source): Promise<Summary> {
             edges: graph.edges.length,
             imports: importCount,
             unresolved: unresolvedCount,
+            components: tree.filter((r) => r.kind === 'component').length,
+            hierarchyMs,
             parsed: result.stats.parsed,
             reused: result.stats.reused,
             unchanged: result.stats.unchanged,
@@ -154,6 +178,7 @@ async function open(source: Source): Promise<Summary> {
         })),
         edges: graph.edges.slice(0, LIST_LIMIT).map((e): [string, string] => [e.source, e.target]),
         unresolved,
+        tree,
     };
 }
 

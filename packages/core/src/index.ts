@@ -31,8 +31,11 @@ export {
     expandRustUse,
 } from './languages/index.js';
 export { ImportResolver, parseJsonc } from './resolve/resolver.js';
-export { buildGraph, type BuildOptions } from './graph/builder.js';
+export { buildGraph, MAX_EDGE_EVIDENCE, type BuildOptions, type EdgeEvidence } from './graph/builder.js';
+export { buildHierarchy, type HierarchyOptions } from './hierarchy/build.js';
+export { detectCommunities, type WeightedEdge } from './hierarchy/cluster.js';
+export { roleOfComponent, roleOfModule, roleOfName } from './hierarchy/roles.js';
 export { ArchitectureInference, heuristicGroupForPath, tokenizeSegment } from './graph/inference.js';
-export { classifyFiles, isManifest, DEFAULT_EXCLUDE_PATTERNS, MANIFEST_FILES, type DiscoveryOptions, type DiscoveryResult } from './discovery/classify.js';
+export { classifyFiles, isManifest, isPackageMarker, DEFAULT_EXCLUDE_PATTERNS, MANIFEST_FILES, type DiscoveryOptions, type DiscoveryResult } from './discovery/classify.js';
 export { compileGlobs, globToRegExp } from './util/glob.js';
 export * as posixPath from './util/posixPath.js';
