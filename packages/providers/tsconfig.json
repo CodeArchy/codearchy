@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "No DOM and no Node types: adapters reach the network only through the fetch they're given (globalThis.fetch by default), so the package runs in Node, browsers and workers alike. runtime.d.ts declares the few web-platform globals every one of those hosts has.",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+    "include": ["src"]
+}

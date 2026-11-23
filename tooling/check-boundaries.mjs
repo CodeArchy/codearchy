@@ -9,6 +9,7 @@
  *   grammars              nothing                          (assets)
  *   platform-*            core, protocol, sdk, treesitter, grammars
  *   ui                    protocol only                   (renders views from an EngineClient)
+ *   providers             no @codearchy packages          (AI provider adapters; vendor SDKs allowed)
  *   apps/*                anything (composition roots)
  *
  * Also checked by the compiler: core and sdk build with no DOM and no Node
@@ -29,6 +30,8 @@ const ALLOWED = {
     '@codearchy/conformance': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk'],
     // The UI renders views; it never runs the engine itself (data comes through EngineClient).
     '@codearchy/ui': ['@codearchy/protocol'],
+    // Talks to model providers; knows nothing about the engine, so any host can use it.
+    '@codearchy/providers': [],
 };
 /** Packages that must not depend on vscode, DOM-only or Node-only runtime libraries. */
 const NO_HOST_DEPS = ['@codearchy/protocol', '@codearchy/sdk', '@codearchy/core'];
