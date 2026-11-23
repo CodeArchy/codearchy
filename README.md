@@ -235,21 +235,14 @@ Voice output is a progressive enhancement, text chat always works independently.
 ## Development
 
 ```bash
-# Install extension dependencies
-npm install
-
-# Install webview UI dependencies
-cd webview-ui && npm install && cd ..
-
-# Compile everything
-npm run compile
-
-# Watch mode (rebuilds on save)
-npm run watch
-
-# Lint
-npm run lint
+corepack enable      # pnpm ships with Node; the version is pinned in package.json
+pnpm install         # installs the whole workspace
+pnpm build           # builds every package (Turborepo)
+pnpm test            # unit + webview tests
+pnpm lint
 ```
+
+The extension lives in `apps/vscode/`.
 
 Press **F5** in VS Code to launch the extension in a dedicated development host window.
 

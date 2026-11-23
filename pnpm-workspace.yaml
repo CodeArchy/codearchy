@@ -1,0 +1,59 @@
+# Workspace layout (doc: ARCHITECTURE, coming with Phase 1):
+#   apps/*      composition roots (the VS Code extension today; CLI and playground next)
+#   packages/*  shared libraries (protocol, core, sdk, platform adapters, ui)
+packages:
+  - apps/*
+  - apps/vscode/webview-ui
+  - packages/*
+
+# Security pins for transitive dependencies whose parents have not picked up
+# the fixes yet (all dev/build tooling; see PR #16). Parent-scoped so only
+# the affected lines move.
+overrides:
+  serialize-javascript: ^7.1.4
+  mocha>diff: ^8.0.3
+  mocha>glob: ^14.0.6
+  mocha>minimatch: ^11.0.9
+  "@vscode/test-cli>glob": ^14.0.6
+  "@vscode/test-cli>minimatch": ^11.0.9
+  test-exclude>glob: ^14.0.6
+  test-exclude>minimatch: ^11.0.9
+  "@vscode/vsce>minimatch": ^11.0.9
+  protobufjs: ^7.6.6
+  tar: ^7.5.23
+  sharp: ^0.35.5
+
+  # Frozen during the monorepo move so the shipped webview bundle stays
+  # byte-identical to the npm-built 1.1.1 (verified by hash). Lift these in a
+  # separate, reviewable dependency-update PR.
+  "@fortawesome/fontawesome-common-types": 7.2.0
+  "@fortawesome/fontawesome-svg-core": 7.2.0
+  "@fortawesome/free-solid-svg-icons": 7.2.0
+  "@fortawesome/react-fontawesome": 3.3.1
+  "@huggingface/jinja": 0.5.8
+  "@xyflow/react": 12.10.2
+  "@xyflow/system": 0.0.76
+  cytoscape: 3.33.2
+  d3-color: 3.1.0
+  d3-dispatch: 3.0.1
+  d3-drag: 3.0.0
+  d3-ease: 3.0.1
+  d3-interpolate: 3.0.1
+  d3-selection: 3.0.0
+  d3-timer: 3.0.1
+  d3-transition: 3.0.1
+  d3-zoom: 3.0.0
+  dexie: 4.4.2
+  use-sync-external-store: 1.6.0
+
+# Dependency install scripts are off by default (pnpm 10). None are needed:
+#   esbuild           platform binary comes from its optionalDependency
+#   @vscode/vsce-sign signing binary isn't used by `vsce package`
+#   onnxruntime-node  would download CUDA/native binaries the webview never uses
+#   protobufjs        postinstall is a version notice only
+# Listing them here records the decision and silences the warning.
+ignoredBuiltDependencies:
+  - "@vscode/vsce-sign"
+  - esbuild
+  - onnxruntime-node
+  - protobufjs
