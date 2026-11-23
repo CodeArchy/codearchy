@@ -18,9 +18,15 @@
         "@codearchy/platform-browser": "workspace:*",
         "@codearchy/protocol": "workspace:*",
         "@codearchy/treesitter": "workspace:*",
+        "@codearchy/ui": "workspace:*",
         "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+        "@types/react": "18.3.31",
+        "@types/react-dom": "18.3.7",
+        "elkjs": "0.11.1",
         "esbuild": "0.25.12",
         "playwright": "1.65.0",
+        "react": "18.3.1",
+        "react-dom": "18.3.1",
         "typescript": "5.9.3"
     }
 }

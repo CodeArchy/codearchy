@@ -39,11 +39,14 @@ wires one platform into the engine.
           └────────────────┘    └──────────────────┘
 
     conformance: one test suite every platform must pass (golden graph included)
+    ui:          the shared React UI (Map, Navigator, Inspector); protocol only
 ```
 
 `pnpm lint` runs [`tooling/check-boundaries.mjs`](tooling/check-boundaries.mjs), which rejects any
-dependency that points the wrong way. A language pack can't import the core, and
-the core can't import a platform.
+dependency that points the wrong way. A language pack can't import the core,
+the core can't import a platform, and the UI can't import the engine at all: it
+gets its data through an `EngineClient` that each app implements over its own
+transport.
 
 ### Ports
 
@@ -200,6 +203,14 @@ which is the behaviour change to review.
   file-system events. It also runs the AI provider calls. A React webview
   renders the diagrams and the chat. The extension is bundled with esbuild,
   and grammars and runtimes ship as files inside the VSIX.
+- **`packages/ui`** (`@codearchy/ui`) is the shared React UI, used by every
+  app. `<CodeArchyMap>` renders views: the Map canvas (React Flow, with ELK
+  laying out each view in a Web Worker and layouts cached by frontier hash),
+  the Navigator tree, the Inspector (what a node contains, depends on and is
+  used by; the imports behind an edge), the breadcrumb, ⌘K search and keyboard
+  navigation. Dense views draw their heaviest dependencies, plus everything
+  around the selection. Theme tokens follow VS Code's theme when hosted there,
+  and light or dark on the web.
 - **`apps/playground`** is a browser debug UI for the engine. Load the
   sample or open a local folder, then inspect stats, files, edges, unresolved
   imports and symbol search. It uses the same browser adapters as the web app,
@@ -229,4 +240,5 @@ which is the behaviour change to review.
 | Incremental indexing | [`packages/core/src/index/indexer.ts`](packages/core/src/index/indexer.ts) and [`store.ts`](packages/core/src/index/store.ts) |
 | Import resolution | [`packages/core/src/resolve/resolver.ts`](packages/core/src/resolve/resolver.ts) |
 | The hierarchy and views | [`packages/core/src/hierarchy/build.ts`](packages/core/src/hierarchy/build.ts), [`project.ts`](packages/core/src/hierarchy/project.ts), and the types in [`packages/protocol/src/hierarchy.ts`](packages/protocol/src/hierarchy.ts) / [`view.ts`](packages/protocol/src/view.ts) |
+| The UI | [`packages/ui/src/CodeArchyMap.tsx`](packages/ui/src/CodeArchyMap.tsx), and [`client.ts`](packages/ui/src/client.ts) for what a host provides |
 | A full host wiring | [`apps/playground/src/engine.worker.ts`](apps/playground/src/engine.worker.ts) (browser), [`apps/vscode/src/pipeline/AnalysisPipeline.ts`](apps/vscode/src/pipeline/AnalysisPipeline.ts) (VS Code) |

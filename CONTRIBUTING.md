@@ -68,7 +68,8 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 │   │                                        node:sqlite index store, worker_threads parse pool
 │   ├── platform-browser/ @codearchy/platform-browser  browser adapters: File System Access / OPFS,
 │   │                                        SQLite WASM on OPFS, fetched grammars, Web Worker pool
-│   └── conformance/ @codearchy/conformance  shared adapter test suite + golden polyglot graph
+│   ├── conformance/ @codearchy/conformance  shared adapter test suite + golden polyglot graph
+│   └── ui/         @codearchy/ui            shared React UI: Map canvas, Navigator, Inspector
 ├── apps/
 │   ├── vscode/     the extension (composition root): bundled to dist/extension.js with esbuild
 │   │   ├── src/            extension host: commands, file watcher, pipeline, webview panel, voice
@@ -85,6 +86,7 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 ```
 protocol, sdk ← lang-* ← core ← treesitter ← platform-node | platform-browser ← apps/*
                                 ↖ conformance (tests every platform against the same cases)
+protocol ← ui ← apps/*          (the UI never imports the engine; apps give it an EngineClient)
 ```
 
 - `core`, `sdk` and the language packs compile with **no DOM and no Node types**: they can't touch the host, even by accident.

@@ -6,6 +6,8 @@
  *   index.html, styles.css
  *   parsers/      pinned grammars (@codearchy/grammars) + web-tree-sitter.wasm
  *   sqlite3.wasm  SQLite WASM (OPFS storage)
+ *   elk-worker.js ELK layout worker (the Map)
+ *   main.css      @codearchy/ui styles (bundled from the CSS main.ts imports)
  *   fixture.json  fixtures/polyglot, for "Load sample"
  *
  * Usage: node scripts/build.mjs [--watch] [--serve [port]]
@@ -40,6 +42,8 @@ function copyAssets() {
     const treesitterPkg = path.dirname(require.resolve('@codearchy/treesitter/package.json'));
     fs.copyFileSync(createRequire(path.join(treesitterPkg, 'package.json')).resolve('web-tree-sitter/web-tree-sitter.wasm'), path.join(OUT, 'parsers', 'web-tree-sitter.wasm'));
     fs.copyFileSync(require.resolve('@sqlite.org/sqlite-wasm/sqlite3.wasm'), path.join(OUT, 'sqlite3.wasm'));
+    // ELK runs in its own worker (the Map's layout never blocks the page).
+    fs.copyFileSync(require.resolve('elkjs/lib/elk-worker.min.js'), path.join(OUT, 'elk-worker.js'));
 
     const fixture = path.resolve(ROOT, '..', '..', 'fixtures', 'polyglot');
     const files = {};
@@ -80,7 +84,7 @@ if (args.includes('--watch')) {
 } else {
     await esbuild.build(options);
 }
-console.log(`[playground] dist/: 3 bundles, ${grammars} grammars, sqlite3.wasm, fixture.json`);
+console.log(`[playground] dist/: 3 bundles + main.css, ${grammars} grammars, sqlite3.wasm, elk-worker.js, fixture.json`);
 
 if (args.includes('--serve')) {
     const port = Number(args[args.indexOf('--serve') + 1]) || 5178;

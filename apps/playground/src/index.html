@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>CodeArchy playground</title>
+    <link rel="stylesheet" href="main.css">
     <link rel="stylesheet" href="styles.css">
     <script type="module" src="main.js"></script>
 </head>
@@ -17,6 +18,7 @@
     </header>
     <div id="stats"></div>
     <nav role="tablist">
+        <button id="tab-map" role="tab" type="button">Map</button>
         <button id="tab-tree" role="tab" type="button">Hierarchy</button>
         <button id="tab-view" role="tab" type="button">View</button>
         <button id="tab-files" role="tab" type="button">Files</button>
@@ -29,5 +31,6 @@
         <div id="list"></div>
         <aside id="detail"></aside>
     </main>
+    <section id="map" aria-label="Architecture map" hidden></section>
 </body>
 </html>

@@ -65,15 +65,33 @@ importers:
       '@codearchy/treesitter':
         specifier: workspace:*
         version: link:../../packages/treesitter
+      '@codearchy/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@sqlite.org/sqlite-wasm':
         specifier: 3.54.1-build1
         version: 3.54.1-build1
+      '@types/react':
+        specifier: 18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: 18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      elkjs:
+        specifier: 0.11.1
+        version: 0.11.1
       esbuild:
         specifier: 0.25.12
         version: 0.25.12
       playwright:
         specifier: 1.65.0
         version: 1.65.0
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -437,6 +455,37 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  packages/ui:
+    dependencies:
+      '@codearchy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@xyflow/react':
+        specifier: 12.10.2
+        version: 12.10.2(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      elkjs:
+        specifier: 0.11.1
+        version: 0.11.1
+    devDependencies:
+      '@types/react':
+        specifier: 18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: 18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
 packages:
 

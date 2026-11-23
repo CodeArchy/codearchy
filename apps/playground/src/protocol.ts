@@ -15,7 +15,9 @@ export type Request =
     /** A projection of the hierarchy (drill, expand) — the Map's data. */
     | { id: number; type: 'view'; request: ViewRequest }
     /** The module dependencies behind a view edge or port. */
-    | { id: number; type: 'explain'; source: string; target: string };
+    | { id: number; type: 'explain'; source: string; target: string }
+    | { id: number; type: 'children'; key: string }
+    | { id: number; type: 'describe'; key: string };
 
 export interface FileRow {
     path: string;

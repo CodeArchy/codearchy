@@ -91,3 +91,8 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .view h3 { font-size: 13px; color: var(--muted); font-weight: 500; margin: 16px 0 4px; }
 .view .actions { display: inline-flex; gap: 4px; }
 .view .actions button { padding: 1px 8px; font-size: 12px; }
+
+/* The Map tab hosts @codearchy/ui's CodeArchyMap, full width. */
+#map { flex: 1; min-height: 520px; height: calc(100vh - 220px); border-top: 1px solid var(--line); }
+#map[hidden], main[hidden] { display: none; }
+@media (min-width: 761px) { #map { height: auto; } }
