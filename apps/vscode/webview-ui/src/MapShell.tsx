@@ -62,15 +62,20 @@ const aiListeners = new Set<(e: AiHostEvent) => void>();
 
 window.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data as { type?: string; payload?: Record<string, unknown> };
+    // Handlers are looked up by ids from the message: only our own ids, and only functions, get called.
     if (msg?.type === 'aiResponse' && msg.payload) {
-        const { id, result, error } = msg.payload as { id: number; result?: unknown; error?: string };
+        const { id, result, error } = msg.payload as { id: unknown; result?: unknown; error?: unknown };
+        if (typeof id !== 'number') return;
         const p = aiPending.get(id);
         aiPending.delete(id);
-        if (error) p?.reject(new Error(error));
-        else p?.resolve(result);
+        if (!p) return;
+        if (typeof error === 'string') p.reject(new Error(error));
+        else p.resolve(result);
     } else if (msg?.type === 'aiChatEvent' && msg.payload) {
-        const { conversation, event } = msg.payload as { conversation: string; event: ChatEvent };
-        aiChats.get(conversation)?.(event);
+        const { conversation, event } = msg.payload as { conversation: unknown; event: ChatEvent };
+        if (typeof conversation !== 'string' || !aiChats.has(conversation)) return;
+        const handler = aiChats.get(conversation);
+        if (typeof handler === 'function') handler(event);
     } else if (msg?.type === 'aiEvent' && msg.payload) {
         const event = (msg.payload as { event: AiHostEvent }).event;
         for (const l of aiListeners) l(event);
