@@ -1,7 +1,7 @@
 import { describe, test, beforeAll } from 'vitest';
 import * as assert from 'node:assert';
 import * as path from 'node:path';
-import { buildGraph, classifyFiles, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, readManifests } from '@codearchy/core';
+import { buildGraph, buildHierarchy, classifyFiles, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, readManifests } from '@codearchy/core';
 import type { ArchitectureGraph } from '@codearchy/protocol';
 import { createNodeAnalyzer, fromPosix, walkFiles } from '../src/index.js';
 import { FIXTURES } from './helpers.js';
@@ -96,5 +96,23 @@ describe('Dependency graph (polyglot fixture)', () => {
             'php/src/Http/helpers.php',
             'php/src/Models/User.php',
         ]);
+    });
+});
+
+describe('Hierarchy (polyglot fixture)', () => {
+    test('packages from manifests, compressed chains, every module and edge placed', async () => {
+        const root = path.join(FIXTURES, 'polyglot');
+        const d = classifyFiles(await walkFiles(root), { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 }, 'walk');
+        const { analyzer, fs } = await createNodeAnalyzer({ root, maxFileSize: 1_000_000 });
+        const manifests = await readManifests(fs, d.manifests);
+        const graph = buildGraph((await analyzer.analyzeAll(d.sourceFiles)).values(), manifests);
+        const h = buildHierarchy(graph, { systemName: 'polyglot', packageMarkers: d.packageMarkers, manifests });
+
+        const packages = Object.fromEntries(h.nodes.filter((n) => n.kind === 'package').map((n) => [n.key, n.name]));
+        assert.deepStrictEqual(packages, { 'pkg:packages/shared': '@poly/shared', 'pkg:go': 'app', 'pkg:php': 'php', 'pkg:.': 'poly', 'pkg:rust': 'rusty-core' });
+        assert.ok(h.nodes.some((n) => n.key === 'dir:jvm/src/main/java/com/acme' && n.name === 'java/com/acme'), 'chains are compressed');
+        assert.strictEqual(h.nodes.filter((n) => n.kind === 'module').length, graph.nodes.length);
+        assert.strictEqual(h.edges.length, graph.edges.length);
+        assert.strictEqual(h.nodes[0].modules, graph.nodes.length);
     });
 });

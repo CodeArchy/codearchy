@@ -26,6 +26,19 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 /** Project manifests the import resolver reads (module roots, path aliases). */
 export const MANIFEST_FILES = new Set(['package.json', 'tsconfig.json', 'jsconfig.json', 'go.mod', 'Cargo.toml', 'composer.json']);
 
+/**
+ * Files that mark a package (L1 in the hierarchy) by their presence. Not all
+ * of them are read: names come from the manifests the resolver reads anyway.
+ */
+const PACKAGE_MARKER_FILES = new Set([
+    'package.json', 'go.mod', 'Cargo.toml', 'composer.json',
+    'pyproject.toml', 'setup.py', 'setup.cfg', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'Gemfile',
+]);
+
+export function isPackageMarker(name: string): boolean {
+    return PACKAGE_MARKER_FILES.has(name) || /\.(csproj|fsproj|gemspec)$/.test(name);
+}
+
 export function isManifest(name: string): boolean {
     return MANIFEST_FILES.has(name) || /^(tsconfig|jsconfig)\..+\.json$/.test(name);
 }
@@ -42,6 +55,8 @@ export interface DiscoveryResult {
     sourceFiles: string[];
     /** Workspace-relative manifest files. */
     manifests: string[];
+    /** Files whose directory is a package root (package.json, go.mod, pom.xml, *.csproj, ...), sorted. */
+    packageMarkers: string[];
     /** Source files found before `maxFiles` was applied. */
     discovered: number;
     truncated: boolean;
@@ -54,9 +69,12 @@ export function classifyFiles(relativePaths: Iterable<string>, options: Discover
     const languages = new Set(options.languages);
     const sources: string[] = [];
     const manifests: string[] = [];
+    const packageMarkers: string[] = [];
     for (const p of relativePaths) {
         if (isExcluded(p)) continue;
-        if (isManifest(basename(p))) {
+        const name = basename(p);
+        if (isPackageMarker(name)) packageMarkers.push(p);
+        if (isManifest(name)) {
             manifests.push(p);
             continue;
         }
@@ -64,7 +82,8 @@ export function classifyFiles(relativePaths: Iterable<string>, options: Discover
         if (pack && languages.has(pack.id)) sources.push(p);
     }
     sources.sort();
+    packageMarkers.sort();
     const discovered = sources.length;
     const truncated = options.maxFiles > 0 && discovered > options.maxFiles;
-    return { sourceFiles: truncated ? sources.slice(0, options.maxFiles) : sources, manifests, discovered, truncated, method };
+    return { sourceFiles: truncated ? sources.slice(0, options.maxFiles) : sources, manifests, packageMarkers, discovered, truncated, method };
 }

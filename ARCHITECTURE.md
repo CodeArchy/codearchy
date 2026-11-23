@@ -62,7 +62,7 @@ rejected by every file system adapter.
 ## The pipeline
 
 ```
-discover ─▶ index ─▶ resolve ─▶ graph ─▶ infer ─▶ UI
+discover ─▶ index ─▶ resolve ─▶ graph ─▶ hierarchy ─▶ infer ─▶ UI
 ```
 
 1. **Discover.** The host lists files: `git ls-files` (which honours
@@ -101,7 +101,28 @@ discover ─▶ index ─▶ resolve ─▶ graph ─▶ infer ─▶ UI
    edges. The output is deterministic: the same inputs give the same graph on
    every platform and in any order.
 
-6. **Infer.** Heuristics group files into subsystems (API, services, models,
+6. **Hierarchy.** `buildHierarchy` arranges the graph into
+   System › Package › Component › Module › Symbol, the tree that drill-down
+   views navigate:
+   - **Packages** are directories holding a package marker (`package.json`,
+     `go.mod`, `Cargo.toml`, `pom.xml`, `*.csproj`, ...). When there are many,
+     they're grouped by their parent folder (`packages/`, `apps/`, ...).
+   - **Components** are directory subtrees, shaped so each level has a
+     readable number of children. Single-child folder chains are compressed
+     (`src/main/java/com/acme` is one node), folders with one file are folded
+     into their parent, and a container with more than 20 children is split
+     into *virtual* components by community detection on its dependencies
+     (a deterministic Louvain/Leiden-style method), or alphabetically when
+     there are no dependencies to go on.
+   - **Roles** (`api`, `ui`, `domain`, `data`, `infra`, `config`, `test`,
+     `util`) come from whole words in folder and file names, each with a
+     confidence and a reason.
+   - **Keys are stable**, derived from paths (`dir:src/auth`, `mod:src/auth/login.ts`),
+     so anything keyed to a node survives a re-index. Nodes are stored in
+     depth-first order with Euler-tour intervals, so "is A inside B" is two
+     comparisons and a subtree is a contiguous range.
+
+7. **Infer.** Heuristics group files into subsystems (API, services, models,
    storage, and so on). AI providers, where enabled, refine this from the
    graph: they receive structure, not raw source files.
 
@@ -197,4 +218,5 @@ which is the behaviour change to review.
 | Extraction | [`packages/core/src/extract/treeSitter.ts`](packages/core/src/extract/treeSitter.ts) |
 | Incremental indexing | [`packages/core/src/index/indexer.ts`](packages/core/src/index/indexer.ts) and [`store.ts`](packages/core/src/index/store.ts) |
 | Import resolution | [`packages/core/src/resolve/resolver.ts`](packages/core/src/resolve/resolver.ts) |
+| The hierarchy | [`packages/core/src/hierarchy/build.ts`](packages/core/src/hierarchy/build.ts) and [`packages/protocol/src/hierarchy.ts`](packages/protocol/src/hierarchy.ts) |
 | A full host wiring | [`apps/playground/src/engine.worker.ts`](apps/playground/src/engine.worker.ts) (browser), [`apps/vscode/src/pipeline/AnalysisPipeline.ts`](apps/vscode/src/pipeline/AnalysisPipeline.ts) (VS Code) |

@@ -55,30 +55,38 @@ function buildNode(a: FileAnalysis, toHostPath: (p: string) => string): GraphNod
     };
 }
 
+/** Most import sites kept per edge (the weight still counts all of them). */
+export const MAX_EDGE_EVIDENCE = 5;
+
+/** Where an edge comes from: the import specifier and its 0-based line. */
+export interface EdgeEvidence {
+    source: string;
+    line?: number;
+}
+
 function buildEdges(analyses: FileAnalysis[], resolver: ImportResolver): GraphEdge[] {
     const edges = new Map<string, GraphEdge>();
-    const add = (source: string, target: string, weight: number, metadata: Record<string, unknown>) => {
+    const add = (source: string, target: string, weight: number, metadata: Record<string, unknown>, evidence: EdgeEvidence) => {
         if (source === target) return;
         const key = `${source}:${target}`;
         const existing = edges.get(key);
         if (existing) {
             existing.weight += weight;
+            const list = existing.metadata.evidence as EdgeEvidence[];
+            if (list.length < MAX_EDGE_EVIDENCE) list.push(evidence);
             return;
         }
-        edges.set(key, { id: key, source, target, type: EdgeType.Import, weight, metadata });
+        edges.set(key, { id: key, source, target, type: EdgeType.Import, weight, metadata: { ...metadata, evidence: [evidence] } });
     };
     for (const a of analyses) {
         for (const imp of a.imports) {
             for (const target of resolver.resolve(imp, a)) {
-                add(a.filePath, target, imp.specifiers.length || 1, { specifiers: imp.specifiers, importSource: imp.source });
+                add(a.filePath, target, imp.specifiers.length || 1, { specifiers: imp.specifiers, importSource: imp.source }, { source: imp.source, line: imp.line });
             }
         }
         for (const target of resolver.implicitDependencies(a)) {
-            add(a.filePath, target, 1, {
-                specifiers: [],
-                importSource: a.namespace ? `(same package ${a.namespace})` : '(same package)',
-                implicit: true,
-            });
+            const label = a.namespace ? `(same package ${a.namespace})` : '(same package)';
+            add(a.filePath, target, 1, { specifiers: [], importSource: label, implicit: true }, { source: label });
         }
     }
     return [...edges.values()];

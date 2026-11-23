@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Playground smoke test in Chromium, Firefox and WebKit: load the sample,
- * check the numbers against the golden graph, search, open a file, then
+ * check the numbers against the golden graph, expand the hierarchy, search,
+ * open a file, then
  * reload and check that the OPFS index makes the second run parse nothing.
  *
  *   pnpm --filter @codearchy/playground test:e2e [-- chromium,firefox,webkit]
@@ -43,6 +44,16 @@ for (const name of wanted) {
         assert.equal(await stat(page, 'edges'), String(GOLDEN_POLYGLOT.edges.length), 'edges');
         assert.equal(await stat(page, 'symbols'), String(GOLDEN_POLYGLOT.symbols), 'symbols');
         const storage = await stat(page, 'storage');
+
+        // Hierarchy (the default tab): packages open under the system; a click collapses and re-expands.
+        const rustPkg = page.locator('.tree [data-key="pkg:rust"]');
+        const rustSrc = page.locator('.tree [data-key="dir:rust/src"]');
+        assert.equal(await rustPkg.locator('.name').textContent(), 'rusty-core');
+        await rustSrc.waitFor();
+        await rustPkg.click();
+        await rustSrc.waitFor({ state: 'detached' });
+        await page.locator('.tree [data-key="pkg:rust"]').click();
+        await rustSrc.waitFor();
 
         await page.click('#tab-unresolved');
         await page.locator('#list td', { hasText: 'react' }).first().waitFor();
