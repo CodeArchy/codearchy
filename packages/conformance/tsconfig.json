@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "Runs in every host: no DOM and no Node types .",
+    "compilerOptions": { "rootDir": "src", "outDir": "dist", "lib": ["ES2022"], "types": [] },
+    "include": ["src"]
+}

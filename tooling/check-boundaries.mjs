@@ -23,6 +23,8 @@ const ALLOWED = {
     '@codearchy/treesitter': ['@codearchy/core', '@codearchy/sdk'],
     '@codearchy/grammars': [],
     '@codearchy/platform-node': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk', '@codearchy/treesitter', '@codearchy/grammars'],
+    '@codearchy/platform-browser': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk', '@codearchy/treesitter'],
+    '@codearchy/conformance': ['@codearchy/core', '@codearchy/protocol', '@codearchy/sdk'],
 };
 /** Packages that must not depend on vscode, DOM-only or Node-only runtime libraries. */
 const NO_HOST_DEPS = ['@codearchy/protocol', '@codearchy/sdk', '@codearchy/core'];

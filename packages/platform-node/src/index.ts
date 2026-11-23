@@ -53,6 +53,9 @@ export class NodeFileSystem implements FileSystemPort {
     constructor(readonly root: string) {}
 
     private resolve(p: string): string | undefined {
+        // Only clean workspace paths: no "", ".", "..", absolute or backslash segments
+        // (the same rule as the browser adapters; checked by the conformance suite).
+        if (!p || p.startsWith('/') || p.includes('\\') || p.split('/').some((s) => s === '' || s === '.' || s === '..')) return undefined;
         const abs = fromPosix(this.root, p);
         const rel = path.relative(this.root, abs);
         return rel.startsWith('..') || path.isAbsolute(rel) ? undefined : abs;

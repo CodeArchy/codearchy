@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CodeArchy browser conformance</title>
+<script type="module">
+window.runConformance = (platform) => new Promise((resolve) => {
+  const w = new Worker('/dist-test/conformance-worker.js', { type: 'module' });
+  w.onmessage = (e) => resolve(e.data);
+  w.onerror = (e) => resolve({ type: 'fatal', message: e.message || 'worker failed to load' });
+  w.postMessage({ platform });
+});
+window.ready = true;
+</script>
