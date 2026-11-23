@@ -185,8 +185,51 @@ for (const name of wanted) {
         await page.click('#load-sample');
         await page.waitForSelector('body[data-state="ready"]');
         if (storage.startsWith('OPFS')) assert.equal(await stat(page, 'parsed'), '0', 'warm reload parses nothing');
+
+        // AI UI with the scripted demo client (?ai=demo): cards, chat with citations, settings, ask-before-sending.
+        await page.goto(`${url}?ai=demo`);
+        await page.click('#load-sample');
+        await page.waitForSelector('body[data-state="ready"]');
+        await mapNode('pkg:rust').click();
+        const card = page.locator('.ca-card');
+        await card.locator('.ca-chip', { hasText: 'auto-summary' }).waitFor();
+        await card.getByRole('button', { name: 'Summarize with AI' }).click();
+        await card.locator('.ca-chip', { hasText: 'AI · scripted' }).waitFor();
+        await page.locator('.ca-inspector').getByRole('button', { name: 'Ask about this' }).click();
+        const chat = page.locator('.ca-chat');
+        await page.waitForFunction(() => /What does rusty-core do/.test(document.querySelector('.ca-chat textarea')?.value ?? '')); // the manifest's name
+        await chat.getByRole('button', { name: 'Ask', exact: true }).click();
+        await chat.locator('.ca-cite', { hasText: 'rusty-core' }).waitFor();
+        await chat.getByRole('button', { name: 'Show me' }).waitFor();
+        assert.match(await chat.locator('.ca-chat-meta').textContent(), /demo · scripted/);
+        // A citation shows its node on the map (select something else first).
+        await mapNode('pkg:.').click();
+        await page.locator('.react-flow__node[data-id="pkg:rust"] .ca-node:not(.ca-selected)').waitFor();
+        await chat.locator('.ca-cite', { hasText: 'rusty-core' }).click();
+        await page.locator('.react-flow__node[data-id="pkg:rust"] .ca-node.ca-selected').waitFor();
+        // Settings: a key turns the cloud provider ready (the field never shows it); local only blocks it.
+        await page.getByRole('button', { name: 'AI', exact: true }).click();
+        const settings = page.getByRole('dialog', { name: 'AI settings' });
+        const cloud = settings.locator('[data-provider="cloud"]');
+        await cloud.getByText('needs an API key').waitFor();
+        await cloud.getByLabel('Cloud (demo) API key').fill('sk-demo-not-a-real-key-123456');
+        await cloud.getByRole('button', { name: 'Save' }).click();
+        await cloud.getByText(/ready · 1 model/).waitFor();
+        assert.equal(await cloud.getByLabel('Cloud (demo) API key').inputValue(), '', 'the key field is cleared after saving');
+        await settings.getByLabel(/Local only/).check();
+        await cloud.getByText('Not on this machine, and the privacy tier is local only').waitFor();
+        await settings.getByLabel(/Ask before sending/).check();
+        await settings.getByRole('button', { name: 'Close' }).click();
+        // Ask before sending: the preview appears; declining stops the request.
+        await chat.locator('textarea').fill('where is the parser');
+        await chat.getByRole('button', { name: 'Ask', exact: true }).click();
+        const preview = page.getByRole('dialog', { name: 'Send this request?' });
+        await preview.getByText('where is the parser').first().waitFor({ state: 'attached' });
+        await preview.getByRole('button', { name: "Don't send" }).click();
+        await chat.locator('.ca-chat-error', { hasText: 'You declined to send this request' }).waitFor();
+
         assert.deepEqual(errors, [], 'no page errors');
-        console.log(`✓ ${name.padEnd(8)} sample indexed, searched, inspected; zip dropped; ${writable ? 'live folder updated' : 'live folder skipped (no createWritable)'}; storage ${storage} (${Date.now() - started} ms)`);
+        console.log(`✓ ${name.padEnd(8)} sample indexed, searched, inspected; zip dropped; ${writable ? 'live folder updated' : 'live folder skipped (no createWritable)'}; AI cards, chat, settings, preview; storage ${storage} (${Date.now() - started} ms)`);
     } catch (err) {
         failed++;
         console.log(`✗ ${name}: ${err.message}${errors.length ? `\n    page errors: ${errors.join(' | ')}` : ''}`);

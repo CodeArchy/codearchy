@@ -11,6 +11,7 @@ export const PROTOCOL_VERSION = '0.2.0';
 export * from './hierarchy.js';
 export * from './view.js';
 export * from './engine.js';
+export * from './ai.js';
 
 export interface SymbolInfo {
     name: string;

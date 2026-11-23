@@ -1,6 +1,7 @@
 /** Navigator (hierarchy tree), Inspector (selection details), breadcrumb and search. */
 import { useEffect, useRef, useState } from 'react';
-import type { EdgeExplanation, NodeDetails, NodeLink, NodeSummary } from '@codearchy/protocol';
+import type { AiClient, EdgeExplanation, NodeDetails, NodeLink, NodeSummary } from '@codearchy/protocol';
+import { CardSection } from './ai.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { lensBadge, type LensId } from './model.js';
 
@@ -131,6 +132,9 @@ export interface InspectorProps {
     onReveal(key: string): void;
     onDrill(key: string): void;
     onToggleExpand(key: string): void;
+    /** With it: the node's summary card and "Ask about this". */
+    ai?: AiClient;
+    onAsk?(name: string): void;
 }
 
 export function Inspector(props: InspectorProps) {
@@ -235,7 +239,13 @@ export function Inspector(props: InspectorProps) {
                         Open file
                     </button>
                 ) : null}
+                {props.ai && props.onAsk && d.kind !== 'symbol' ? (
+                    <button type="button" onClick={() => props.onAsk!(d.name)}>
+                        Ask about this
+                    </button>
+                ) : null}
             </div>
+            {props.ai && d.kind !== 'symbol' ? <CardSection ai={props.ai} nodeKey={d.key} nameOf={props.nameOf} onReveal={props.onReveal} /> : null}
             <HealthAndTests details={d} lens={props.lens} host={host} />
             {links('Depends on', d.dependsOn)}
             {links('Used by', d.usedBy)}

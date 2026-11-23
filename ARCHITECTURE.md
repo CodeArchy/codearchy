@@ -359,6 +359,17 @@ the environment.
   colour-blind-safe ramps and status colours, and always state the value as
   text as well. Theme tokens follow VS Code's theme when hosted there,
   and light or dark on the web.
+  Given an `AiClient` (the `ai` prop; the contract lives in `protocol`), the
+  Map adds an **Ask** panel: streaming answers, a status line for each lookup,
+  citations that show their node on the map or open the file, and "Show me"
+  buttons. It also adds summary cards in the Inspector, marked as AI-written or
+  auto-built, with "Summarize with AI"; an **AI settings** panel (privacy
+  tier, ask before sending, providers with their status, API key fields
+  that never display a stored key, model choice, roles with the reason for each
+  automatic pick, daily budgets); and the **ask-before-sending** dialog.
+  Answers are parsed from a small markdown subset into React elements, never
+  as HTML, so model output can't inject markup. Only `node:` and `file:` links
+  are followable.
 - **The browser engine** (`@codearchy/platform-browser`) is what every
   browser host runs, so the web app and the playground index code the same way:
   - `./engine` — `runEngineWorker(config)` runs inside a module Web Worker. It

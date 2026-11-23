@@ -19,7 +19,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import type { EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
+import type { AiClient, EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
+import { AiSettingsPanel, ChatPanel, PreviewDialog } from './ai.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { LayoutEngine, type Layout } from './layout.js';
 import { MapCanvas, type FocusRequest } from './MapCanvas.js';
@@ -44,6 +45,8 @@ export interface CodeArchyMapProps {
     toolbarExtras?: ReactNode;
     /** Host content at the toolbar's start (e.g. the app's brand). */
     toolbarStart?: ReactNode;
+    /** The host's AI side. With it, the Map gets chat, summary cards and AI settings. */
+    ai?: AiClient;
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
@@ -67,6 +70,9 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [explanation, setExplanation] = useState<EdgeExplanation>();
     const [searching, setSearching] = useState(false);
     const [status, setStatus] = useState('Loading…');
+    const [sideTab, setSideTab] = useState<'inspector' | 'chat'>('inspector');
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [chatPrompt, setChatPrompt] = useState<{ text: string; nonce: number }>();
     /** Where the viewport goes after the next transition (a node, or the whole map). */
     const [focusOn, setFocusOn] = useState<FocusRequest>({ nonce: 1 });
     const nonce = useRef(1);
@@ -294,6 +300,16 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         ))}
                     </select>
                 </label>
+                {props.ai ? (
+                    <>
+                        <button type="button" className="ca-search-button" aria-pressed={sideTab === 'chat'} onClick={() => setSideTab((t) => (t === 'chat' ? 'inspector' : 'chat'))}>
+                            Ask
+                        </button>
+                        <button type="button" className="ca-search-button" title="AI settings" onClick={() => setSettingsOpen(true)}>
+                            AI
+                        </button>
+                    </>
+                ) : null}
                 {props.toolbarExtras}
                 {client.search ? (
                     <button type="button" className="ca-search-button" onClick={() => setSearching(true)}>
@@ -335,19 +351,53 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                     {view && view.nodes.length === 0 ? <div className="ca-status">Nothing to show here.</div> : null}
                 </section>
                 <aside className="ca-side">
-                    <Inspector
-                        details={details}
-                        explanation={explanation}
-                        nameOf={nameOf}
-                        host={host}
-                        expanded={!!selectedKey && expanded.includes(selectedKey)}
-                        lens={lens}
-                        onReveal={(k) => void reveal(k)}
-                        onDrill={drill}
-                        onToggleExpand={toggleExpand}
-                    />
+                    {props.ai ? (
+                        <div className="ca-tabs" role="tablist" aria-label="Side panel">
+                            {(['inspector', 'chat'] as const).map((t) => (
+                                <button key={t} type="button" role="tab" aria-selected={sideTab === t} className={sideTab === t ? 'ca-on' : ''} onClick={() => setSideTab(t)}>
+                                    {t === 'inspector' ? 'Inspector' : 'Ask'}
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
+                    {props.ai && sideTab === 'chat' ? (
+                        <ChatPanel
+                            ai={props.ai}
+                            selection={details ? { key: details.key, name: details.name } : undefined}
+                            prompt={chatPrompt}
+                            onNode={(k) => void reveal(k)}
+                            onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
+                            onAction={(a) => a.keys[0] && void reveal(a.keys[0])}
+                            onOpenSettings={() => setSettingsOpen(true)}
+                        />
+                    ) : (
+                        <Inspector
+                            details={details}
+                            explanation={explanation}
+                            nameOf={nameOf}
+                            host={host}
+                            expanded={!!selectedKey && expanded.includes(selectedKey)}
+                            lens={lens}
+                            ai={props.ai}
+                            onAsk={(name) => {
+                                setChatPrompt({ text: `What does ${name} do, and how does it fit in?`, nonce: Date.now() });
+                                setSideTab('chat');
+                            }}
+                            onReveal={(k) => void reveal(k)}
+                            onDrill={drill}
+                            onToggleExpand={toggleExpand}
+                        />
+                    )}
                 </aside>
             </div>
+            {props.ai && settingsOpen ? (
+                <div className="ca-modal" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
+                    <div className="ca-modal-body ca-modal-wide">
+                        <AiSettingsPanel ai={props.ai} onClose={() => setSettingsOpen(false)} />
+                    </div>
+                </div>
+            ) : null}
+            {props.ai ? <PreviewDialog ai={props.ai} /> : null}
             {searching && client.search ? <SearchBox client={client} onPick={pick} onClose={() => setSearching(false)} /> : null}
         </div>
     );

@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { View } from '@codearchy/protocol';
 import { CodeArchyMap } from '@codearchy/ui';
+import { demoAi } from './demoAi.js';
 import '@codearchy/ui/styles.css';
 import { WorkerEngine, canPickDirectory, pickDirectory, sourceFromDrop, sourceFromFileList, type EngineSource } from '@codearchy/platform-browser/client';
 import type { FileDetail, FileRow, Summary, TreeRow } from './protocol.js';
@@ -71,6 +72,8 @@ let loads = 0;
 /** Bumped when a watched folder changes: the Map refetches in place. */
 let dataVersion = 0;
 let mapRoot: Root | undefined;
+/** `?ai=demo`: a scripted AI side, to see and test the chat, cards and settings. */
+const ai = new URLSearchParams(location.search).get('ai') === 'demo' ? demoAi(engine) : undefined;
 
 function renderMap(): void {
     mapRoot ??= createRoot($('map'));
@@ -81,6 +84,7 @@ function renderMap(): void {
             hostKind: 'web',
             revision: `${summary?.name ?? ''}#${loads}`,
             dataVersion,
+            ai,
         })
     );
 }
