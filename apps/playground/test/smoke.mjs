@@ -68,6 +68,22 @@ for (const name of wanted) {
         await mapNode('mod:cs/Orders/OrderService.cs').waitFor();
         await page.locator('.ca-navigator [data-key="pkg:rust"]').click();
         await page.locator('.ca-inspector[data-key="pkg:rust"]').waitFor();
+
+        // Lenses and the Matrix: badges carry the value as text; matrix cells explain on click.
+        await page.selectOption('.ca-lens select', 'health');
+        await mapNode('pkg:rust').locator('.ca-lens-badge').waitFor();
+        assert.match(await mapNode('pkg:rust').locator('.ca-lens-badge').textContent(), /no issues|in cycles|hub|orphan/);
+        await page.selectOption('.ca-lens select', 'tests');
+        assert.match(await mapNode('pkg:rust').locator('.ca-lens-badge').textContent(), /% tested|tests only/);
+        await page.locator('.ca-inspector h3', { hasText: 'Health & tests' }).waitFor();
+        await mapNode('pkg:.').dblclick();
+        await mapNode('dir:web/src').dblclick(); // its files depend on each other
+        await mapNode('mod:web/src/index.ts').waitFor();
+        await page.click('.ca-segmented button:has-text("Matrix")');
+        await page.locator('.ca-matrix-cell').first().click();
+        await page.locator('.ca-inspector', { hasText: 'Dependency' }).waitFor();
+        await page.click('.ca-segmented button:has-text("Map")');
+        await page.selectOption('.ca-lens select', 'dependencies');
         await page.click('#tab-tree');
 
         // Hierarchy (the default tab): packages open under the system; a click collapses and re-expands.

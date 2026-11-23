@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EdgeExplanation, NodeDetails, NodeLink, NodeSummary } from '@codearchy/protocol';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
+import { lensBadge, type LensId } from './model.js';
 
 const KIND_TITLE: Record<string, string> = { system: 'System', package: 'Package', component: 'Component', module: 'File', symbol: 'Symbol' };
 
@@ -123,6 +124,7 @@ export interface InspectorProps {
     nameOf(key: string): string;
     host?: HostActions;
     expanded: boolean;
+    lens: LensId;
     onReveal(key: string): void;
     onDrill(key: string): void;
     onToggleExpand(key: string): void;
@@ -231,6 +233,7 @@ export function Inspector(props: InspectorProps) {
                     </button>
                 ) : null}
             </div>
+            <HealthAndTests details={d} lens={props.lens} host={host} />
             {links('Depends on', d.dependsOn)}
             {links('Used by', d.usedBy)}
             {d.kind === 'module' ? (
@@ -268,6 +271,42 @@ export function Inspector(props: InspectorProps) {
                 </section>
             )}
         </div>
+    );
+}
+
+/** Lens numbers for a node: every coloured value is also stated here. */
+function HealthAndTests({ details: d, lens, host }: { details: NodeDetails; lens: LensId; host?: HostActions }) {
+    const m = d.metrics;
+    const health = lensBadge(m, 'health', d.kind);
+    const tests = lensBadge(m, 'tests', d.kind);
+    const files = (paths: string[] | undefined) =>
+        paths && paths.length ? (
+            <ul className="ca-list">
+                {paths.map((p) => (
+                    <li key={p}>
+                        <FileLink path={p} host={host} />
+                    </li>
+                ))}
+            </ul>
+        ) : null;
+    return (
+        <section className={`ca-lens-section${lens !== 'dependencies' ? ' ca-lens-active' : ''}`}>
+            <h3>Health &amp; tests</h3>
+            <p className={health?.level ? `ca-status-text ca-level-${health.level}` : ''} title={health?.title}>
+                {health?.text}
+            </p>
+            {d.cycleWith?.length ? (
+                <>
+                    <p className="ca-muted">In a cycle with:</p>
+                    {files(d.cycleWith)}
+                </>
+            ) : null}
+            <p title={tests?.title}>{tests?.text ?? 'no code files'}</p>
+            {d.kind === 'module' && d.testedBy ? (d.testedBy.length ? <><p className="ca-muted">Tested by:</p>{files(d.testedBy)}</> : null) : null}
+            <p className="ca-muted">
+                {m.codeModules} code · {m.testModules} test files · dependencies in {m.fanIn} / out {m.fanOut}
+            </p>
+        </section>
     );
 }
 

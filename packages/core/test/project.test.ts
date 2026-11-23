@@ -175,4 +175,32 @@ describe('Projector', () => {
         assert.deepStrictEqual(idx.children('dir:core')!.map((c) => c.name), ['auth', 'orders']);
         assert.strictEqual(idx.describe('nope'), undefined);
     });
+
+    test('metrics: tests, tested, cycles, orphans and boundary weights; cyclic view edges', () => {
+        const files = ['app/a.ts', 'app/b.ts', 'app/c.ts', 'lib/x.ts', 'lib/y.ts', 'tests/a.test.ts', 'tests/b.test.ts', 'misc/lonely.ts', 'misc/alone.ts'];
+        const edges: Array<[string, string, number?]> = [
+            ['app/a.ts', 'app/b.ts'], ['app/b.ts', 'app/a.ts'], // a <-> b: a cycle
+            ['app/c.ts', 'lib/x.ts', 3], ['lib/x.ts', 'app/c.ts'], // app <-> lib at the view level
+            ['lib/x.ts', 'lib/y.ts'],
+            ['tests/a.test.ts', 'app/a.ts'], ['tests/b.test.ts', 'lib/x.ts'],
+        ];
+        const idx = new HierarchyIndex(buildHierarchy(graph(files, edges), { systemName: 's' }));
+        const app = idx.describe('dir:app')!.metrics;
+        assert.deepStrictEqual(
+            { code: app.codeModules, tested: app.testedModules, cyclic: app.cyclicModules, fanIn: app.fanIn, fanOut: app.fanOut },
+            { code: 3, tested: 1, cyclic: 3, fanIn: 2, fanOut: 3 } // a<->b, and c<->lib/x
+        );
+        assert.strictEqual(idx.describe('sys:root')!.metrics.orphanModules, 2);
+        assert.strictEqual(idx.describe('dir:tests')!.metrics.testModules, 2);
+        assert.deepStrictEqual(idx.describe('mod:app/a.ts')!.cycleWith, ['app/b.ts']);
+        assert.deepStrictEqual(idx.describe('mod:app/a.ts')!.testedBy, ['tests/a.test.ts']);
+        assert.deepStrictEqual(idx.describe('mod:app/c.ts')!.testedBy, []);
+
+        const v = idx.project();
+        const cyclic = v.edges.filter((e) => e.cyclic).map((e) => `${e.source} -> ${e.target}`).sort();
+        assert.deepStrictEqual(cyclic, ['dir:app -> dir:lib', 'dir:lib -> dir:app']);
+        const cycleIds = v.nodes.filter((n) => n.cycle !== undefined).map((n) => n.key).sort();
+        assert.deepStrictEqual(cycleIds, ['dir:app', 'dir:lib']);
+        assert.ok(!v.edges.find((e) => e.source === 'dir:tests')?.cyclic);
+    });
 });

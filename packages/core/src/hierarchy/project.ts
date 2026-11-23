@@ -12,6 +12,7 @@
  */
 import type { EdgeExplanation, Hierarchy, HierarchyEdge, HierarchyNode, NodeDetails, NodeLink, NodeSummary, PortStub, View, ViewEdge, ViewNode, ViewRequest } from '@codearchy/protocol';
 import { contentHash } from '../util/hash.js';
+import { computeMetrics, tarjan, type HierarchyMetrics } from './metrics.js';
 
 export const DEFAULT_VIEW_BUDGET = 300;
 
@@ -20,6 +21,7 @@ export class HierarchyIndex {
     private readonly kids: number[][];
     private readonly bySrc: HierarchyEdge[];
     private readonly byDst: HierarchyEdge[];
+    private metricsCache?: HierarchyMetrics;
 
     constructor(readonly hierarchy: Hierarchy) {
         const { nodes, edges } = hierarchy;
@@ -30,6 +32,12 @@ export class HierarchyIndex {
         });
         this.bySrc = [...edges].sort((a, b) => a.src - b.src || a.dst - b.dst);
         this.byDst = [...edges].sort((a, b) => a.dst - b.dst || a.src - b.src);
+    }
+
+    /** Lens metrics, computed on first use. */
+    get metrics(): HierarchyMetrics {
+        this.metricsCache ??= computeMetrics(this.hierarchy);
+        return this.metricsCache;
     }
 
     node(key: string): HierarchyNode | undefined {
@@ -163,7 +171,22 @@ export class HierarchyIndex {
             if (v !== undefined) addPort(v, external(e.src), 'in', e);
         }
 
-        const edges: ViewEdge[] = [...viewEdges.values()].map(({ explicit, ...ve }) => ({ ...ve, implicit: !explicit }));
+        // Cycles among the visible nodes: strongly connected components of the view.
+        const succ = new Map<number, number[]>();
+        for (const key of viewEdges.keys()) {
+            const [u, v] = key.split('|').map(Number);
+            if (!succ.has(u)) succ.set(u, []);
+            succ.get(u)!.push(v);
+        }
+        const scc = tarjan(frontier, (v) => succ.get(v) ?? []);
+        const sccSize = new Map<number, number>();
+        for (const c of scc.values()) sccSize.set(c, (sccSize.get(c) ?? 0) + 1);
+        const cycleOf = (i: number) => (sccSize.get(scc.get(i)!)! > 1 ? scc.get(i)! : undefined);
+        const edges: ViewEdge[] = [...viewEdges].map(([key, { explicit, ...ve }]) => {
+            const [u, v] = key.split('|').map(Number);
+            const cu = cycleOf(u);
+            return { ...ve, implicit: !explicit, ...(cu !== undefined && cu === cycleOf(v) ? { cyclic: true } : {}) };
+        });
         const fanIn = new Map<string, number>();
         const fanOut = new Map<string, number>();
         for (const e of edges) {
@@ -192,6 +215,8 @@ export class HierarchyIndex {
                 ...(n.virtual ? { virtual: true } : {}),
                 fanIn: fanIn.get(n.key) ?? 0,
                 fanOut: fanOut.get(n.key) ?? 0,
+                metrics: this.metrics.nodes[i],
+                ...(!isContainer && cycleOf(i) !== undefined ? { cycle: cycleOf(i) } : {}),
             };
         };
         const viewNodes = [...containers.map((i) => viewNode(i, true)), ...frontier.map((i) => viewNode(i, false))];
@@ -261,8 +286,20 @@ export class HierarchyIndex {
             dependsOn.sort((a, b) => b.weight - a.weight);
             usedBy.sort((a, b) => b.weight - a.weight);
         }
+        const facts = this.metrics.modules.get(i);
+        const cycleWith = facts && facts.cycle >= 0 ? this.metrics.cycles[facts.cycle].filter((m) => m !== i).slice(0, 20).map((m) => nodes[m].path) : undefined;
+        const testedBy =
+            facts && !facts.test
+                ? range(this.byDst, (x) => x.dst, i, i)
+                      .filter((e) => this.metrics.modules.get(e.src)?.test)
+                      .slice(0, 20)
+                      .map((e) => nodes[e.src].path)
+                : undefined;
         return {
             ...this.summary(i),
+            metrics: this.metrics.nodes[i],
+            ...(cycleWith ? { cycleWith } : {}),
+            ...(testedBy ? { testedBy } : {}),
             breadcrumb: this.ancestors(i).map((a) => ({ key: nodes[a].key, name: nodes[a].name, kind: nodes[a].kind })),
             children: this.kids[i].map((c) => this.summary(c)),
             symbols,

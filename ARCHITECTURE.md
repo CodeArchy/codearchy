@@ -135,6 +135,14 @@ discover ─▶ index ─▶ resolve ─▶ graph ─▶ hierarchy ─▶ infer 
    many nodes expansions may add. Projecting a scope takes well under a
    millisecond on repositories of a few thousand files.
 
+   **Metrics** (`computeMetrics`) feed the lenses and the Inspector. For each
+   file they record whether it's a test, sits in a dependency cycle (strongly
+   connected components), is an orphan (no dependencies either way) or a hub
+   (very highly connected), and whether any test file depends on it. Every
+   container sums its files and records the dependency weight crossing its
+   boundary. Views also mark the edges that form cycles among the visible
+   nodes.
+
 7. **Infer.** Heuristics group files into subsystems (API, services, models,
    storage, and so on). AI providers, where enabled, refine this from the
    graph: they receive structure, not raw source files.
@@ -209,7 +217,12 @@ which is the behaviour change to review.
   the Navigator tree, the Inspector (what a node contains, depends on and is
   used by; the imports behind an edge), the breadcrumb, ⌘K search and keyboard
   navigation. Dense views draw their heaviest dependencies, plus everything
-  around the selection. Theme tokens follow VS Code's theme when hosted there,
+  around the selection. The same view can be shown as a **Matrix**: a
+  dependency structure matrix ordered with providers first, so ordinary
+  dependencies sit below the diagonal and anything above it is feedback in a
+  cycle. **Lenses** (Dependencies, Health, Tests) colour nodes using validated,
+  colour-blind-safe ramps and status colours, and always state the value as
+  text as well. Theme tokens follow VS Code's theme when hosted there,
   and light or dark on the web.
 - **`apps/playground`** is a browser debug UI for the engine. Load the
   sample or open a local folder, then inspect stats, files, edges, unresolved

@@ -3,7 +3,7 @@
  * containers (expanded nodes), leaf nodes, external nodes for port stubs,
  * and edges with a visual weight. No React, no DOM: unit-tested directly.
  */
-import type { View, ViewNode } from '@codearchy/protocol';
+import type { NodeMetrics, View, ViewNode } from '@codearchy/protocol';
 
 export type MapNodeType = 'container' | 'node' | 'external';
 
@@ -25,6 +25,8 @@ export interface MapEdge {
     weight: number;
     count: number;
     implicit: boolean;
+    /** Part of a cycle among the visible nodes. */
+    cyclic?: boolean;
     /** Connects to an external node (a port stub). */
     port: boolean;
     /** 1..6, from the weight on a log scale. */
@@ -40,8 +42,8 @@ export interface MapModel {
 export const externalId = (key: string) => `ext:${key}`;
 export const edgeId = (source: string, target: string) => `${source}->${target}`;
 
-const LEAF = { width: 220, height: 68 };
-const MODULE = { width: 200, height: 52 };
+const LEAF = { width: 220, height: 82 };
+const MODULE = { width: 200, height: 62 };
 const EXTERNAL = { width: 170, height: 40 };
 
 export function strokeWidthFor(weight: number): number {
@@ -62,6 +64,7 @@ export function buildMapModel(view: View): MapModel {
         weight: e.weight,
         count: e.count,
         implicit: e.implicit,
+        ...(e.cyclic ? { cyclic: true } : {}),
         port: false,
         strokeWidth: strokeWidthFor(e.weight),
     }));
@@ -136,4 +139,99 @@ export function visibleEdges(model: MapModel, options: { all?: boolean; limit?: 
     );
     const around = options.around;
     return model.edges.filter((e) => keep.has(e.id) || (around && (around.has(e.source) || around.has(e.target))));
+}
+
+// ─── lenses ─────────────────────────────────────────────────────────────────
+
+export type LensId = 'dependencies' | 'health' | 'tests';
+
+export const LENSES: Array<{ id: LensId; label: string; description: string }> = [
+    { id: 'dependencies', label: 'Dependencies', description: 'Edge thickness is the number of dependencies.' },
+    { id: 'health', label: 'Health', description: 'Files in dependency cycles, hubs (very highly connected files) and orphans (no dependencies either way).' },
+    { id: 'tests', label: 'Tests', description: 'Share of code files that at least one test file depends on.' },
+];
+
+export interface LensBadge {
+    /** Tests: ordinal step 1..5. Health: a status. Undefined: nothing to colour. */
+    level?: 1 | 2 | 3 | 4 | 5 | 'critical' | 'serious' | 'warning';
+    /** Always shown: colour never carries the value alone. */
+    text: string;
+    title: string;
+}
+
+export function lensBadge(m: NodeMetrics, lens: LensId, kind: string): LensBadge | undefined {
+    if (lens === 'tests') {
+        if (m.codeModules === 0) return m.testModules > 0 ? { text: kind === 'module' ? 'test file' : 'tests only', title: `${m.testModules} test file(s)` } : undefined;
+        const ratio = m.testedModules / m.codeModules;
+        const level = (Math.min(4, Math.floor(ratio * 5)) + 1) as 1 | 2 | 3 | 4 | 5;
+        if (kind === 'module') return { level: ratio > 0 ? 5 : 1, text: ratio > 0 ? 'tested' : 'untested', title: ratio > 0 ? 'A test file depends on this file' : 'No test file depends on this file' };
+        return { level, text: `${Math.round(ratio * 100)}% tested`, title: `${m.testedModules} of ${m.codeModules} code files have a test file depending on them (${m.testModules} test files)` };
+    }
+    if (lens === 'health') {
+        const parts: string[] = [];
+        if (m.cyclicModules) parts.push(`⟳ ${m.cyclicModules} in cycles`);
+        if (m.hubModules) parts.push(`◆ ${m.hubModules} hub${m.hubModules === 1 ? '' : 's'}`);
+        if (m.orphanModules) parts.push(`○ ${m.orphanModules} orphan${m.orphanModules === 1 ? '' : 's'}`);
+        if (kind === 'module') {
+            if (m.cyclicModules) return { level: 'critical', text: '⟳ in a cycle', title: 'This file is part of a dependency cycle' };
+            if (m.hubModules) return { level: 'serious', text: '◆ hub', title: 'Very highly connected file' };
+            if (m.orphanModules) return { level: 'warning', text: '○ orphan', title: 'Nothing depends on this file and it depends on nothing' };
+            return { text: 'no issues', title: 'No cycle, hub or orphan' };
+        }
+        if (parts.length === 0) return { text: 'no issues', title: 'No files in cycles, no hubs, no orphans' };
+        const level = m.cyclicModules ? 'critical' : m.hubModules ? 'serious' : 'warning';
+        return { level, text: parts.join(' · '), title: `${parts.join(', ')} (of ${m.modules} files)` };
+    }
+    return undefined;
+}
+
+// ─── matrix (DSM) ───────────────────────────────────────────────────────────
+
+export interface MatrixOrder {
+    /** Leaf keys, providers first: a node comes after everything it depends on (cycles aside). */
+    keys: string[];
+    /** Cycle id per key, for nodes in a cycle. */
+    cycleOf: Map<string, number>;
+}
+
+/**
+ * Orders a view's leaves for a dependency structure matrix: topological
+ * order of the cycle-condensed graph with providers first, ties by name. Rows
+ * depend on columns, so ordinary dependencies fall below the diagonal and
+ * only feedback (inside a cycle) lands above it.
+ */
+export function matrixOrder(view: View): MatrixOrder {
+    const leaves = view.nodes.filter((n) => !n.expanded);
+    const group = (n: ViewNode) => (n.cycle !== undefined ? `c${n.cycle}` : n.key);
+    const members = new Map<string, ViewNode[]>();
+    for (const n of leaves) {
+        const g = group(n);
+        if (!members.has(g)) members.set(g, []);
+        members.get(g)!.push(n);
+    }
+    const groupOf = new Map(leaves.map((n) => [n.key, group(n)]));
+    const deps = new Map<string, Set<string>>([...members.keys()].map((g) => [g, new Set<string>()]));
+    for (const e of view.edges) {
+        const a = groupOf.get(e.source);
+        const b = groupOf.get(e.target);
+        if (a && b && a !== b) deps.get(a)!.add(b);
+    }
+    const label = (g: string) => members.get(g)!.map((n) => n.name.toLowerCase()).sort()[0];
+    const placed = new Set<string>();
+    const keys: string[] = [];
+    while (placed.size < members.size) {
+        const ready = [...members.keys()].filter((g) => !placed.has(g) && [...deps.get(g)!].every((d) => placed.has(d)));
+        // The condensation is acyclic, so something is always ready; guard anyway.
+        const next = (ready.length ? ready : [...members.keys()].filter((g) => !placed.has(g))).sort((a, b) => (label(a) < label(b) ? -1 : 1))[0];
+        placed.add(next);
+        for (const n of members.get(next)!.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1))) keys.push(n.key);
+    }
+    const cycleOf = new Map(leaves.filter((n) => n.cycle !== undefined).map((n) => [n.key, n.cycle!]));
+    return { keys, cycleOf };
+}
+
+/** Step 1..7 of the sequential ramp for a weight, on a log scale up to `max`. */
+export function heatStep(weight: number, max: number): number {
+    if (weight <= 0 || max <= 0) return 0;
+    return 1 + Math.min(6, Math.floor((Math.log1p(weight) / Math.log1p(max)) * 6.999));
 }
