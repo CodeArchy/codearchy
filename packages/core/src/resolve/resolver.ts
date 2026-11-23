@@ -269,11 +269,14 @@ export class ImportResolver {
     // ─── Python ─────────────────────────────────────────────────────────────
 
     private resolvePython(imp: ImportInfo, fromFile: string): string[] {
-        const rel = imp.source.match(/^(\.+)(.*)$/);
-        if (rel) {
+        // Relative import: count leading dots (linear; a regex here was ambiguous and could backtrack).
+        let dots = 0;
+        while (dots < imp.source.length && imp.source[dots] === '.') dots++;
+        if (dots > 0) {
+            const rest = imp.source.slice(dots);
             let base = dirname(fromFile);
-            for (let i = 1; i < rel[1].length; i++) base = dirname(base);
-            const modulePath = rel[2] ? pj(base, ...rel[2].split('.')) : base;
+            for (let i = 1; i < dots; i++) base = dirname(base);
+            const modulePath = rest ? pj(base, ...rest.split('.')) : base;
             const out = this.pythonModuleAt(modulePath);
             for (const spec of imp.specifiers) out.push(...this.pythonModuleAt(pj(modulePath, spec)));
             return out;
