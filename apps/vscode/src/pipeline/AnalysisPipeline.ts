@@ -31,6 +31,7 @@ import {
     gitListFiles,
     openNodeSqlite,
     toPosix,
+    walkFiles,
 } from '@codearchy/platform-node';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
@@ -180,7 +181,22 @@ export class AnalysisPipeline {
             }
         }
 
-        const changedPaths = changed.map(rel).filter((p): p is string => !!p);
+        // A new directory (mkdir + writes, git checkout, unzip) can reach us as one
+        // event for the directory alone: on Linux the watcher may miss files
+        // created inside it before it starts watching it. List such directories.
+        const changedSet = new Set<string>();
+        for (const p of changed.map(rel)) {
+            if (!p) continue;
+            if (!relevant(p) && !isExcluded(p) && !p.split('/').includes('.git')) {
+                const st = await state.fs.stat(p);
+                if (st && !st.isFile) {
+                    for (const f of await walkFiles(state.root, p)) changedSet.add(f);
+                    continue;
+                }
+            }
+            changedSet.add(p);
+        }
+        const changedPaths = [...changedSet];
         // Full discovery honours .gitignore; apply the same rule to files that
         // appear later (build output, generated code), or they'd leak in.
         const fresh = changedPaths.filter((p) => !state.analyses.has(p) && relevant(p) === 'source');
