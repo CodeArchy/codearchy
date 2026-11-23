@@ -6,6 +6,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AiCard, AiClient, AiProviderInfo, AiRole, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, PrivacyTier, SendPreview } from '@codearchy/protocol';
 import { parseAnswer, type Block, type Inline } from './answer.js';
+import { Icon, type IconName } from './icons.js';
 
 // ── Answers ─────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function InlineView({ nodes, links }: { nodes: Inline[]; links: AnswerLinks }): 
                 );
             case 'file':
                 return links.onFile ? (
-                    <button key={i} type="button" className="ca-link ca-cite" title={`Open ${n.path}${n.line ? `:${n.line}` : ''}`} onClick={() => links.onFile!(n.path, n.line ? n.line - 1 : undefined)}>
+                    <button key={i} type="button" className="ca-link ca-cite ca-cite-file" title={`Open ${n.path}${n.line ? `:${n.line}` : ''}`} onClick={() => links.onFile!(n.path, n.line ? n.line - 1 : undefined)}>
                         <InlineView nodes={n.label} links={links} />
                     </button>
                 ) : (
@@ -84,6 +85,38 @@ export function Answer({ text, links }: { text: string; links: AnswerLinks }) {
     );
 }
 
+// ── Small shared pieces ─────────────────────────────────────────────────────
+
+/** A button that shows only an icon (the label is for screen readers and the tooltip). */
+function IconButton({ icon, label, onClick, disabled, className }: { icon: IconName; label: string; onClick(): void; disabled?: boolean; className?: string }) {
+    return (
+        <button type="button" className={`ca-icon-button${className ? ` ${className}` : ''}`} aria-label={label} title={label} onClick={onClick} disabled={disabled}>
+            <Icon name={icon} />
+        </button>
+    );
+}
+
+type Tone = 'ok' | 'warn' | 'off' | 'bad';
+const StatusDot = ({ tone }: { tone: Tone }) => <span className={`ca-dot ca-dot-${tone}`} aria-hidden="true" />;
+
+function useAiState(ai: AiClient): [AiState | undefined, (s: AiState) => void] {
+    const [state, setState] = useState<AiState>();
+    useEffect(() => {
+        let live = true;
+        void ai.state().then((s) => {
+            if (live) setState(s);
+        });
+        const off = ai.subscribe((e) => {
+            if (e.type === 'state') setState(e.state);
+        });
+        return () => {
+            live = false;
+            off();
+        };
+    }, [ai]);
+    return [state, setState];
+}
+
 // ── Chat ────────────────────────────────────────────────────────────────────
 
 interface Turn {
@@ -109,157 +142,266 @@ export interface ChatPanelProps extends AnswerLinks {
 
 export function ChatPanel(props: ChatPanelProps) {
     const { ai } = props;
-    const [state, setState] = useState<AiState>();
+    const [state] = useAiState(ai);
     const [turns, setTurns] = useState<Turn[]>([]);
     const [draft, setDraft] = useState(props.prompt?.text ?? '');
     const [useSelection, setUseSelection] = useState(true);
     const conversation = useRef(newConversationId());
     const busy = turns.length > 0 && !turns[turns.length - 1]!.done;
     const end = useRef<HTMLDivElement>(null);
+    const box = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => {
-        void ai.state().then(setState);
-        const off = ai.subscribe((e) => {
-            if (e.type === 'state') setState(e.state);
-        });
-        return () => {
-            off();
-        };
-    }, [ai]);
     useEffect(() => {
         if (props.prompt) {
             setDraft(props.prompt.text);
             setUseSelection(true);
+            box.current?.focus();
         }
     }, [props.prompt?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => {
         end.current?.scrollIntoView?.({ block: 'end' });
     }, [turns]);
+    // The box grows with its text, up to a limit.
+    useEffect(() => {
+        const el = box.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    }, [draft]);
 
     const update = (patch: (t: Turn) => Turn) => setTurns((all) => [...all.slice(0, -1), patch(all[all.length - 1]!)]);
 
-    const send = useCallback(() => {
-        const question = draft.trim();
-        if (!question || busy) return;
-        setDraft('');
-        setTurns((all) => [...all, { question, answer: '', status: [], citations: [], actions: [], done: false }]);
-        const selection = useSelection ? props.selection?.key : undefined;
-        void ai
-            .ask(conversation.current, question, { selection }, (e: ChatEvent) => {
-                if (e.type === 'text') update((t) => ({ ...t, answer: t.answer + e.delta }));
-                else if (e.type === 'restart') update((t) => ({ ...t, answer: '' }));
-                else if (e.type === 'status') update((t) => ({ ...t, status: [...t.status, e.text] }));
-                else if (e.type === 'action') update((t) => ({ ...t, actions: [...t.actions, e.action] }));
-                else if (e.type === 'error') update((t) => ({ ...t, done: true, error: e.message }));
-                else if (e.type === 'done')
-                    update((t) => ({
-                        ...t,
-                        done: true,
-                        answer: e.answer,
-                        citations: e.citations,
-                        actions: e.actions,
-                        meta: `${e.provider} · ${e.model}${e.mode === 'rag' ? ' · from search results' : ''} · ${e.usage.inputTokens + e.usage.outputTokens} tokens`,
-                    }));
-            })
-            .catch((err: unknown) => update((t) => ({ ...t, done: true, error: err instanceof Error ? err.message : String(err) })));
-    }, [ai, draft, busy, useSelection, props.selection?.key]);
+    const ask = useCallback(
+        (text: string) => {
+            const question = text.trim();
+            if (!question || busy) return;
+            setDraft('');
+            setTurns((all) => [...all, { question, answer: '', status: [], citations: [], actions: [], done: false }]);
+            const selection = useSelection ? props.selection?.key : undefined;
+            void ai
+                .ask(conversation.current, question, { selection }, (e: ChatEvent) => {
+                    if (e.type === 'text') update((t) => ({ ...t, answer: t.answer + e.delta }));
+                    else if (e.type === 'restart') update((t) => ({ ...t, answer: '' }));
+                    else if (e.type === 'status') update((t) => ({ ...t, status: [...t.status, e.text] }));
+                    else if (e.type === 'action') update((t) => ({ ...t, actions: [...t.actions, e.action] }));
+                    else if (e.type === 'error') update((t) => ({ ...t, done: true, error: e.message }));
+                    else if (e.type === 'done')
+                        update((t) => ({
+                            ...t,
+                            done: true,
+                            answer: e.answer,
+                            citations: e.citations,
+                            actions: e.actions,
+                            meta: `${e.provider} · ${e.model}${e.mode === 'rag' ? ' · from search results' : ''} · ${(e.usage.inputTokens + e.usage.outputTokens).toLocaleString()} tokens`,
+                        }));
+                })
+                .catch((err: unknown) => update((t) => ({ ...t, done: true, error: err instanceof Error ? err.message : String(err) })));
+        },
+        [ai, busy, useSelection, props.selection?.key],
+    );
+
+    const newChat = () => {
+        ai.reset(conversation.current);
+        conversation.current = newConversationId();
+        setTurns([]);
+        box.current?.focus();
+    };
 
     const chat = state?.resolved.chat;
     const unavailable = chat && !chat.ok ? chat.reason : undefined;
+    const provider = chat?.ok ? state?.providers.find((p) => p.id === chat.provider) : undefined;
+    const name = props.selection?.name;
+    const suggestions = [
+        ...(name ? [`What does ${name} do?`, `What depends on ${name}, and why?`] : []),
+        'What are the main parts of this codebase?',
+        'Where does a request enter the system?',
+    ].slice(0, 4);
 
     return (
         <div className="ca-chat" aria-label="Ask about the codebase">
-            <div className="ca-panel-title ca-chat-head">
-                <span className="ca-toolbar-gap" />
+            <div className="ca-chat-head">
                 {chat?.ok ? (
-                    <span className="ca-muted" title={chat.why}>
-                        {chat.provider} · {chat.model}
+                    <span className="ca-model-chip" title={chat.why}>
+                        <StatusDot tone="ok" />
+                        <Icon name={provider?.onDevice ? 'laptop' : 'cloud'} size={13} />
+                        <span className="ca-model-name">
+                            {chat.provider} · {chat.model}
+                        </span>
                     </span>
-                ) : null}
-                {turns.length ? (
-                    <button
-                        type="button"
-                        className="ca-link"
-                        onClick={() => {
-                            ai.reset(conversation.current);
-                            conversation.current = newConversationId();
-                            setTurns([]);
-                        }}
-                    >
-                        New chat
-                    </button>
-                ) : null}
+                ) : (
+                    <span className="ca-model-chip ca-muted">
+                        <StatusDot tone="warn" /> No model
+                    </span>
+                )}
+                <span className="ca-toolbar-gap" />
+                {turns.length ? <IconButton icon="plus" label="New chat" onClick={newChat} /> : null}
+                <IconButton icon="sliders" label="AI settings" onClick={props.onOpenSettings} />
             </div>
-            <div className="ca-chat-log">
+
+            <div className="ca-chat-log" aria-live="polite">
                 {unavailable ? (
                     <div className="ca-chat-empty">
-                        <p>{unavailable}.</p>
-                        <button type="button" className="ca-primary" onClick={props.onOpenSettings}>
-                            Set up AI
+                        <span className="ca-empty-icon ca-empty-warn">
+                            <Icon name="sparkles" size={22} />
+                        </span>
+                        <p className="ca-empty-title">Set up a model to ask questions</p>
+                        <p className="ca-muted">{unavailable}.</p>
+                        <button type="button" className="ca-button ca-button-primary" onClick={props.onOpenSettings}>
+                            <Icon name="sliders" /> Set up AI
                         </button>
                     </div>
                 ) : turns.length === 0 ? (
-                    <p className="ca-muted ca-chat-empty">Ask how something works, where a feature lives, or what depends on what. Answers cite the map and the code.</p>
+                    <div className="ca-chat-empty">
+                        <span className="ca-empty-icon">
+                            <Icon name="sparkles" size={22} />
+                        </span>
+                        <p className="ca-empty-title">Ask about this codebase</p>
+                        <p className="ca-muted">Answers come from the map and cite the parts and lines they rely on.</p>
+                        <div className="ca-suggestions">
+                            {suggestions.map((s) => (
+                                <button key={s} type="button" className="ca-suggestion" onClick={() => ask(s)}>
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 ) : null}
+
                 {turns.map((t, i) => (
                     <div key={i} className="ca-turn">
-                        <div className="ca-question">{t.question}</div>
-                        {t.status.length && !t.done ? <div className="ca-chat-status">{t.status[t.status.length - 1]}</div> : null}
-                        {t.answer ? <Answer text={t.answer} links={props} /> : !t.done ? <div className="ca-chat-status">Thinking…</div> : null}
-                        {t.error ? <div className="ca-chat-error" role="alert">{t.error}</div> : null}
-                        {t.done && t.actions.length ? (
-                            <div className="ca-actions">
-                                {t.actions.map((a, j) => (
-                                    <button key={j} type="button" onClick={() => props.onAction(a)}>
-                                        Show me{t.actions.length > 1 ? ` (${j + 1})` : ''}
-                                    </button>
-                                ))}
+                        <div className="ca-msg ca-msg-user">
+                            <div className="ca-bubble">{t.question}</div>
+                        </div>
+                        <div className="ca-msg ca-msg-ai">
+                            <span className="ca-avatar" aria-hidden="true">
+                                <Icon name="sparkles" size={14} />
+                            </span>
+                            <div className="ca-msg-body">
+                                {!t.done ? (
+                                    <div className="ca-thinking" role="status">
+                                        <span className="ca-typing" aria-hidden="true">
+                                            <i />
+                                            <i />
+                                            <i />
+                                        </span>
+                                        <span>{t.status[t.status.length - 1] ?? 'Thinking…'}</span>
+                                    </div>
+                                ) : t.status.length ? (
+                                    <details className="ca-steps">
+                                        <summary>
+                                            <Icon name="chevron" size={12} className="ca-steps-chevron" /> Looked at {t.status.length} thing{t.status.length === 1 ? '' : 's'}
+                                        </summary>
+                                        <ul>
+                                            {t.status.map((s, j) => (
+                                                <li key={j}>{s}</li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                ) : null}
+                                {t.answer ? <Answer text={t.answer} links={props} /> : null}
+                                {t.error ? (
+                                    <div className="ca-chat-error" role="alert">
+                                        <Icon name="alert" />
+                                        <span>{t.error}</span>
+                                        {i === turns.length - 1 ? (
+                                            <button type="button" className="ca-button ca-button-ghost" onClick={() => ask(t.question)}>
+                                                <Icon name="retry" /> Retry
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                                {t.done && !t.error ? (
+                                    <div className="ca-msg-actions">
+                                        {t.actions.map((a, j) => (
+                                            <button key={j} type="button" className="ca-button ca-button-soft" onClick={() => props.onAction(a)}>
+                                                <Icon name="target" /> Show me{t.actions.length > 1 ? ` (${j + 1})` : ''}
+                                            </button>
+                                        ))}
+                                        <CopyButton text={t.answer} />
+                                        {t.meta ? <span className="ca-muted ca-chat-meta">{t.meta}</span> : null}
+                                    </div>
+                                ) : null}
                             </div>
-                        ) : null}
-                        {t.done && t.meta ? <div className="ca-muted ca-chat-meta">{t.meta}</div> : null}
+                        </div>
                     </div>
                 ))}
                 <div ref={end} />
             </div>
+
             <form
-                className="ca-chat-form"
+                className="ca-composer"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    send();
+                    ask(draft);
                 }}
             >
-                {props.selection ? (
-                    <label className="ca-chat-context">
-                        <input type="checkbox" checked={useSelection} onChange={(e) => setUseSelection(e.target.checked)} /> About <strong>{props.selection.name}</strong>
-                    </label>
-                ) : null}
-                <textarea
-                    aria-label="Question"
-                    rows={3}
-                    value={draft}
-                    disabled={!!unavailable}
-                    placeholder={unavailable ? 'AI is not set up' : 'Ask about the codebase…'}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            send();
-                        }
-                    }}
-                />
-                <div className="ca-actions">
-                    {busy ? (
-                        <button type="button" onClick={() => ai.cancel(conversation.current)}>
-                            Stop
+                <div className={`ca-composer-box${unavailable ? ' ca-disabled' : ''}`}>
+                    {props.selection && useSelection ? (
+                        <span className="ca-context-chip" title="The answer focuses on the selected part of the map">
+                            <Icon name="target" size={13} /> About <strong>{props.selection.name}</strong>
+                            <button type="button" aria-label={`Don't focus on ${props.selection.name}`} onClick={() => setUseSelection(false)}>
+                                <Icon name="close" size={12} />
+                            </button>
+                        </span>
+                    ) : props.selection ? (
+                        <button type="button" className="ca-context-add" onClick={() => setUseSelection(true)}>
+                            <Icon name="plus" size={12} /> About {props.selection.name}
                         </button>
-                    ) : (
-                        <button type="submit" className="ca-primary" disabled={!draft.trim() || !!unavailable}>
-                            Ask
-                        </button>
-                    )}
+                    ) : null}
+                    <div className="ca-composer-row">
+                        <textarea
+                            ref={box}
+                            aria-label="Question"
+                            rows={1}
+                            value={draft}
+                            disabled={!!unavailable}
+                            placeholder={unavailable ? 'Set up a model first' : 'Ask about the codebase…'}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                    e.preventDefault();
+                                    ask(draft);
+                                }
+                            }}
+                        />
+                        {busy ? (
+                            <IconButton icon="stop" label="Stop" className="ca-send ca-send-stop" onClick={() => ai.cancel(conversation.current)} />
+                        ) : (
+                            <button type="submit" className="ca-icon-button ca-send" aria-label="Send" title="Send (Enter)" disabled={!draft.trim() || !!unavailable}>
+                                <Icon name="send" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+                <div className="ca-composer-hint ca-muted">
+                    <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
                 </div>
             </form>
         </div>
+    );
+}
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    if (!text) return null;
+    return (
+        <button
+            type="button"
+            className="ca-icon-button"
+            aria-label={copied ? 'Copied' : 'Copy the answer'}
+            title={copied ? 'Copied' : 'Copy the answer'}
+            onClick={() => {
+                void navigator.clipboard?.writeText(text).then(
+                    () => {
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 1500);
+                    },
+                    () => undefined,
+                );
+            }}
+        >
+            <Icon name={copied ? 'check' : 'copy'} />
+        </button>
     );
 }
 
@@ -302,54 +444,58 @@ export function CardSection({ ai, nodeKey, onReveal, nameOf }: { ai: AiClient; n
             setWorking(false);
         }
     };
+    const isAi = card.source === 'ai';
     return (
-        <section className="ca-card" aria-label="Summary">
-            <h3>
-                {card.title}{' '}
-                <span className="ca-chip" title={card.source === 'ai' ? `Written by ${card.provider} · ${card.model}` : 'Built from docs, names and structure (no AI)'}>
-                    {card.source === 'ai' ? `AI · ${card.model}` : 'auto-summary'}
+        <section className={`ca-card${isAi ? ' ca-card-ai' : ''}`} aria-label="Summary">
+            <div className="ca-card-head">
+                <Icon name={isAi ? 'sparkles' : 'info'} size={14} />
+                <h3>{card.title}</h3>
+                <span className="ca-chip" title={isAi ? `Written by ${card.provider} · ${card.model}` : 'Built from docs, names and structure (no AI)'}>
+                    {isAi ? `AI · ${card.model}` : 'auto-summary'}
                 </span>
-            </h3>
+            </div>
             <p>{card.purpose}</p>
             {card.responsibilities.length ? (
-                <ul className="ca-list">
+                <ul className="ca-card-list">
                     {card.responsibilities.map((r, i) => (
                         <li key={i}>{r}</li>
                     ))}
                 </ul>
             ) : null}
             {card.keyNodes.length ? (
-                <p className="ca-muted">
-                    Key parts:{' '}
-                    {card.keyNodes.map((k, i) => (
-                        <Fragment key={k}>
-                            {i ? ', ' : ''}
-                            <button type="button" className="ca-link" title={k} onClick={() => onReveal(k)}>
-                                {readableName(k, nameOf)}
-                            </button>
-                        </Fragment>
+                <p className="ca-card-keys">
+                    <span className="ca-muted">Key parts</span>
+                    {card.keyNodes.map((k) => (
+                        <button key={k} type="button" className="ca-pill" title={k} onClick={() => onReveal(k)}>
+                            {readableName(k, nameOf)}
+                        </button>
                     ))}
                 </p>
             ) : null}
             {card.risks.length ? (
-                <ul className="ca-list ca-risks">
+                <ul className="ca-card-risks">
                     {card.risks.map((r, i) => (
                         <li key={i}>
-                            <span aria-hidden="true">⚠</span> {r}
+                            <Icon name="alert" size={13} /> {r}
                         </li>
                     ))}
                 </ul>
             ) : null}
-            {card.source === 'ai' ? (
-                <p className="ca-muted">AI-written · confidence {Math.round(card.confidence * 100)}%</p>
+            {isAi ? (
+                <p className="ca-card-foot ca-muted">AI-written · confidence {Math.round(card.confidence * 100)}%</p>
             ) : (
-                <div className="ca-actions">
-                    <button type="button" disabled={working} onClick={() => void summarize()}>
+                <div className="ca-card-foot">
+                    <button type="button" className="ca-button ca-button-soft" disabled={working} onClick={() => void summarize()}>
+                        <Icon name="sparkles" className={working ? 'ca-spin' : undefined} />
                         {working ? 'Summarizing…' : 'Summarize with AI'}
                     </button>
                 </div>
             )}
-            {error ? <p className="ca-muted" role="status">{error}</p> : null}
+            {error ? (
+                <p className="ca-card-note" role="status">
+                    <Icon name="info" size={13} /> {error}
+                </p>
+            ) : null}
         </section>
     );
 }
@@ -366,29 +512,28 @@ function readableName(key: string, nameOf: (key: string) => string): string {
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
-const TIERS: Array<{ id: PrivacyTier; label: string; text: string }> = [
-    { id: 'local-only', label: 'Local only', text: 'Nothing leaves this machine. Only models running here are used.' },
-    { id: 'structure', label: 'Structure', text: 'Names, paths, signatures, docs and dependencies may go to a cloud model. Code does not.' },
-    { id: 'excerpts', label: 'Structure + code excerpts', text: 'As above, plus short code excerpts when an answer needs them.' },
+const TIERS: Array<{ id: PrivacyTier; label: string; text: string; icon: IconName }> = [
+    { id: 'local-only', label: 'Local only', text: 'Nothing leaves this machine. Only models running here are used.', icon: 'lock' },
+    { id: 'structure', label: 'Structure', text: 'Names, paths, signatures, docs and dependencies may go to a cloud model. Code does not.', icon: 'layers' },
+    { id: 'excerpts', label: 'Structure + code excerpts', text: 'As above, plus short code excerpts when an answer needs them.', icon: 'code' },
 ];
-const ROLES: Array<{ id: AiRole; label: string; text: string }> = [
-    { id: 'chat', label: 'Chat', text: 'Answers questions' },
-    { id: 'summarizer', label: 'Summarizer', text: 'Summarizes files and components (many calls)' },
-    { id: 'architect', label: 'Architect', text: 'Summarizes packages and the system' },
+const ROLES: Array<{ id: AiRole; label: string; text: string; icon: IconName }> = [
+    { id: 'chat', label: 'Chat', text: 'Answers questions', icon: 'chat' },
+    { id: 'summarizer', label: 'Summarizer', text: 'Summarizes files and components (many calls)', icon: 'file' },
+    { id: 'architect', label: 'Architect', text: 'Summarizes packages and the system', icon: 'boxes' },
+];
+type SettingsTab = 'privacy' | 'providers' | 'models' | 'budgets';
+const TABS: Array<{ id: SettingsTab; label: string; icon: IconName }> = [
+    { id: 'privacy', label: 'Privacy', icon: 'shield' },
+    { id: 'providers', label: 'Providers', icon: 'cloud' },
+    { id: 'models', label: 'Models', icon: 'sparkles' },
+    { id: 'budgets', label: 'Budgets', icon: 'gauge' },
 ];
 
 export function AiSettingsPanel({ ai, onClose }: { ai: AiClient; onClose(): void }) {
-    const [state, setState] = useState<AiState>();
+    const [state, setState] = useAiState(ai);
     const [busy, setBusy] = useState(false);
-    useEffect(() => {
-        void ai.state().then(setState);
-        const off = ai.subscribe((e) => {
-            if (e.type === 'state') setState(e.state);
-        });
-        return () => {
-            off();
-        };
-    }, [ai]);
+    const [tab, setTab] = useState<SettingsTab>('privacy');
     const run = async (task: () => Promise<AiState>) => {
         setBusy(true);
         try {
@@ -398,126 +543,219 @@ export function AiSettingsPanel({ ai, onClose }: { ai: AiClient; onClose(): void
         }
     };
     const patch = (p: Partial<AiSettings>) => void run(() => ai.updateSettings(p));
-    if (!state) return <div className="ca-settings">Loading…</div>;
+    if (!state) return <div className="ca-settings ca-muted">Loading…</div>;
     const s = state.settings;
+    const chat = state.resolved.chat;
+    const local = state.providers.filter((p) => p.onDevice);
+    const cloud = state.providers.filter((p) => !p.onDevice);
+
     return (
         <div className="ca-settings" role="dialog" aria-label="AI settings">
             <div className="ca-settings-head">
+                <span className="ca-settings-icon">
+                    <Icon name="sliders" size={18} />
+                </span>
                 <h2>AI settings</h2>
                 <span className="ca-toolbar-gap" />
-                <button type="button" disabled={busy} onClick={() => void run(() => ai.refresh())}>
-                    {busy ? 'Checking…' : 'Check providers'}
-                </button>
-                <button type="button" onClick={onClose} aria-label="Close">
-                    Close
+                <button type="button" className="ca-button ca-button-ghost" onClick={onClose} aria-label="Close">
+                    <Icon name="close" /> Close
                 </button>
             </div>
 
-            <section>
-                <h3>Privacy</h3>
-                {TIERS.map((t) => (
-                    <label key={t.id} className="ca-radio">
-                        <input type="radio" name="ca-tier" checked={s.tier === t.id} onChange={() => patch({ tier: t.id })} />
-                        <span>
-                            <strong>{t.label}</strong> <span className="ca-muted">{t.text}</span>
-                        </span>
-                    </label>
-                ))}
-                <label className="ca-radio">
-                    <input type="checkbox" checked={s.askBeforeSend} onChange={(e) => patch({ askBeforeSend: e.target.checked })} />
+            <div className={`ca-banner ${chat.ok ? 'ca-banner-ok' : 'ca-banner-warn'}`} role="status">
+                <StatusDot tone={chat.ok ? 'ok' : 'warn'} />
+                {chat.ok ? (
                     <span>
-                        <strong>Ask before sending</strong> <span className="ca-muted">Show each cloud request, with secrets removed, before it goes.</span>
+                        Chat uses <strong>{chat.provider} · {chat.model}</strong>
+                        <span className="ca-muted"> · {chat.why}</span>
                     </span>
-                </label>
-            </section>
+                ) : (
+                    <span>
+                        <strong>No model is ready for chat yet.</strong> <span className="ca-muted">Choose a privacy level, then set up a provider.</span>
+                    </span>
+                )}
+            </div>
 
-            <section>
-                <h3>Providers</h3>
-                <ul className="ca-providers">
-                    {state.providers.map((p) => (
-                        <ProviderRow key={p.id} provider={p} defaultModel={s.defaults[p.id]} onKey={(k) => run(() => ai.setKey(p.id, k))} onModel={(m) => patch({ defaults: { ...s.defaults, [p.id]: m } })} />
-                    ))}
-                </ul>
-            </section>
+            <div className="ca-settings-tabs" role="tablist" aria-label="AI settings sections">
+                {TABS.map((t) => (
+                    <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'ca-on' : ''} onClick={() => setTab(t.id)}>
+                        <Icon name={t.icon} /> {t.label}
+                    </button>
+                ))}
+            </div>
 
-            <section>
-                <h3>Roles</h3>
-                {ROLES.map((r) => {
-                    const setting = s.roles[r.id];
-                    const resolved = state.resolved[r.id];
-                    const value = !setting || setting === 'auto' ? 'auto' : `${setting.provider}\u0000${setting.model}`;
-                    return (
-                        <div key={r.id} className="ca-role">
-                            <label>
-                                <strong>{r.label}</strong> <span className="ca-muted">{r.text}</span>
-                                <select
-                                    value={value}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
-                                        const [provider, model] = v.split('\u0000');
-                                        patch({ roles: { ...s.roles, [r.id]: v === 'auto' ? 'auto' : { provider: provider!, model: model! } } });
-                                    }}
-                                >
-                                    <option value="auto">Automatic</option>
-                                    {state.providers
-                                        .filter((p) => p.allowed && p.models.length)
-                                        .flatMap((p) =>
-                                            p.models.map((m) => (
-                                                <option key={`${p.id}/${m.id}`} value={`${p.id}\u0000${m.id}`}>
-                                                    {p.label} · {m.label}
-                                                </option>
-                                            )),
-                                        )}
-                                </select>
-                            </label>
-                            <div className="ca-muted">{resolved.ok ? `${resolved.provider} · ${resolved.model}. ${resolved.why}.` : resolved.reason}</div>
+            <div className="ca-settings-body" role="tabpanel">
+                {tab === 'privacy' ? (
+                    <section>
+                        <p className="ca-section-intro ca-muted">What may leave this machine. On-device models may always see everything: nothing leaves.</p>
+                        <div className="ca-tiles" role="radiogroup" aria-label="Privacy level">
+                            {TIERS.map((t) => (
+                                <label key={t.id} className={`ca-tile${s.tier === t.id ? ' ca-on' : ''}`}>
+                                    <input type="radio" name="ca-tier" checked={s.tier === t.id} onChange={() => patch({ tier: t.id })} />
+                                    <span className="ca-tile-icon">
+                                        <Icon name={t.icon} size={18} />
+                                    </span>
+                                    <span className="ca-tile-text">
+                                        <strong>{t.label}</strong> <span className="ca-muted">{t.text}</span>
+                                    </span>
+                                    <span className="ca-tile-check" aria-hidden="true">
+                                        <Icon name="check" size={14} />
+                                    </span>
+                                </label>
+                            ))}
                         </div>
-                    );
-                })}
-            </section>
-
-            <section>
-                <h3>Daily budgets</h3>
-                <p className="ca-muted">A hard stop per cloud provider, in tokens. Leave empty for no limit.</p>
-                {state.providers
-                    .filter((p) => !p.onDevice)
-                    .map((p) => (
-                        <label key={p.id} className="ca-budget">
-                            {p.label}{' '}
-                            <input
-                                type="number"
-                                min={0}
-                                step={10000}
-                                placeholder="no limit"
-                                defaultValue={s.budgets[p.id]?.tokensPerDay ?? ''}
-                                onBlur={(e) => {
-                                    const n = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value));
-                                    patch({ budgets: { ...s.budgets, [p.id]: { ...s.budgets[p.id], tokensPerDay: n } } });
-                                }}
-                            />
+                        <label className="ca-switch-row">
+                            <input type="checkbox" role="switch" className="ca-switch" checked={s.askBeforeSend} onChange={(e) => patch({ askBeforeSend: e.target.checked })} />
+                            <span>
+                                <strong>Ask before sending</strong> <span className="ca-muted">Show each cloud request, with secrets removed, before it goes.</span>
+                            </span>
                         </label>
-                    ))}
-            </section>
+                    </section>
+                ) : null}
+
+                {tab === 'providers' ? (
+                    <section>
+                        <div className="ca-section-head">
+                            <p className="ca-section-intro ca-muted">Models on this machine, your Copilot plan, or your own API keys. Keys are stored securely and never shown again.</p>
+                            <button type="button" className="ca-button ca-button-soft" disabled={busy} onClick={() => void run(() => ai.refresh())}>
+                                <Icon name="refresh" className={busy ? 'ca-spin' : undefined} /> {busy ? 'Checking…' : 'Check providers'}
+                            </button>
+                        </div>
+                        {local.length ? <ProviderGroup title="On this machine" icon="laptop" providers={local} settings={s} ai={ai} run={run} patch={patch} /> : null}
+                        {cloud.length ? <ProviderGroup title="Cloud" icon="cloud" providers={cloud} settings={s} ai={ai} run={run} patch={patch} /> : null}
+                    </section>
+                ) : null}
+
+                {tab === 'models' ? (
+                    <section>
+                        <p className="ca-section-intro ca-muted">Which model does each job. Automatic picks a ready model you allow, preferring this machine for the many summary calls.</p>
+                        {ROLES.map((r) => {
+                            const setting = s.roles[r.id];
+                            const resolved = state.resolved[r.id];
+                            const value = !setting || setting === 'auto' ? 'auto' : `${setting.provider}\u0000${setting.model}`;
+                            return (
+                                <div key={r.id} className="ca-role">
+                                    <span className="ca-role-icon">
+                                        <Icon name={r.icon} />
+                                    </span>
+                                    <div className="ca-role-main">
+                                        <label>
+                                            <strong>{r.label}</strong> <span className="ca-muted">{r.text}</span>
+                                            <select
+                                                value={value}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    const [provider, model] = v.split('\u0000');
+                                                    patch({ roles: { ...s.roles, [r.id]: v === 'auto' ? 'auto' : { provider: provider!, model: model! } } });
+                                                }}
+                                            >
+                                                <option value="auto">Automatic</option>
+                                                {state.providers
+                                                    .filter((p) => p.allowed && p.models.length)
+                                                    .flatMap((p) =>
+                                                        p.models.map((m) => (
+                                                            <option key={`${p.id}/${m.id}`} value={`${p.id}\u0000${m.id}`}>
+                                                                {p.label} · {m.label}
+                                                            </option>
+                                                        )),
+                                                    )}
+                                            </select>
+                                        </label>
+                                        <div className="ca-role-resolved">
+                                            <StatusDot tone={resolved.ok ? 'ok' : 'warn'} />
+                                            <span className="ca-muted">{resolved.ok ? `${resolved.provider} · ${resolved.model}. ${resolved.why}.` : resolved.reason}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </section>
+                ) : null}
+
+                {tab === 'budgets' ? (
+                    <section>
+                        <p className="ca-section-intro ca-muted">A hard daily stop per cloud provider, in tokens. Leave empty for no limit.</p>
+                        {cloud.map((p) => (
+                            <label key={p.id} className="ca-budget">
+                                <span className="ca-budget-name">{p.label}</span>
+                                <span className="ca-input-suffix">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={10000}
+                                        placeholder="no limit"
+                                        defaultValue={s.budgets[p.id]?.tokensPerDay ?? ''}
+                                        onBlur={(e) => {
+                                            const n = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value));
+                                            patch({ budgets: { ...s.budgets, [p.id]: { ...s.budgets[p.id], tokensPerDay: n } } });
+                                        }}
+                                    />
+                                    <span className="ca-muted">tokens a day</span>
+                                </span>
+                            </label>
+                        ))}
+                    </section>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function ProviderGroup(props: {
+    title: string;
+    icon: IconName;
+    providers: AiProviderInfo[];
+    settings: AiSettings;
+    ai: AiClient;
+    run(task: () => Promise<AiState>): Promise<void>;
+    patch(p: Partial<AiSettings>): void;
+}) {
+    return (
+        <div className="ca-provider-group">
+            <h3>
+                <Icon name={props.icon} size={14} /> {props.title}
+            </h3>
+            <ul className="ca-providers">
+                {props.providers.map((p) => (
+                    <ProviderRow
+                        key={p.id}
+                        provider={p}
+                        defaultModel={props.settings.defaults[p.id]}
+                        onKey={(k) => props.run(() => props.ai.setKey(p.id, k))}
+                        onModel={(m) => props.patch({ defaults: { ...props.settings.defaults, [p.id]: m } })}
+                    />
+                ))}
+            </ul>
         </div>
     );
 }
 
 function ProviderRow({ provider: p, defaultModel, onKey, onModel }: { provider: AiProviderInfo; defaultModel?: string; onKey(key: string | null): Promise<void>; onModel(model: string): void }) {
     const [key, setKey] = useState('');
-    const status = !p.allowed ? p.blockedReason ?? 'Not allowed by the privacy tier' : stateLabel(p);
+    const status = !p.allowed ? p.blockedReason ?? 'Not allowed by the privacy level' : stateLabel(p);
+    const tone: Tone = !p.allowed ? 'off' : p.state === 'ready' ? 'ok' : p.state === 'unauthorized' || p.state === 'error' ? 'bad' : 'warn';
+    const showSetup = !!p.setup && p.allowed && p.state !== 'ready';
     return (
-        <li className="ca-provider" data-provider={p.id}>
+        <li className={`ca-provider${p.allowed ? '' : ' ca-provider-off'}`} data-provider={p.id}>
             <div className="ca-provider-head">
+                <StatusDot tone={tone} />
                 <strong>{p.label}</strong>
-                {p.onDevice ? <span className="ca-chip">on this machine</span> : <span className="ca-chip">cloud</span>}
+                {p.hasKey ? (
+                    <span className="ca-chip ca-chip-key" title="An API key is saved">
+                        <Icon name="key" size={11} /> key saved
+                    </span>
+                ) : null}
+                <span className="ca-toolbar-gap" />
                 <span className={`ca-chip ca-state-${p.allowed ? p.state ?? 'unknown' : 'blocked'}`}>{status}</span>
             </div>
-            {p.detail && p.allowed ? <div className="ca-muted">{p.detail}</div> : null}
-            {p.setup && p.allowed && p.state !== 'ready' ? (
+            {p.detail && p.allowed ? <div className="ca-provider-detail ca-muted">{p.detail}</div> : null}
+            {showSetup ? (
                 <details className="ca-setup">
-                    <summary>{p.setup.title}</summary>
+                    <summary>
+                        <Icon name="chevron" size={12} className="ca-steps-chevron" /> {p.setup!.title}
+                    </summary>
                     <ol>
-                        {p.setup.steps.map((step, i) => (
+                        {p.setup!.steps.map((step, i) => (
                             <li key={i}>
                                 <code>{step}</code>
                             </li>
@@ -533,20 +771,23 @@ function ProviderRow({ provider: p, defaultModel, onKey, onModel }: { provider: 
                         if (key.trim()) void onKey(key.trim()).then(() => setKey(''));
                     }}
                 >
-                    <input type="password" autoComplete="off" spellCheck={false} aria-label={`${p.label} API key`} placeholder={p.hasKey ? 'Key saved · enter a new one to replace it' : 'API key'} value={key} onChange={(e) => setKey(e.target.value)} />
-                    <button type="submit" disabled={!key.trim()}>
+                    <span className="ca-key-input">
+                        <Icon name="key" size={14} />
+                        <input type="password" autoComplete="off" spellCheck={false} aria-label={`${p.label} API key`} placeholder={p.hasKey ? 'Key saved · enter a new one to replace it' : 'Paste an API key'} value={key} onChange={(e) => setKey(e.target.value)} />
+                    </span>
+                    <button type="submit" className="ca-button ca-button-soft" disabled={!key.trim()}>
                         Save
                     </button>
                     {p.hasKey ? (
-                        <button type="button" onClick={() => void onKey(null)}>
-                            Remove
+                        <button type="button" className="ca-icon-button" aria-label="Remove" title="Remove the saved key" onClick={() => void onKey(null)}>
+                            <Icon name="trash" />
                         </button>
                     ) : null}
                 </form>
             ) : null}
             {p.allowed && p.models.length ? (
-                <label className="ca-muted">
-                    Model{' '}
+                <label className="ca-provider-model">
+                    <span className="ca-muted">Model</span>
                     <select value={defaultModel ?? ''} onChange={(e) => onModel(e.target.value)}>
                         <option value="">Automatic</option>
                         {p.models.map((m) => (
@@ -600,14 +841,32 @@ export function PreviewDialog({ ai }: { ai: AiClient }) {
     const redacted = p.redactions.reduce((n, r) => n + r.count, 0);
     return (
         <div className="ca-modal" role="dialog" aria-modal="true" aria-label="Send this request?">
-            <div className="ca-modal-body">
-                <h2>Send this to {p.providerLabel}?</h2>
-                <p className="ca-muted">
-                    {p.model} · about {p.estimatedInputTokens.toLocaleString()} tokens · {p.role}
-                    {redacted ? ` · ${redacted} secret${redacted === 1 ? '' : 's'} removed` : ''}
-                </p>
-                <details>
-                    <summary>What will be sent</summary>
+            <div className="ca-modal-body ca-preview-dialog">
+                <div className="ca-preview-head">
+                    <span className="ca-settings-icon">
+                        <Icon name="shield" size={18} />
+                    </span>
+                    <div>
+                        <h2>Send this to {p.providerLabel}?</h2>
+                        <p className="ca-muted">You asked to see each cloud request before it goes.</p>
+                    </div>
+                </div>
+                <div className="ca-preview-facts">
+                    <span className="ca-chip">
+                        <Icon name="cloud" size={11} /> {p.model}
+                    </span>
+                    <span className="ca-chip">≈ {p.estimatedInputTokens.toLocaleString()} tokens</span>
+                    <span className="ca-chip">{p.role}</span>
+                    {redacted ? (
+                        <span className="ca-chip ca-chip-ok">
+                            <Icon name="check" size={11} /> {redacted} secret{redacted === 1 ? '' : 's'} removed
+                        </span>
+                    ) : null}
+                </div>
+                <details className="ca-setup">
+                    <summary>
+                        <Icon name="chevron" size={12} className="ca-steps-chevron" /> What will be sent
+                    </summary>
                     {p.system ? <pre className="ca-preview">{p.system}</pre> : null}
                     {p.messages.map((m, i) => (
                         <pre key={i} className="ca-preview">
@@ -615,12 +874,12 @@ export function PreviewDialog({ ai }: { ai: AiClient }) {
                         </pre>
                     ))}
                 </details>
-                <div className="ca-actions">
-                    <button type="button" className="ca-primary" onClick={() => answer(true)}>
-                        Send
-                    </button>
-                    <button type="button" onClick={() => answer(false)}>
+                <div className="ca-dialog-actions">
+                    <button type="button" className="ca-button ca-button-ghost" onClick={() => answer(false)}>
                         Don't send
+                    </button>
+                    <button type="button" className="ca-button ca-button-primary" onClick={() => answer(true)}>
+                        <Icon name="send" /> Send
                     </button>
                 </div>
             </div>
