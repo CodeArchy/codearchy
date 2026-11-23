@@ -86,6 +86,7 @@ export function openAICompatible(options: OpenAICompatibleOptions): ProviderAdap
         id,
         label: options.label,
         kind,
+        baseUrl: options.baseUrl,
 
         async detect(signal) {
             if (requiresKey && !options.apiKey) return { state: 'needs-key' };

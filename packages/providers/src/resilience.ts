@@ -85,6 +85,7 @@ export function withResilience(adapter: ProviderAdapter, options: ResilienceOpti
         label: adapter.label,
         kind: adapter.kind,
         retriesInternally: true,
+        baseUrl: adapter.baseUrl,
         detect: (signal) => adapter.detect(signal),
         listModels: (signal) => adapter.listModels(signal),
         chat,

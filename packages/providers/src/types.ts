@@ -144,6 +144,11 @@ export interface ProviderAdapter {
     readonly kind: ProviderKind;
     /** True when the adapter already retries transient failures (so wrappers shouldn't). */
     readonly retriesInternally?: boolean;
+    /**
+     * Where requests go. The privacy policy uses it: a provider only counts as
+     * local when it's a local kind *and* this is a loopback address.
+     */
+    readonly baseUrl?: string;
     /** Is the provider usable right now? Never throws. */
     detect(signal?: SignalLike): Promise<ProviderStatus>;
     /** Models discovered at runtime. Throws ProviderError. */

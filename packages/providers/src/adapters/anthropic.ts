@@ -86,6 +86,7 @@ export function anthropic(options: AnthropicOptions = {}): ProviderAdapter {
         label: 'Anthropic',
         kind: 'api-key',
         retriesInternally: true,
+        baseUrl: options.baseUrl ?? 'https://api.anthropic.com',
 
         async detect(signal) {
             if (!options.apiKey) return { state: 'needs-key' };

@@ -8,6 +8,7 @@ export type ProviderErrorCode =
     | 'unavailable' // network failure, timeout, 5xx, overloaded
     | 'bad_request' // the provider rejected the request (unknown model, invalid parameter)
     | 'invalid_response' // the provider answered with something we couldn't parse
+    | 'policy' // blocked before sending: privacy tier, budget, or the user declined
     | 'cancelled'; // the caller aborted
 
 const RETRYABLE: ReadonlySet<ProviderErrorCode> = new Set(['rate_limit', 'unavailable']);

@@ -84,6 +84,7 @@ export function ollama(options: OllamaOptions = {}): ProviderAdapter {
         id: ID,
         label: 'Ollama',
         kind: 'local',
+        baseUrl: base,
 
         async detect(signal) {
             try {

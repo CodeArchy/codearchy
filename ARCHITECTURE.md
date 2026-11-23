@@ -231,6 +231,36 @@ is built on it), so the same code runs in Node, VS Code, browsers and workers.
   retries with backoff and jitter. It only retries a stream that failed before
   producing anything, so a caller never sees output twice.
 
+Every request from the rest of CodeArchy goes through the **`ProviderRegistry`**:
+
+- **Roles.** `summarizer`, `architect`, `chat` and `embedder` are each assigned
+  a provider and model in settings, or picked automatically. The summarizer
+  prefers a model on this machine; otherwise the user's provider order and
+  chosen models win. `resolve()` returns the reason, so the UI can show why a
+  model was picked.
+- **Privacy tiers.** `local-only` (nothing leaves the machine), `structure`
+  (names, paths, signatures, docs, edges and metrics may go to a remote model,
+  but code bodies may not) and `excerpts` (capped code excerpts too). A
+  provider counts as local only when it's a local kind *and* its URL is a
+  loopback address. Under `local-only`, remote providers are never contacted,
+  not even to check their status. Each request declares what it carries, and
+  anything undeclared is treated as code.
+- **Secret redaction.** Before anything goes to a remote model, the registry
+  redacts known token formats, private keys, JWTs, credentials in connection
+  strings, and random-looking values assigned to secret-sounding names. All
+  the patterns use bounded repetition, so scanning stays linear.
+- **Budgets.** Daily and monthly token caps per provider, counted in UTC.
+  Estimates are in tokens, and in cost only when the user supplies prices:
+  prices are never built in.
+- **Ask before sending** (optional). The host is shown exactly what will be
+  sent, already redacted. Without a way to ask, the registry refuses to send.
+- **Audit log.** One entry per request, whether sent, blocked, failed or
+  cancelled: provider, model, role, tier, tokens, redaction counts and the
+  graph node ids involved. It never holds prompt text or credentials.
+
+API keys live in a host `SecretStore` (VS Code's SecretStorage, or a store on
+the web app's origin), never in settings.
+
 `scripts/live.mjs` runs a tool-calling round trip against real providers
 configured through environment variables. It's for manual checks and never
 runs in CI.
