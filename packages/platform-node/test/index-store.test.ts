@@ -25,13 +25,24 @@ sqlite?.close();
 
 let tmp: string;
 let repo: string;
+/** Every store opened by a test; closed in afterEach (Windows can't delete open DB files). */
+const open: Array<{ close(): void }> = [];
 
 beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearchy-index-'));
     repo = path.join(tmp, 'repo');
     fs.cpSync(path.join(FIXTURES, 'polyglot'), repo, { recursive: true });
 });
-afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+afterEach(() => {
+    for (const s of open.splice(0)) {
+        try {
+            s.close();
+        } catch {
+            // already closed by the test
+        }
+    }
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 async function discover() {
     return classifyFiles(await walkFiles(repo), { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 }, 'walk');
@@ -40,6 +51,7 @@ async function discover() {
 async function setup(dbFile = path.join(tmp, 'index.db')) {
     const db = (await openNodeSqlite({ file: dbFile }))!;
     const store = new IndexStore(db);
+    open.push(store);
     const { analyzer, fs: fsPort } = await createNodeAnalyzer({ root: repo, maxFileSize: 1_000_000 });
     const indexer = new Indexer({ fs: fsPort, store, executor: new LocalExecutor(analyzer) });
     return { db, store, analyzer, indexer };
