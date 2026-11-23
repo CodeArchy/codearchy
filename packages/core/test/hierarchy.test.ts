@@ -127,6 +127,17 @@ describe('Hierarchy', () => {
         }
     });
 
+    test('named folders stay visible: loose files are grouped first', () => {
+        const folders = Array.from({ length: 6 }, (_, i) => [`pkg/dir${i}/a.ts`, `pkg/dir${i}/b.ts`]).flat();
+        const loose = Array.from({ length: 20 }, (_, i) => `pkg/file${String(i).padStart(2, '0')}.ts`);
+        const h = buildHierarchy(graph([...folders, ...loose]), { systemName: 's' });
+        assertEulerInvariants(h);
+        const top = children(h, 'dir:pkg');
+        assert.ok(top.length <= 20, `fan-out ${top.length}`);
+        for (let i = 0; i < 6; i++) assert.ok(top.includes(`dir:pkg/dir${i}`), `dir${i} is still a child`);
+        assert.ok(top.filter((k) => k.startsWith('cl:')).length >= 1, 'the loose files were grouped');
+    });
+
     test('a wide folder with no dependencies is grouped alphabetically', () => {
         const files = Array.from({ length: 30 }, (_, i) => `lib/f${String(i).padStart(2, '0')}.ts`).concat('lib/x.ts');
         const h = buildHierarchy(graph(files), { systemName: 's' });

@@ -10,7 +10,8 @@
  *            · single-child folder chains are compressed (src/main/java/com/acme)
  *            · folders with fewer than 2 files are folded into their parent
  *            · containers with more than `maxChildren` children are split into
- *              virtual components by community detection on their dependencies
+ *              virtual components by community detection on their dependencies;
+ *              loose files are grouped first, so named folders stay visible
  *   Module   files
  *   Symbol   classes, functions, methods (nested under their container)
  *
@@ -122,8 +123,17 @@ export function buildHierarchy(graph: ArchitectureGraph, options: HierarchyOptio
     };
 
     /** Splits a container's children into virtual components when there are too many. */
-    const shape = (items: Draft[], parentKey: string): Draft[] =>
-        items.length > maxChildren ? splitWide(items, parentKey, adjacency, maxChildren) : items;
+    const shape = (items: Draft[], parentKey: string): Draft[] => {
+        if (items.length <= maxChildren) return items;
+        // Named folders are the authors' own structure: group the loose files
+        // first, and cluster folders only when they alone are too many.
+        const folders = items.filter((i) => i.kind !== 'module');
+        const files = items.filter((i) => i.kind === 'module');
+        if (files.length > 0 && folders.length < maxChildren) {
+            return [...folders, ...splitWide(files, parentKey, adjacency, maxChildren, maxChildren - folders.length)];
+        }
+        return splitWide(items, parentKey, adjacency, maxChildren);
+    };
 
     const usedRoots = [...filesByRoot.keys()].sort(byName);
     let systemChildren: Draft[];
@@ -266,12 +276,12 @@ function undirectedWeights(graph: ArchitectureGraph): Map<string, Map<string, nu
 }
 
 /**
- * Groups `items` into at most MAX_GROUPS children: communities of the
- * dependency graph between them become virtual components; when the graph
- * gives no useful split (no edges, or one big community) the items are
- * grouped alphabetically instead.
+ * Groups `items` into at most `slots` children (default MAX_GROUPS):
+ * communities of the dependency graph between them become virtual
+ * components; when the graph gives no useful split (no edges, or one big
+ * community) the items are grouped alphabetically instead.
  */
-function splitWide(items: Draft[], parentKey: string, adjacency: Map<string, Map<string, number>>, maxChildren: number): Draft[] {
+function splitWide(items: Draft[], parentKey: string, adjacency: Map<string, Map<string, number>>, maxChildren: number, slots = Math.min(MAX_GROUPS, maxChildren)): Draft[] {
     const owner = new Map<string, number>();
     items.forEach((item, i) => {
         for (const f of filesOf(item)) owner.set(f, i);
@@ -299,12 +309,12 @@ function splitWide(items: Draft[], parentKey: string, adjacency: Map<string, Map
     const groups: number[][] = [];
     membership.forEach((c, i) => (groups[c] ??= []).push(i));
     // No usable structure (no edges, or everything in one community): alphabetical.
-    if (groups.length <= 1 || groups.every((g) => g.length === 1)) return alphabetical(items, parentKey, maxChildren);
+    if (groups.length <= 1 || groups.every((g) => g.length === 1)) return alphabetical(items, parentKey, maxChildren, Math.min(FALLBACK_GROUPS, slots));
 
     // Largest communities first; past the cap, the remainder (mostly loosely
     // connected files) shares one "Other" group rather than a misleading name.
     groups.sort((a, b) => b.length - a.length || a[0] - b[0]);
-    const cap = Math.min(MAX_GROUPS, maxChildren);
+    const cap = Math.max(1, Math.min(MAX_GROUPS, slots));
     const kept = groups.length > cap ? groups.slice(0, cap - 1) : groups;
     const rest = groups.length > cap ? groups.slice(cap - 1).flat().sort((a, b) => a - b) : [];
 
@@ -320,14 +330,16 @@ function splitWide(items: Draft[], parentKey: string, adjacency: Map<string, Map
         const members = rest.map((i) => items[i]);
         const key = clusterKey(parentKey, members);
         const children = members.length > maxChildren ? alphabetical(members, key, maxChildren) : members;
-        out.push({ key, kind: 'component', name: `Other (${members.length})`, path: commonDir(members), children, virtual: true });
+        const onlyFiles = members.every((m) => m.kind === 'module');
+        const name = onlyFiles ? `${members.length} ${kept.length ? 'other ' : ''}files` : `Other (${members.length})`;
+        out.push({ key, kind: 'component', name, path: commonDir(members), children, virtual: true });
     }
     return out;
 }
 
-function alphabetical(items: Draft[], parentKey: string, maxChildren: number): Draft[] {
+function alphabetical(items: Draft[], parentKey: string, maxChildren: number, slots = FALLBACK_GROUPS): Draft[] {
     const sorted = [...items].sort((a, b) => byName(a.name, b.name));
-    const size = Math.max(2, Math.ceil(sorted.length / FALLBACK_GROUPS));
+    const size = Math.max(2, Math.ceil(sorted.length / Math.max(1, slots)));
     const out: Draft[] = [];
     for (let i = 0; i < sorted.length; i += size) {
         const members = sorted.slice(i, i + size);

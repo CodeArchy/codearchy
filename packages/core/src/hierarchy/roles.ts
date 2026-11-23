@@ -3,7 +3,8 @@
  * tokens (`controllers` matches, `controllerish` and `rebuild` don't), and
  * every assignment carries a confidence and the reason it was made.
  * Deliberately absent: `lib` (the main code in Ruby gems and many JS
- * packages) and `client` (as often a frontend as an API client).
+ * packages), `client` (as often a frontend as an API client) and `hooks`
+ * (React UI hooks, but lifecycle hooks in NestJS and many frameworks).
  */
 import type { ComponentRole, RoleAssignment } from '@codearchy/protocol';
 import { tokenizeSegment } from '../graph/inference.js';
@@ -11,7 +12,7 @@ import { tokenizeSegment } from '../graph/inference.js';
 const ROLE_WORDS: Record<ComponentRole, string[]> = {
     test: ['test', 'tests', 'spec', 'specs', 'e2e', 'fixture', 'fixtures', 'mock', 'mocks', 'testing', 'conftest', 'testdata'],
     api: ['api', 'apis', 'route', 'routes', 'router', 'routers', 'controller', 'controllers', 'handler', 'handlers', 'endpoint', 'endpoints', 'rest', 'graphql', 'rpc', 'grpc', 'http', 'middleware', 'middlewares', 'resolver', 'resolvers'],
-    ui: ['ui', 'view', 'views', 'component', 'components', 'page', 'pages', 'screen', 'screens', 'widget', 'widgets', 'frontend', 'layout', 'layouts', 'template', 'templates', 'webview', 'hooks', 'styles'],
+    ui: ['ui', 'view', 'views', 'component', 'components', 'page', 'pages', 'screen', 'screens', 'widget', 'widgets', 'frontend', 'layout', 'layouts', 'template', 'templates', 'webview', 'styles'],
     data: ['model', 'models', 'schema', 'schemas', 'entity', 'entities', 'repository', 'repositories', 'repo', 'repos', 'dao', 'db', 'database', 'migration', 'migrations', 'orm', 'sql', 'prisma', 'store', 'stores', 'persistence', 'dto', 'dtos'],
     domain: ['domain', 'service', 'services', 'usecase', 'usecases', 'core', 'logic', 'business', 'engine', 'workflow', 'workflows'],
     infra: ['infra', 'infrastructure', 'deploy', 'deployment', 'docker', 'k8s', 'kubernetes', 'terraform', 'ops', 'scripts', 'ci', 'tooling', 'build', 'adapters', 'adapter', 'gateway', 'gateways'],
