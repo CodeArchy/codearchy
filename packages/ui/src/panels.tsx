@@ -31,8 +31,10 @@ export function Breadcrumb(props: { items: Array<{ key: string; name: string }>;
 
 export interface NavigatorProps {
     client: EngineClient;
-    /** Changes when the workspace is re-indexed: the tree reloads. */
+    /** Changes when another workspace is loaded: the tree resets. */
     revision: string;
+    /** Changes when the data changes: loaded children refresh, open folders stay open. */
+    dataVersion: number;
     /** Keys on the path to the current scope (highlighted and opened). */
     path: string[];
     selected?: string;
@@ -54,6 +56,7 @@ export function Navigator(props: NavigatorProps) {
         setKids(new Map());
         setOpen(new Set(['sys:root']));
     }, [revision]);
+    useEffect(() => setKids(new Map()), [props.dataVersion]);
     // Follow the scope: its ancestors are opened.
     useEffect(() => {
         setOpen((o) => new Set([...o, ...props.path]));

@@ -5,6 +5,8 @@ import * as vscode from 'vscode';
 
 interface Api {
     getGraph(): { nodes: Array<{ id: string }>; edges: Array<{ source: string; target: string }> } | undefined;
+    engine(method: string, params: Record<string, unknown>): unknown;
+    locate(fsPath: string): unknown;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
@@ -63,6 +65,32 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.ok(has('go/cmd/server/main.go', 'go/internal/store/store.go'));
         assert.ok(has('cs/Orders/OrderService.cs', 'cs/Billing/Invoice.cs'));
         assert.ok(has('rb/bin/run.rb', 'rb/lib/billing.rb'), 'Ruby resolves through its pack hook');
+    });
+
+    test('the new UI\'s engine: views, details, explain, search; files located for the status bar and CodeLens', async () => {
+        await vscode.commands.executeCommand('codearchy.analyzeWorkspace');
+        type View = { breadcrumb: Array<{ key: string }>; nodes: Array<{ key: string }>; edges: Array<{ source: string; target: string }>; ports: Array<{ node: string; external: string }> };
+        const root = api.engine('view', { request: {} }) as View;
+        assert.ok(root.nodes.some((n) => n.key === 'pkg:rust'), 'packages from manifests at the top');
+        const web = api.engine('view', { request: { scope: 'dir:web/src' } }) as View;
+        assert.deepStrictEqual(web.breadcrumb.map((b) => b.key), ['sys:root', 'pkg:.', 'dir:web/src']);
+        assert.ok(web.ports.some((p) => p.external === 'pkg:packages/shared'), 'the import of @poly/shared leaves the scope as a port stub');
+
+        const d = api.engine('describe', { key: 'mod:web/src/index.ts' }) as { dependsOn: Array<{ key: string }>; symbols: unknown[] };
+        assert.ok(d.dependsOn.some((l) => l.key === 'mod:web/src/esm.ts'));
+        const x = api.engine('explain', { source: 'mod:web/src/index.ts', target: 'mod:web/src/esm.ts' }) as { total: number };
+        assert.strictEqual(x.total, 1);
+        const hits = api.engine('search', { query: 'OrderSer' }) as Array<{ key: string }>;
+        assert.ok(hits.some((h) => h.key === 'mod:cs/Orders/OrderService.cs'));
+
+        const file = path.join(folder!.uri.fsPath, 'web', 'src', 'index.ts');
+        const here = api.locate(file) as { key: string; breadcrumb: Array<{ name: string }> };
+        assert.strictEqual(here.key, 'mod:web/src/index.ts');
+        const doc = await vscode.workspace.openTextDocument(file);
+        const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', doc.uri)) as vscode.CodeLens[];
+        const ours = lenses.find((l) => l.command?.command === 'codearchy.revealInMap');
+        assert.ok(ours, 'CodeLens at the top of an indexed file');
+        assert.match(ours!.command!.title, /web\/src · uses \d+ · used by \d+/);
     });
 
     test('persistent index: touched files are re-hashed by the bundled parse workers, nothing re-parsed', async () => {

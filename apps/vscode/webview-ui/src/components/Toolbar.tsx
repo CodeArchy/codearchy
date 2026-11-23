@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ViewMode } from '../types';
 import { Icon } from './Icons';
+import { postMessage } from '../vscode';
 
 interface ToolbarProps {
     viewMode: ViewMode;
@@ -83,6 +84,13 @@ export function Toolbar({
                     title="Voice & Speech Settings"
                 >
                     <Icon name="voiceSettings" fixedWidth /> Voice
+                </button>
+                <button
+                    className="toolbar-btn"
+                    onClick={() => postMessage('setUi', { ui: 'map' })}
+                    title="Switch to the new Map (2.0): drill-down architecture, Matrix and lenses"
+                >
+                    Try the new Map
                 </button>
             </div>
             <div className="toolbar-group">

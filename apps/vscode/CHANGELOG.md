@@ -5,6 +5,26 @@ All notable changes to CodeArchy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2.0.0-beta
+
+### Added
+
+- **The Map.** The panel opens on a drill-down architecture map: System › Package › Component › File.
+  - Packages come from your manifests. Large folders are grouped by their dependencies, so each level stays readable.
+  - Double-click to drill in, ⊕ to expand in place. Dependencies that leave the current view appear as port stubs.
+  - The Navigator tree, the Inspector (what a node contains, uses and is used by, and the imports behind any edge), ⌘K search and keyboard navigation.
+- **Matrix and lenses.** A dependency structure matrix of the current view: anything above the diagonal is a cycle. The Health lens marks files in cycles, hubs and orphans; the Tests lens shows how many files have a test depending on them.
+- **In the editor.** The status bar shows where the current file sits, a CodeLens at the top of each file says what it uses and is used by, and **Reveal in Map** jumps to it (editor and Explorer context menus).
+- **Settings.** `codearchy.ui` chooses the Map (default) or the classic views; `codearchy.codeLens` turns the CodeLens off.
+
+### Changed
+
+- **Classic views kept for now.** System, Flow and Dense remain available through the 2.0 beta: set `codearchy.ui` to `classic`, use **Classic views** in the Map's toolbar, or run **CodeArchy: Switch between the Map and the classic views**. Narrated walkthroughs and SVG / PNG export stay in the classic views until the Map has its own.
+
+### Fixed
+
+- Files created inside a new folder (a checkout, an unzip, a code generator) are now picked up on Linux.
+
 ## [1.1.1] - 2026-11-22
 
 ### Fixed

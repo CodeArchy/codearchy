@@ -152,6 +152,12 @@ importers:
 
   apps/vscode/webview-ui:
     dependencies:
+      '@codearchy/protocol':
+        specifier: workspace:*
+        version: link:../../../packages/protocol
+      '@codearchy/ui':
+        specifier: workspace:*
+        version: link:../../../packages/ui
       '@fortawesome/fontawesome-svg-core':
         specifier: 7.2.0
         version: 7.2.0

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { ArchitecturePanel } from './webview/ArchitecturePanel';
+import { ArchitecturePanel, configuredUi } from './webview/ArchitecturePanel';
+import { EditorIntegration } from './editor/EditorIntegration';
 import { AnalysisPipeline } from './pipeline/AnalysisPipeline';
 import { ModulesTreeProvider } from './views/ModulesTreeProvider';
 import { CommandsTreeProvider } from './views/CommandsTreeProvider';
@@ -10,6 +11,7 @@ let pipeline: AnalysisPipeline | undefined;
 let modulesTreeProvider: ModulesTreeProvider;
 let commandsTreeProvider: CommandsTreeProvider;
 let output: vscode.OutputChannel;
+let editorIntegration: EditorIntegration | undefined;
 
 /** Batch file-system events: editors, agents and `git pull` emit bursts. */
 const CHANGE_DEBOUNCE_MS = 400;
@@ -19,6 +21,10 @@ export interface CodeArchyApi {
     parserStatus(): Promise<{ treeSitter: boolean; grammars: string[] }>;
     /** The latest analysed graph (kept up to date by the file watcher). */
     getGraph(): ArchitectureGraph | undefined;
+    /** What the new UI asks through the panel (view, children, describe, explain, search). */
+    engine(method: string, params: Record<string, unknown>): unknown;
+    /** Where a file sits in the hierarchy (status bar, CodeLens). */
+    locate(fsPath: string): unknown;
 }
 
 export function activate(context: vscode.ExtensionContext): CodeArchyApi {
@@ -28,6 +34,33 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
         output.appendLine(`Parser init failed: ${err instanceof Error ? err.message : String(err)}`);
     });
     modulesTreeProvider = new ModulesTreeProvider();
+
+    // The new UI asks the engine through the panel; the editor shows where files sit.
+    ArchitecturePanel.engineHost = {
+        request: (method, params) => pipeline?.engine(method as Parameters<AnalysisPipeline['engine']>[0], params),
+        toAbsolute: (rel) => pipeline?.toAbsolute(rel),
+    };
+    editorIntegration = new EditorIntegration({
+        locate: (fsPath) => pipeline?.locate(fsPath),
+        reveal: async (key) => {
+            if (!currentGraph) await runAnalysis(context);
+            if (!currentGraph) return;
+            if (configuredUi() !== 'map') {
+                const pick = await vscode.window.showInformationMessage('Revealing a file needs the new Map view. Switch to it?', 'Switch to the Map');
+                if (pick !== 'Switch to the Map') return;
+                await vscode.workspace.getConfiguration('codearchy').update('ui', 'map', vscode.ConfigurationTarget.Global);
+            }
+            ArchitecturePanel.reveal(context, currentGraph, key);
+        },
+    });
+    const switchUiCmd = vscode.commands.registerCommand('codearchy.switchUi', async () => {
+        const next = configuredUi() === 'map' ? 'classic' : 'map';
+        await vscode.workspace.getConfiguration('codearchy').update('ui', next, vscode.ConfigurationTarget.Global);
+        void vscode.window.showInformationMessage(next === 'map' ? 'CodeArchy: showing the new Map.' : 'CodeArchy: showing the classic views (System, Flow, Dense).');
+    });
+    const uiConfigListener = vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('codearchy.ui')) ArchitecturePanel.reload();
+    });
 
     const extensionVersion =
         (context.extension?.packageJSON?.version as string | undefined) ?? '0.0.0';
@@ -124,6 +157,7 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
                 const updated = await pipeline.applyChanges(changedUris, deletedUris);
                 if (updated) {
                     currentGraph = updated;
+                    editorIntegration?.graphChanged();
                     modulesTreeProvider.refresh(currentGraph);
                     ArchitecturePanel.update(currentGraph);
                 }
@@ -156,6 +190,9 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     });
 
     context.subscriptions.push(
+        editorIntegration,
+        switchUiCmd,
+        uiConfigListener,
         commandsView,
         treeView,
         statusBarItem,
@@ -172,6 +209,8 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     return {
         parserStatus: () => pipeline?.parserStatus() ?? Promise.resolve({ treeSitter: false, grammars: [] }),
         getGraph: () => currentGraph,
+        engine: (method, params) => pipeline?.engine(method as Parameters<AnalysisPipeline['engine']>[0], params),
+        locate: (fsPath) => pipeline?.locate(fsPath),
     };
 }
 
@@ -207,6 +246,7 @@ async function runAnalysis(context: vscode.ExtensionContext): Promise<void> {
                     token
                 );
                 modulesTreeProvider.refresh(currentGraph);
+                editorIntegration?.graphChanged();
                 const meta = currentGraph.metadata;
                 const seconds = ((Date.now() - started) / 1000).toFixed(1);
                 output.appendLine(
