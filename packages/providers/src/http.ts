@@ -175,7 +175,12 @@ export function parseJson(provider: string, text: string): unknown {
 
 /** Joins a base URL and a path without doubling or dropping slashes. */
 export function joinUrl(base: string, path: string): string {
-    return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+    // Linear scans, not /\/+$/: a regex anchored at the end backtracks on inputs full of slashes.
+    let end = base.length;
+    while (end > 0 && base.charCodeAt(end - 1) === 47 /* / */) end--;
+    let start = 0;
+    while (start < path.length && path.charCodeAt(start) === 47) start++;
+    return `${base.slice(0, end)}/${path.slice(start)}`;
 }
 
 /** Arguments from a model are untrusted text: parse to a plain object or report invalid output. */

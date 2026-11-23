@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { errorFromStatus } from '../src/errors.js';
-import { lines, redact, retryAfterMs, sse } from '../src/http.js';
+import { joinUrl, lines, redact, retryAfterMs, sse } from '../src/http.js';
 
 function streamOf(...chunks: Array<string | Uint8Array>) {
     const encoder = new TextEncoder();
@@ -66,6 +66,14 @@ describe('errors', () => {
             message: 'model not found',
             retryable: false,
         });
+    });
+
+    it('joins URLs without doubling or dropping slashes, in linear time', () => {
+        expect(joinUrl('http://h/v1/', '/models')).toBe('http://h/v1/models');
+        expect(joinUrl('http://h/v1', 'models')).toBe('http://h/v1/models');
+        const t = Date.now();
+        joinUrl(`http://h${'/'.repeat(200_000)}x`, 'models');
+        expect(Date.now() - t).toBeLessThan(200);
     });
 
     it('redacts secrets', () => {
