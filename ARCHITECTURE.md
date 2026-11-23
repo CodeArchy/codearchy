@@ -224,6 +224,19 @@ which is the behaviour change to review.
   colour-blind-safe ramps and status colours, and always state the value as
   text as well. Theme tokens follow VS Code's theme when hosted there,
   and light or dark on the web.
+- **The browser engine** (`@codearchy/platform-browser`) is what every
+  browser host runs, so the web app and the playground index code the same way:
+  - `./engine` — `runEngineWorker(config)` runs inside a module Web Worker. It
+    opens a source (a picked folder, dropped files or folder, a `.zip`, or
+    texts), indexes it into SQLite on OPFS (falling back to memory) with the
+    parse-worker pool, and answers the `EngineClient` requests plus
+    `readFile`. A picked folder can be watched: `FileSystemObserver` where the
+    browser has it, adaptive polling otherwise; changes go through
+    `Indexer.update`, and a `changed` event tells the UI to refresh in place.
+    Hosts can add their own requests (`handlers`).
+  - `./client` — `WorkerEngine` (the UI-thread `EngineClient`) and helpers that
+    turn a folder picker, an `<input webkitdirectory>` or a drag-and-drop into
+    a source. It imports no engine code.
 - **`apps/playground`** is a browser debug UI for the engine. Load the
   sample or open a local folder, then inspect stats, files, edges, unresolved
   imports and symbol search. It uses the same browser adapters as the web app,

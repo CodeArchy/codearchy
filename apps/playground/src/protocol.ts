@@ -1,23 +1,9 @@
-/** Messages between the UI thread (main.ts) and the engine worker (engine.worker.ts). */
-import type { SymbolInfo, ViewRequest } from '@codearchy/protocol';
-
-export type Source =
-    | { kind: 'sample' }
-    /** A folder from showDirectoryPicker() (Chromium): read in place, re-indexable. */
-    | { kind: 'handle'; handle: FileSystemDirectoryHandle }
-    /** A folder from <input webkitdirectory> (every browser): a snapshot. */
-    | { kind: 'files'; name: string; files: File[] };
-
-export type Request =
-    | { id: number; type: 'open'; source: Source }
-    | { id: number; type: 'search'; query: string }
-    | { id: number; type: 'file'; path: string }
-    /** A projection of the hierarchy (drill, expand) — the Map's data. */
-    | { id: number; type: 'view'; request: ViewRequest }
-    /** The module dependencies behind a view edge or port. */
-    | { id: number; type: 'explain'; source: string; target: string }
-    | { id: number; type: 'children'; key: string }
-    | { id: number; type: 'describe'; key: string };
+/**
+ * The playground's debug data, from its two extra engine requests (`debug`,
+ * `file`). Everything else goes through the shared browser engine
+ * (WorkerEngine / runEngineWorker in @codearchy/platform-browser).
+ */
+import type { SymbolInfo } from '@codearchy/protocol';
 
 export interface FileRow {
     path: string;
@@ -86,16 +72,3 @@ export interface FileDetail {
     implicit: string[];
     dependents: string[];
 }
-
-export interface SearchHit {
-    path: string;
-    name: string;
-    kind: string;
-    container: string | null;
-    line: number;
-}
-
-export type Response =
-    | { type: 'progress'; phase: string; current: number; total: number }
-    | { type: 'result'; id: number; result: unknown }
-    | { type: 'error'; id: number; message: string };

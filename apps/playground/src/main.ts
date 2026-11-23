@@ -5,35 +5,19 @@
  */
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from '@codearchy/protocol';
-import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
+import type { View } from '@codearchy/protocol';
+import { CodeArchyMap } from '@codearchy/ui';
 import '@codearchy/ui/styles.css';
-import type { FileDetail, FileRow, Request, Response, SearchHit, Source, Summary, TreeRow } from './protocol.js';
+import { WorkerEngine, canPickDirectory, pickDirectory, sourceFromDrop, sourceFromFileList, type EngineSource } from '@codearchy/platform-browser/client';
+import type { FileDetail, FileRow, Summary, TreeRow } from './protocol.js';
 
-// ─── engine connection ──────────────────────────────────────────────────────
+// ─── engine connection: the shared browser engine, in a module worker ───────
 
-const engine = new Worker(new URL('engine.worker.js', import.meta.url), { type: 'module' });
-const pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
-let nextId = 1;
-
-engine.onmessage = (ev: MessageEvent<Response>) => {
-    const msg = ev.data;
-    if (msg.type === 'progress') return setStatus(`${msg.phase} ${msg.current.toLocaleString()} / ${msg.total.toLocaleString()}`, msg.total ? msg.current / msg.total : undefined);
-    const p = pending.get(msg.id);
-    pending.delete(msg.id);
-    if (msg.type === 'result') p?.resolve(msg.result);
-    else p?.reject(new Error(msg.message));
-};
-engine.onerror = (ev) => setStatus(`engine failed to load: ${ev.message || 'see the console'}`);
-
-type Body<R> = R extends unknown ? Omit<R, 'id'> : never;
-function call<T>(req: Body<Request>): Promise<T> {
-    const id = nextId++;
-    return new Promise<T>((resolve, reject) => {
-        pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-        engine.postMessage({ ...req, id } as Request);
-    });
-}
+const engine = new WorkerEngine(new Worker(new URL('engine.worker.js', import.meta.url), { type: 'module' }));
+engine.onEvent((e) => {
+    if (e.type === 'progress') setStatus(`${e.phase} ${e.current.toLocaleString()} / ${e.total.toLocaleString()}`, e.total ? e.current / e.total : undefined);
+    else void refresh(`${e.paths.length} file(s) changed on disk: ${e.paths.slice(0, 3).join(', ')}${e.paths.length > 3 ? '…' : ''}`);
+});
 
 // ─── DOM helpers ────────────────────────────────────────────────────────────
 
@@ -84,32 +68,19 @@ let viewExpanded: string[] = [];
 let summary: Summary | undefined;
 let tab: Tab = 'map';
 let loads = 0;
+/** Bumped when a watched folder changes: the Map refetches in place. */
+let dataVersion = 0;
 let mapRoot: Root | undefined;
-
-/** The UI's way to the engine: the same worker requests the tabs use. */
-const engineClient: EngineClient = {
-    view: (request: ViewRequest) => call<View | undefined>({ type: 'view', request }),
-    children: (key: string) => call<NodeSummary[] | undefined>({ type: 'children', key }),
-    describe: (key: string) => call<NodeDetails | undefined>({ type: 'describe', key }),
-    explain: (source: string, target: string) => call<EdgeExplanation | undefined>({ type: 'explain', source, target }),
-    search: async (query: string) =>
-        (await call<SearchHit[]>({ type: 'search', query })).map((h) => ({
-            key: `mod:${h.path}`,
-            name: h.container ? `${h.container}.${h.name}` : h.name,
-            kind: h.kind,
-            path: h.path,
-            line: h.line,
-        })),
-};
 
 function renderMap(): void {
     mapRoot ??= createRoot($('map'));
     mapRoot.render(
         createElement(CodeArchyMap, {
-            client: engineClient,
+            client: engine,
             layoutWorkerUrl: new URL('elk-worker.js', location.href).href,
             hostKind: 'web',
             revision: `${summary?.name ?? ''}#${loads}`,
+            dataVersion,
         })
     );
 }
@@ -159,8 +130,8 @@ function renderList(): void {
         list.replaceChildren(renderTree(summary.tree, filter));
     } else if (tab === 'view') {
         const seq = ++searchSeq;
-        void call<View>({ type: 'view', request: { scope: viewScope, expanded: viewExpanded } }).then((v) => {
-            if (seq === searchSeq && tab === 'view') list.replaceChildren(renderView(v));
+        void engine.view({ scope: viewScope, expanded: viewExpanded }).then((v) => {
+            if (seq === searchSeq && tab === 'view' && v) list.replaceChildren(renderView(v));
         });
     } else if (tab === 'files') {
         list.replaceChildren(table<FileRow>(summary.files, ['path', 'language', 'symbols', 'imports', 'out', 'in'], (r) => [r.path, r.language, r.symbols, r.imports, r.out, r.in], filter, (r) => showFile(r.path)));
@@ -173,9 +144,9 @@ function renderList(): void {
         );
     } else {
         const seq = ++searchSeq;
-        void call<SearchHit[]>({ type: 'search', query: filter }).then((hits) => {
+        void engine.search(filter).then((hits) => {
             if (seq !== searchSeq || tab !== 'search') return;
-            list.replaceChildren(table(hits, ['symbol', 'kind', 'file', 'line'], (h) => [h.container ? `${h.container}.${h.name}` : h.name, h.kind, h.path, h.line + 1], '', (h) => showFile(h.path)));
+            list.replaceChildren(table(hits, ['name', 'kind', 'path', 'line'], (h) => [h.name, h.kind, h.path, h.line === undefined ? '' : h.line + 1], '', (h) => showFile(h.path)));
         });
     }
 }
@@ -252,7 +223,7 @@ function renderView(v: View): HTMLElement {
             el('td', { textContent: n.role ?? '' }), el('td', { textContent: `${n.fanIn} / ${n.fanOut}` }), el('td', {}, actions));
     });
     const explain = async (source: string, target: string) => {
-        const x = await call<EdgeExplanation | undefined>({ type: 'explain', source, target });
+        const x = await engine.explain(source, target);
         if (!x) return;
         $('detail').replaceChildren(
             el('h2', { textContent: `${nameOf(source)} → ${nameOf(target)}`, title: `${source} → ${target}` }),
@@ -272,7 +243,7 @@ function renderView(v: View): HTMLElement {
 }
 
 async function showFile(path: string): Promise<void> {
-    const d = await call<FileDetail | undefined>({ type: 'file', path });
+    const d = await engine.call<FileDetail | undefined>('file', { path });
     const pane = $('detail');
     if (!d) return pane.replaceChildren(el('p', { className: 'note', textContent: `${path} is not in the index.` }));
     const link = (p: string) => el('a', { href: '#', textContent: p, onclick: (e: Event) => { e.preventDefault(); void showFile(p); } });
@@ -287,12 +258,13 @@ async function showFile(path: string): Promise<void> {
     );
 }
 
-async function load(source: Source, label: string): Promise<void> {
+async function load(source: EngineSource, label: string): Promise<void> {
     for (const b of document.querySelectorAll('header button')) (b as HTMLButtonElement).disabled = true;
     setStatus(`indexing ${label}…`, 0);
     try {
-        summary = await call<Summary>({ type: 'open', source });
-        setStatus(`indexed ${summary.name} in ${summary.stats.durationMs.toLocaleString()} ms`);
+        const opened = await engine.open(source);
+        summary = await engine.call<Summary>('debug');
+        setStatus(`indexed ${summary.name} in ${summary.stats.durationMs.toLocaleString()} ms${opened.live ? ' · watching for changes' : ''}`);
         document.body.dataset.state = 'ready';
         renderStats(summary);
         treeChildren = summary.tree.map(() => []);
@@ -311,27 +283,45 @@ async function load(source: Source, label: string): Promise<void> {
     }
 }
 
+/** A watched folder changed: refresh the stats and lists, and the Map in place. */
+async function refresh(message: string): Promise<void> {
+    summary = await engine.call<Summary>('debug');
+    dataVersion++;
+    setStatus(message);
+    renderStats(summary);
+    treeChildren = summary.tree.map(() => []);
+    summary.tree.forEach((r, i) => r.parent >= 0 && treeChildren[r.parent].push(i));
+    renderList();
+}
+
 // ─── wiring ─────────────────────────────────────────────────────────────────
 
-$('load-sample').onclick = () => void load({ kind: 'sample' }, 'the sample');
+$('load-sample').onclick = async () => {
+    const files: Record<string, string> = await (await fetch(new URL('fixture.json', location.href))).json();
+    await load({ kind: 'texts', name: 'sample (fixtures/polyglot)', files }, 'the sample');
+};
 $('open-folder').onclick = async () => {
-    const picker = (window as Window & { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
-    if (!picker) return $<HTMLInputElement>('folder-input').click(); // Firefox / Safari: snapshot via <input>
+    if (!canPickDirectory()) return $<HTMLInputElement>('folder-input').click(); // Firefox / Safari: snapshot via <input>
     try {
-        const handle = await picker.call(window);
-        await load({ kind: 'handle', handle }, handle.name);
+        const source = await pickDirectory();
+        if (source) await load(source, 'the folder');
     } catch (err) {
-        if ((err as DOMException).name !== 'AbortError') setStatus(`could not open the folder: ${(err as Error).message}`);
+        setStatus(`could not open the folder: ${(err as Error).message}`);
     }
 };
 $<HTMLInputElement>('folder-input').onchange = (ev) => {
     const input = ev.target as HTMLInputElement;
-    const files = [...(input.files ?? [])].filter((f) => !/(^|\/)(node_modules|\.git)\//.test((f as File & { webkitRelativePath: string }).webkitRelativePath));
-    if (files.length === 0) return;
-    const name = (files[0] as File & { webkitRelativePath: string }).webkitRelativePath.split('/')[0] || 'folder';
+    const source = sourceFromFileList(input.files ?? []);
     input.value = '';
-    void load({ kind: 'files', name, files }, name);
+    if (source) void load(source, source.kind === 'files' ? source.name : 'the folder');
 };
+// Drop a folder, a .zip or files anywhere on the page.
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!e.dataTransfer) return;
+    void sourceFromDrop(e.dataTransfer).then((source) => source && load(source, 'the dropped item'));
+});
 for (const t of TABS) {
     $(`tab-${t}`).onclick = () => {
         tab = t;
@@ -345,3 +335,5 @@ $('filter').oninput = () => {
 };
 renderList();
 document.body.dataset.state = 'idle';
+// Test hook (Playwright opens sources the UI can't create, e.g. a watched OPFS folder).
+(window as Window & { codearchyPlayground?: unknown }).codearchyPlayground = { load };
