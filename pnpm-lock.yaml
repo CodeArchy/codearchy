@@ -45,6 +45,39 @@ importers:
         specifier: 2.11.10
         version: 2.11.10
 
+  apps/playground:
+    devDependencies:
+      '@codearchy/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+      '@codearchy/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@codearchy/grammars':
+        specifier: workspace:*
+        version: link:../../packages/grammars
+      '@codearchy/platform-browser':
+        specifier: workspace:*
+        version: link:../../packages/platform-browser
+      '@codearchy/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@codearchy/treesitter':
+        specifier: workspace:*
+        version: link:../../packages/treesitter
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.54.1-build1
+        version: 3.54.1-build1
+      esbuild:
+        specifier: 0.25.12
+        version: 0.25.12
+      playwright:
+        specifier: 1.65.0
+        version: 1.65.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/vscode:
     devDependencies:
       '@codearchy/core':

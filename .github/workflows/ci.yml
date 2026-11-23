@@ -136,7 +136,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm -w exec turbo run build --filter=@codearchy/platform-browser... --filter=@codearchy/conformance... --filter=@codearchy/grammars
+        run: pnpm -w exec turbo run build --filter=@codearchy/platform-browser... --filter=@codearchy/conformance... --filter=@codearchy/grammars --filter=@codearchy/playground...
 
       - name: Install browsers (Chromium, Firefox, WebKit)
         run: pnpm exec playwright install --with-deps chromium firefox webkit
@@ -145,6 +145,9 @@ jobs:
         env:
           CONFORMANCE_TIMEOUT_MS: '180000'
         run: pnpm run test:browser
+
+      - name: Playground smoke test (sample, search, OPFS warm reload) in all three engines
+        run: pnpm --filter @codearchy/playground exec node test/smoke.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. PACKAGE

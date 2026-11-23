@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CodeArchy playground</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="main.js"></script>
+</head>
+<body>
+    <header>
+        <h1>CodeArchy <span>playground</span></h1>
+        <button id="load-sample" type="button">Load sample</button>
+        <button id="open-folder" type="button">Open folder…</button>
+        <input id="folder-input" type="file" webkitdirectory multiple hidden>
+        <div class="status"><span id="status" role="status">Index a codebase in your browser: nothing leaves this page.</span><progress id="progress" max="1" hidden></progress></div>
+    </header>
+    <div id="stats"></div>
+    <nav role="tablist">
+        <button id="tab-files" role="tab" type="button">Files</button>
+        <button id="tab-edges" role="tab" type="button">Edges</button>
+        <button id="tab-unresolved" role="tab" type="button">Unresolved</button>
+        <button id="tab-search" role="tab" type="button">Search</button>
+        <input id="filter" type="search" placeholder="Filter" aria-label="Filter or search">
+    </nav>
+    <main>
+        <div id="list"></div>
+        <aside id="detail"></aside>
+    </main>
+</body>
+</html>
