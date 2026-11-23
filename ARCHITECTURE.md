@@ -40,6 +40,7 @@ wires one platform into the engine.
 
     conformance: one test suite every platform must pass (golden graph included)
     ui:          the shared React UI (Map, Navigator, Inspector); protocol only
+    providers:   AI model adapters (Ollama, OpenAI-compatible, Anthropic, Gemini); no engine
 ```
 
 `pnpm lint` runs [`tooling/check-boundaries.mjs`](tooling/check-boundaries.mjs), which rejects any
@@ -203,6 +204,36 @@ warm and both in-process and on the worker pool. Node runs the suite under
 Vitest; Chromium, Firefox and WebKit run it under Playwright. A change that
 alters extraction or resolution therefore shows up as a golden-graph diff,
 which is the behaviour change to review.
+
+## AI providers
+
+[`packages/providers`](packages/providers) puts every model behind one
+streaming interface: a chat request goes in, and `text`, `tool_call`, `usage`
+and a final `done` (or `error`) event come out. It knows nothing about the
+engine, so any host can use it, and it compiles without DOM or Node types: the
+adapters reach the network only through `fetch` (or the vendor's own SDK, which
+is built on it), so the same code runs in Node, VS Code, browsers and workers.
+
+- **Adapters:** Ollama (native API), any OpenAI-compatible endpoint (with
+  presets for OpenAI, OpenRouter, Groq, Mistral and LM Studio), Anthropic
+  (through the official SDK) and Gemini.
+- **Models are discovered at runtime** (`listModels()`), including context
+  windows and tool support where the provider reports them. Nothing is
+  hard-coded, and an unknown value stays unknown rather than guessed.
+- **One error taxonomy:** `auth`, `quota`, `rate_limit` (with Retry-After),
+  `context_overflow`, `unavailable`, `bad_request`, `invalid_response`,
+  `cancelled`. Credentials are redacted from every message.
+- **Replay data.** Each finished turn carries the provider's own record of it,
+  which goes back unchanged on the next request to that provider. Tool use on
+  current Claude and Gemini models depends on this (thinking blocks, thought
+  signatures).
+- **`withResilience`** adds per-provider concurrency and rate limits, plus
+  retries with backoff and jitter. It only retries a stream that failed before
+  producing anything, so a caller never sees output twice.
+
+`scripts/live.mjs` runs a tool-calling round trip against real providers
+configured through environment variables. It's for manual checks and never
+runs in CI.
 
 ## Apps
 
