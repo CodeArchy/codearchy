@@ -6,7 +6,17 @@ import { defineLanguage } from '@codearchy/sdk';
 
 /** `a::{b, c::{d, e}}` → [`a::b`, `a::c::d`, `a::c::e`]. Drops `as` aliases and `::*`. */
 export function expandRustUse(text: string): string[] {
-    const clean = text.replace(/\s+as\s+\w+/g, '').replace(/\s+/g, '');
+    // One linear pass over whitespace-separated tokens (no backtracking regex on
+    // repository text): drop each `as <alias>` and join the rest without spaces.
+    const tokens = text.split(/\s/).filter((t) => t !== '');
+    let clean = '';
+    for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i] === 'as' && i > 0 && i + 1 < tokens.length) {
+            clean += tokens[++i].replace(/^\w+/, ''); // keep what follows the alias: `H,` → `,`
+        } else {
+            clean += tokens[i];
+        }
+    }
     const out: string[] = [];
     const walk = (prefix: string, body: string) => {
         const brace = body.indexOf('{');
