@@ -7,6 +7,7 @@ import { analyzeWithRegex } from './extract/regex.js';
 import { TreeSitterExtractor } from './extract/treeSitter.js';
 import { getPackForExtension } from './languages/index.js';
 import type { FileSystemPort, Logger, ParserRuntime } from './ports.js';
+import { contentHash } from './util/hash.js';
 import { extname } from './util/posixPath.js';
 
 export interface AnalyzerOptions {
@@ -28,6 +29,28 @@ export interface AnalyzeProgress {
 export interface AnalyzeAllOptions {
     onProgress?: (p: AnalyzeProgress) => void;
     isCancelled?: () => boolean;
+}
+
+/** One unit of indexing work: analyse `path` unless its content still hashes to `knownHash`. */
+export interface AnalyzeJob {
+    path: string;
+    knownHash?: string;
+}
+
+export interface FileState {
+    contentHash: string;
+    size: number;
+    mtimeMs?: number;
+}
+
+export interface AnalyzeResult {
+    path: string;
+    /** Missing when the file is unreadable, oversized, binary or unsupported. */
+    state?: FileState;
+    /** The new facts; absent when `unchanged` or not analysable. */
+    analysis?: FileAnalysis;
+    /** Content still matches `knownHash`: keep the stored facts. */
+    unchanged?: boolean;
 }
 
 export class AnalysisCancelledError extends Error {
@@ -73,6 +96,20 @@ export class Analyzer {
         return analyzeWithRegex(source, path, pack.id);
     }
 
+    /** Reads, hashes and (if changed) analyses one file. */
+    async runJob(job: AnalyzeJob): Promise<AnalyzeResult> {
+        const { path } = job;
+        if (!getPackForExtension(extname(path))) return { path };
+        const stat = await this.options.fs.stat(path);
+        if (!stat?.isFile || stat.size > this.options.maxFileSize) return { path };
+        const source = await this.options.fs.readText(path);
+        if (source === undefined) return { path };
+        const state: FileState = { contentHash: contentHash(source), size: stat.size, ...(stat.mtimeMs !== undefined ? { mtimeMs: stat.mtimeMs } : {}) };
+        if (job.knownHash && job.knownHash === state.contentHash) return { path, state, unchanged: true };
+        const analysis = await this.analyzeFile(path, source);
+        return analysis ? { path, state, analysis } : { path };
+    }
+
     async analyzeAll(paths: string[], opts: AnalyzeAllOptions = {}): Promise<Map<string, FileAnalysis>> {
         const results = new Map<string, FileAnalysis>();
         const yieldToHost = this.options.yieldToHost;
@@ -99,13 +136,15 @@ export class Analyzer {
 /** Reads manifest files through the port; unreadable or huge ones are skipped. */
 export async function readManifests(fs: FileSystemPort, paths: string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
-    await Promise.all(
-        paths.map(async (p) => {
+    const read = await Promise.all(
+        paths.map(async (p): Promise<[string, string] | undefined> => {
             const stat = await fs.stat(p);
-            if (!stat?.isFile || stat.size >= 2_000_000) return;
+            if (!stat?.isFile || stat.size >= 2_000_000) return undefined;
             const text = await fs.readText(p);
-            if (text !== undefined) out.set(p, text);
+            return text === undefined ? undefined : [p, text];
         })
     );
+    // Path order (not completion order): downstream results must not depend on I/O timing.
+    for (const entry of read.filter((e): e is [string, string] => !!e).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) out.set(entry[0], entry[1]);
     return out;
 }

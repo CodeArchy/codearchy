@@ -98,3 +98,32 @@ describe('Workspace paths (posixPath)', () => {
         assert.ok(posixPath.isWithin('anything', ''));
     });
 });
+
+describe('Resolver determinism', () => {
+    const fa = (filePath: string, imports: string[] = []) => ({
+        filePath,
+        language: 'typescript',
+        symbols: [],
+        exports: [],
+        imports: imports.map((source) => ({ source, specifiers: [], isDefault: false, isNamespace: true, filePath })),
+    });
+
+    test('same-named workspace packages: the nearest one wins, whatever the manifest order', async () => {
+        const { ImportResolver } = await import('../src/index.js');
+        const analyses = [
+            fa('sample/a/src/main.ts', ['shared-lib']),
+            fa('sample/b/src/main.ts', ['shared-lib']),
+            fa('sample/a/lib/index.ts'),
+            fa('sample/b/lib/index.ts'),
+        ];
+        const pkg = (dir: string) => [`${dir}/package.json`, JSON.stringify({ name: 'shared-lib', main: 'lib/index.ts' })] as [string, string];
+        for (const order of [
+            [pkg('sample/a'), pkg('sample/b')],
+            [pkg('sample/b'), pkg('sample/a')],
+        ]) {
+            const r = new ImportResolver(analyses, new Map(order));
+            assert.deepStrictEqual(r.resolve(analyses[0].imports[0], analyses[0]), ['sample/a/lib/index.ts']);
+            assert.deepStrictEqual(r.resolve(analyses[1].imports[0], analyses[1]), ['sample/b/lib/index.ts']);
+        }
+    });
+});

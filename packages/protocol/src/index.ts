@@ -125,6 +125,18 @@ export interface GraphMetadata {
     truncatedAt?: number;
     /** Total matching files found before any truncation. */
     discoveredFiles?: number;
+    /** How the last (incremental) index run went. */
+    indexStats?: {
+        parsed: number;
+        /** Reused from the persistent index (stat unchanged, or content re-hashed and unchanged). */
+        reused: number;
+        removed: number;
+        durationMs: number;
+        /** True when facts are stored on disk (warm restarts). */
+        persistent: boolean;
+        /** Parse worker threads used by the last run (0 = in-process). */
+        workers: number;
+    };
 }
 
 export interface AnalysisProgress {

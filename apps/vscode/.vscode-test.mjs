@@ -7,6 +7,8 @@ export default defineConfig({
     extensionDevelopmentPath: '.',
     // A small multi-language repo, so the suite exercises real analysis.
     workspaceFolder: '../../fixtures/polyglot',
+    // Run the bundled parse workers even on the small fixture (normally only for 200+ files).
+    env: { CODEARCHY_MIN_FILES_FOR_WORKERS: '1' },
     mocha: {
         ui: 'tdd',
         color: true,

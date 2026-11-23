@@ -146,7 +146,8 @@ export class ImportResolver {
 
     private loadManifests(manifests: Map<string, string>) {
         const tsRaw = new Map<string, Record<string, unknown>>();
-        for (const [file, text] of manifests) {
+        // Path order, so results never depend on the order manifests were read in.
+        for (const [file, text] of [...manifests].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
             const base = basename(file);
             const dir = dirname(file);
             try {
@@ -189,7 +190,8 @@ export class ImportResolver {
         }
         // Deepest first, so the nearest config wins.
         this.tsConfigs.sort((a, b) => b.dir.length - a.dir.length);
-        this.jsPackages.sort((a, b) => b.name.length - a.name.length);
+        // Longest name first (scoped/sub-path matches win); ties broken by path for determinism.
+        this.jsPackages.sort((a, b) => b.name.length - a.name.length || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
         this.goModules.sort((a, b) => b.module.length - a.module.length);
         this.crateDirs.sort((a, b) => b.length - a.length);
         this.psr4.sort((a, b) => b.prefix.length - a.prefix.length);
@@ -221,7 +223,7 @@ export class ImportResolver {
             }
         }
 
-        const pkg = this.jsPackages.find((p) => clean === p.name || clean.startsWith(`${p.name}/`));
+        const pkg = this.nearestPackage(clean, fromFile);
         if (pkg) {
             const sub = clean.slice(pkg.name.length + 1);
             if (sub) {
@@ -244,6 +246,26 @@ export class ImportResolver {
             );
         }
         return [];
+    }
+
+    /**
+     * The workspace package a bare specifier names. Monorepos and example
+     * folders often contain several packages with the same name; prefer the
+     * one nearest the importing file (the one its own install would link).
+     */
+    private nearestPackage(spec: string, fromFile: string): JsPackage | undefined {
+        let best: JsPackage | undefined;
+        let bestScore = -1;
+        for (const p of this.jsPackages) {
+            if (spec !== p.name && !spec.startsWith(`${p.name}/`)) continue;
+            if (best && p.name.length < best.name.length) break; // sorted by name length: longer names already seen
+            const score = isWithin(fromFile, p.dir) ? 1_000_000 + p.dir.length : commonPrefixLength(p.dir, fromFile);
+            if (score > bestScore) {
+                best = p;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     private jsCandidates(base: string): string[] {
