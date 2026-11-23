@@ -71,6 +71,14 @@ describe('Small parsers', () => {
         ]);
         assert.deepStrictEqual(expandRustUse('std::io::*'), ['std::io']);
         assert.deepStrictEqual(expandRustUse('super::util as u'), ['super::util']);
+        assert.deepStrictEqual(expandRustUse('std::collections::{HashMap as H, BTreeMap}'), ['std::collections::HashMap', 'std::collections::BTreeMap']);
+    });
+
+    test('expandRustUse stays linear on hostile whitespace', () => {
+        const started = Date.now();
+        expandRustUse(`a${' '.repeat(200_000)}x`);
+        expandRustUse(`a${' as'.repeat(50_000)}`);
+        assert.ok(Date.now() - started < 500, `took ${Date.now() - started} ms`);
     });
 
     test('parseJsonc strips comments and trailing commas but not URLs in strings', () => {

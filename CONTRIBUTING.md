@@ -8,7 +8,7 @@ Thank you for your interest in contributing to CodeArchy! This document provides
 
 ### Prerequisites
 
-- **Node.js 18+** and npm
+- **Node.js 22.18+** (pnpm comes with it via Corepack)
 - **VS Code 1.85+**
 - **Git**
 - **Ollama** — required to run Gemma 4 locally for AI inference. Download from [ollama.com](https://ollama.com).
@@ -41,9 +41,14 @@ pnpm test
 # Press F5 in VS Code (uses .vscode/launch.json → apps/vscode)
 ```
 
-The repository is a pnpm workspace. The VS Code extension lives in `apps/vscode/`; shared
-packages (`packages/*`) arrive as the v2 engine is extracted. Run a package's own scripts with
-`pnpm --filter codearchy run <script>` (extension) or `pnpm --filter codearchy-webview-ui run <script>`.
+The repository is a pnpm workspace: the engine and its adapters are packages under `packages/`,
+and the VS Code extension and the browser playground are apps under `apps/`.
+[ARCHITECTURE.md](ARCHITECTURE.md) explains how they fit together. Run one package's scripts with
+`pnpm --filter <name> run <script>`, for example `pnpm --filter codearchy run watch` (the extension)
+or `pnpm --filter @codearchy/platform-node test:unit`.
+
+To see what the engine makes of a repository, run `pnpm playground` and open
+http://127.0.0.1:5178/. You can index the sample or any local folder in your browser.
 
 The `pnpm --filter codearchy run watch` task (bound to the default VS Code build task) compiles both layers incrementally on file save.
 
@@ -54,7 +59,8 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 ├── packages/
 │   ├── protocol/   @codearchy/protocol      data model shared by engine, hosts and UI (types only)
 │   ├── sdk/        @codearchy/sdk           public extension API: defineLanguage, syntax-tree types
-│   ├── core/       @codearchy/core          the engine: language packs, extraction, import
+│   ├── languages/  @codearchy/lang-<id>     one package per language: grammar, query, rules
+│   ├── core/       @codearchy/core          the engine: extraction, index store, import
 │   │                                        resolution, graph, inference. Pure TS behind ports
 │   ├── treesitter/ @codearchy/treesitter    ParserRuntime adapter: web-tree-sitter from wasm bytes
 │   ├── grammars/   @codearchy/grammars      pinned, integrity-checked grammar .wasm files
@@ -64,22 +70,25 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 │   │                                        SQLite WASM on OPFS, fetched grammars, Web Worker pool
 │   └── conformance/ @codearchy/conformance  shared adapter test suite + golden polyglot graph
 ├── apps/
-│   └── vscode/     the extension (composition root): bundled to dist/extension.js with esbuild
-│       ├── src/            extension host: commands, file watcher, pipeline, webview panel, voice
-│       └── webview-ui/     React webview (moves to packages/ui later in Phase 1)
+│   ├── vscode/     the extension (composition root): bundled to dist/extension.js with esbuild
+│   │   ├── src/            extension host: commands, file watcher, pipeline, webview panel, voice
+│   │   └── webview-ui/     React webview
+│   └── playground/ browser debug UI for the engine (pnpm playground)
+├── docs/guides/    contributor guides (adding a language, ...)
 ├── fixtures/       small multi-language repos used by tests (polyglot/)
-├── tooling/        workspace checks (dependency boundaries)
+├── tooling/        dependency-boundary check, `pnpm new:language` scaffold
 └── media/          repository docs assets
 ```
 
 #### Dependency rules (enforced in CI)
 
 ```
-protocol, sdk   ← core ← treesitter ← platform-node | platform-browser ← apps/*
-                         ↖ conformance (tests every platform against the same cases)
+protocol, sdk ← lang-* ← core ← treesitter ← platform-node | platform-browser ← apps/*
+                                ↖ conformance (tests every platform against the same cases)
 ```
 
-- `core` and `sdk` compile with **no DOM and no Node types**: they can't touch the host, even by accident.
+- `core`, `sdk` and the language packs compile with **no DOM and no Node types**: they can't touch the host, even by accident.
+  A language pack depends on `@codearchy/sdk` only.
   Everything host-specific comes in through ports (`FileSystemPort`, `ParserRuntime`).
 - The core speaks **workspace-relative POSIX paths** (`web/src/index.ts`); hosts convert at the edge.
 - `pnpm lint` runs `tooling/check-boundaries.mjs`, which rejects dependencies that break the arrows above.
@@ -154,32 +163,31 @@ pnpm --filter @codearchy/platform-node test:unit   # extraction + resolution aga
 pnpm --filter @codearchy/core test:unit            # pure engine tests (globs, heuristics, paths, parsers)
 pnpm --filter codearchy run test                   # VS Code sandbox: the bundled extension analyses fixtures/polyglot
 pnpm test:browser                                  # conformance suite in Chromium, Firefox and WebKit (Playwright)
+pnpm test:e2e                                      # playground smoke test in all three engines
 pnpm --filter @codearchy/platform-node run golden  # regenerate the golden graph after an intended behaviour change
 pnpm --filter codearchy run bench -- <repo>        # timings, parser coverage, import resolution per language
 ```
 
+Browser tests need Playwright's browsers once: `pnpm --filter @codearchy/platform-browser exec playwright install chromium firefox webkit`.
+
 Bug in extraction or resolution? Add the smallest failing snippet to
-`packages/platform-node/test/extraction.test.ts`, or files to `fixtures/polyglot/` plus an
+`packages/platform-node/test/extraction.test.ts` (or `test/languages/<id>.test.ts`), or files to `fixtures/polyglot/` plus an
 assertion in `packages/platform-node/test/graph.test.ts`, before fixing it.
 
 ## Adding or improving a language
 
-Each language is one `defineLanguage` **pack** in [`packages/core/src/languages/index.ts`](packages/core/src/languages/index.ts):
+Each language is one package under [`packages/languages/`](packages/languages). Start a new one with:
 
-1. **Grammar** — add the grammar's npm package, version and integrity hash
-   (`npm view <pkg>@<version> dist.integrity`) to [`packages/grammars/grammars.json`](packages/grammars/grammars.json)
-   and run `pnpm --filter @codearchy/grammars run fetch`. Grammars ship as prebuilt `.wasm` files; no native build runs.
-2. **Query** — write one tree-sitter query using the capture names documented at the top of
-   `languages.ts` (`@def.<kind>` + `@name`, `@import.source`, `@namespace`, ...). The
-   [tree-sitter playground](https://tree-sitter.github.io/tree-sitter/7-playground.html) shows a
-   grammar's node types.
-3. **Rules** — implement `isExported`, and the import hooks if the language needs them.
-4. **Resolution** — add a resolver branch in [`packages/core/src/resolve/resolver.ts`](packages/core/src/resolve/resolver.ts)
-   that maps the language's import specifiers to files.
-5. **Tests** — an extraction test with real-world syntax, plus fixture files and expected edges.
+```bash
+pnpm new:language <id> --name <Name> --ext .a,.b --grammar <npm package> --version <version>
+```
 
-Run `pnpm --filter codearchy run bench` on one or two real repositories in that language and include the before/after
-numbers in your pull request.
+That pins the grammar, wires the pack into the engine and the extension, and creates a test file.
+Then follow [docs/guides/adding-a-language.md](docs/guides/adding-a-language.md), which covers the
+query, the rules, import resolution and testing, with Ruby as the worked example.
+
+Run `pnpm --filter codearchy run bench -- <repo>` on one or two real repositories in that language
+and include the before/after numbers in your pull request.
 
 ---
 
@@ -187,8 +195,9 @@ numbers in your pull request.
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes with clear, atomic commit messages
-4. Run `npm run lint` and `npm run compile` to verify nothing is broken
+3. Make your changes with clear, atomic commit messages, signed off for the
+   [DCO](https://developercertificate.org/): `git commit -s`
+4. Run `pnpm lint`, `pnpm typecheck` and `pnpm test` to verify nothing is broken
 5. Open a Pull Request with a description covering: what changed, why, and how to test it
 
 ## Reporting Issues

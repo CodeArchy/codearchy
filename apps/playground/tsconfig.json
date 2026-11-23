@@ -1,0 +1,6 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "$comment": "Browser app: DOM types, no Node types. Bundled by esbuild (scripts/build.mjs); tsc only type-checks.",
+    "compilerOptions": { "rootDir": "src", "noEmit": true, "lib": ["ES2022", "DOM", "DOM.Iterable", "DOM.AsyncIterable"], "types": [] },
+    "include": ["src"]
+}

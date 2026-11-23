@@ -42,6 +42,21 @@ export interface ImportDetails {
     isNamespace: boolean;
 }
 
+/**
+ * What `resolveImport` can see: the importing file and the set of indexed
+ * files. Paths are workspace-relative POSIX paths ("app/models/user.rb").
+ */
+export interface ResolveContext {
+    /** The importing file. */
+    fromFile: string;
+    /** True when `path` is an indexed file. */
+    exists(path: string): boolean;
+    /** Joins and normalises segments; undefined when the result leaves the workspace. */
+    join(...parts: string[]): string | undefined;
+    /** "a/b/c.rb" → "a/b"; "c.rb" → "". */
+    dirname(path: string): string;
+}
+
 export interface LanguagePack {
     id: string;
     displayName: string;
@@ -64,6 +79,17 @@ export interface LanguagePack {
     containerName?(def: SyntaxNode): string | undefined;
     /** Leaf node types collected into FileAnalysis.references. */
     referenceNodeTypes?: string[];
+    /**
+     * Files an import specifier refers to. Packs for languages the core
+     * resolver doesn't know resolve their own imports here; return [] when
+     * the import is external (a gem, a system library).
+     */
+    resolveImport?(source: string, ctx: ResolveContext): string[];
+    /**
+     * A small snippet the query must match: the conformance suite parses it on
+     * every platform to prove the grammar loads and the query compiles.
+     */
+    sample: string;
 }
 
 const DEFAULT_CONTAINER_KINDS: DefKind[] = ['class', 'interface', 'enum', 'impl'];
@@ -77,8 +103,15 @@ export function containerKindsOf(pack: LanguagePack): DefKind[] {
  * typed entry point now and a place for validation and defaults later.
  */
 export function defineLanguage(pack: LanguagePack): LanguagePack {
-    if (!pack.id || pack.extensions.length === 0 || !pack.grammar || !pack.query.trim()) {
-        throw new Error(`invalid language pack: ${pack.id || '(no id)'}`);
+    const missing = [
+        !pack.id && 'id',
+        pack.extensions.length === 0 && 'extensions',
+        !pack.grammar && 'grammar',
+        !pack.query.trim() && 'query',
+        !pack.sample?.trim() && 'sample',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+        throw new Error(`language pack ${pack.id || '(no id)'} is missing: ${missing.join(', ')}`);
     }
     return pack;
 }

@@ -102,7 +102,7 @@ Understanding *why* a module exists before changing it is the single most effect
 
 | Capability | Details |
 |---|---|
-| **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Go, Rust via Tree-sitter WASM |
+| **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby via Tree-sitter WASM, with import resolution for each ecosystem |
 | **Semantic Subsystem Inference** | Heuristic grouping (API, Services, Models, Auth, Events, Storage …) |
 | **Gemma 4 AI Architect** | Local LLM via Ollama produces professional system architecture, not a file list |
 | **Interactive React Flow Diagram** | Pan, zoom, drag, click to inspect, double-click to open source files |
@@ -182,7 +182,7 @@ Ollama will be available at `http://localhost:11434`. CodeArchy handles all comm
 
 | Setting | Default | Description |
 |---|---|---|
-| `codearchy.includedLanguages` | `["typescript","javascript","python","java","go","rust"]` | Languages to analyse |
+| `codearchy.includedLanguages` | all supported languages | Languages to analyse (`typescript`, `javascript`, `python`, `java`, `kotlin`, `go`, `rust`, `csharp`, `php`, `ruby`) |
 | `codearchy.excludePatterns` | `["**/node_modules/**", ...]` | Glob patterns to skip |
 | `codearchy.maxFileSize` | `500000` | Max file size in bytes to parse |
 | `codearchy.aiModel` | `"none"` | Gemma 4 variant: `none` · `gemma-e2b` · `gemma-e4b` · `gemma-26b` |
@@ -246,7 +246,7 @@ The extension lives in `apps/vscode/`.
 
 Press **F5** in VS Code to launch the extension in a dedicated development host window.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full development guidelines, architecture decisions, and contribution workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and the contribution workflow, [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is put together, and the [adding-a-language guide](docs/guides/adding-a-language.md) to add a language.
 
 ---
 

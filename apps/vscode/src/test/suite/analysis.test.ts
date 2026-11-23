@@ -55,13 +55,14 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.ok(meta, 'analyzeWorkspace should return graph metadata');
         assert.ok(meta.fileCount >= 30, `expected the fixture's files, got ${meta.fileCount}`);
         assert.strictEqual(meta.parserStats?.regex, 0, 'no file should need the regex fallback');
-        assert.strictEqual(meta.languages.length, 9);
+        assert.strictEqual(meta.languages.length, 10);
 
         const graph = api.getGraph()!;
         const has = (s: string, t: string) => graph.edges.some((e) => e.source === s && e.target === t);
         assert.ok(has('web/src/index.ts', 'web/src/lib/util.ts'));
         assert.ok(has('go/cmd/server/main.go', 'go/internal/store/store.go'));
         assert.ok(has('cs/Orders/OrderService.cs', 'cs/Billing/Invoice.cs'));
+        assert.ok(has('rb/bin/run.rb', 'rb/lib/billing.rb'), 'Ruby resolves through its pack hook');
     });
 
     test('persistent index: touched files are re-hashed by the bundled parse workers, nothing re-parsed', async () => {

@@ -1,0 +1,26 @@
+{
+    "name": "@codearchy/playground",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Browser debug UI for the CodeArchy engine: index a sample or a local folder and inspect files, symbols, edges and unresolved imports.",
+    "license": "MIT",
+    "type": "module",
+    "scripts": {
+        "build": "node scripts/build.mjs",
+        "dev": "node scripts/build.mjs --watch --serve",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test:e2e": "node scripts/build.mjs && node test/smoke.mjs"
+    },
+    "devDependencies": {
+        "@codearchy/conformance": "workspace:*",
+        "@codearchy/core": "workspace:*",
+        "@codearchy/grammars": "workspace:*",
+        "@codearchy/platform-browser": "workspace:*",
+        "@codearchy/protocol": "workspace:*",
+        "@codearchy/treesitter": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+        "esbuild": "0.25.12",
+        "playwright": "1.65.0",
+        "typescript": "5.9.3"
+    }
+}

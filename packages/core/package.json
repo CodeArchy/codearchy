@@ -20,6 +20,16 @@
         "test:unit": "vitest run"
     },
     "dependencies": {
+        "@codearchy/lang-csharp": "workspace:*",
+        "@codearchy/lang-go": "workspace:*",
+        "@codearchy/lang-java": "workspace:*",
+        "@codearchy/lang-javascript": "workspace:*",
+        "@codearchy/lang-kotlin": "workspace:*",
+        "@codearchy/lang-php": "workspace:*",
+        "@codearchy/lang-python": "workspace:*",
+        "@codearchy/lang-ruby": "workspace:*",
+        "@codearchy/lang-rust": "workspace:*",
+        "@codearchy/lang-typescript": "workspace:*",
         "@codearchy/protocol": "workspace:*",
         "@codearchy/sdk": "workspace:*"
     },

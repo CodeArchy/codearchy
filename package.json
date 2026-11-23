@@ -18,7 +18,10 @@
         "test:unit": "turbo run test:unit",
         "test": "turbo run test:unit test:webview",
         "package:vscode": "pnpm --filter codearchy run package",
-        "test:browser": "pnpm --filter @codearchy/platform-browser run test:browser"
+        "test:browser": "pnpm --filter @codearchy/platform-browser run test:browser",
+        "test:e2e": "pnpm --filter @codearchy/playground run test:e2e",
+        "playground": "pnpm --filter @codearchy/playground run dev",
+        "new:language": "node tooling/new-language.mjs"
     },
     "devDependencies": {
         "turbo": "2.11.10"
