@@ -78,6 +78,13 @@ const workerOptions = {
     define: { 'process.env.NODE_ENV': isWatch ? '"development"' : '"production"' },
 };
 
+/** The new UI lays out the Map with ELK in a worker; ship its script next to the bundle. */
+function copyElkWorker() {
+    const from = require.resolve('elkjs/lib/elk-worker.min.js', { paths: [path.dirname(require.resolve('@codearchy/ui/package.json'))] });
+    fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true });
+    fs.copyFileSync(from, path.join(__dirname, 'dist', 'elk-worker.js'));
+}
+
 async function build() {
     // Always clean stale chunks before building so old content-hashed files
     // from previous runs don't end up in the VSIX.
@@ -87,11 +94,13 @@ async function build() {
         const workerCtx = await esbuild.context(workerOptions);
         await Promise.all([mainCtx.watch(), workerCtx.watch()]);
         copyOrtAssets();
+        copyElkWorker();
         console.log('Watching webview-ui for changes...');
     } else {
         await esbuild.build(mainOptions);
         await esbuild.build(workerOptions);
         copyOrtAssets();
+        copyElkWorker();
         console.log('Webview UI built successfully.');
     }
 }

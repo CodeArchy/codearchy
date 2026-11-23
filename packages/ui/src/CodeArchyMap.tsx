@@ -13,7 +13,7 @@
  * selection); "show all" draws every one. Layout uses the drawn set, so
  * selecting never moves anything; only the toggle re-lays out.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
@@ -30,8 +30,14 @@ export interface CodeArchyMapProps {
     layoutWorkerUrl: string;
     /** 'vscode' takes colours from the VS Code theme; 'web' follows light/dark. */
     hostKind?: 'web' | 'vscode';
-    /** Changes when the workspace is re-indexed. */
+    /** Changes when a different workspace is loaded: the view resets to the top. */
     revision?: string;
+    /** Changes when the same workspace's data changes (a file saved): the current view refetches in place. */
+    dataVersion?: number;
+    /** Ask the Map to show a node (e.g. "Reveal in Map" from the editor); a new `nonce` repeats it. */
+    revealRequest?: { key: string; nonce: number };
+    /** Host controls added to the toolbar (settings, chat, switch views…). */
+    toolbarExtras?: ReactNode;
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
@@ -85,7 +91,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         return () => {
             live = false;
         };
-    }, [client, engine, scope, expanded.join('\n'), revision, allEdges]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [client, engine, scope, expanded.join('\n'), revision, allEdges, props.dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const model = useMemo(() => (view ? buildMapModel(view) : undefined), [view]);
 
@@ -104,7 +110,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         return () => {
             live = false;
         };
-    }, [client, selection]);
+    }, [client, selection, props.dataVersion]);
 
     const lit = useMemo(() => {
         if (!model || selection?.kind !== 'node') return undefined;
@@ -152,6 +158,10 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         },
         [client]
     );
+
+    useEffect(() => {
+        if (props.revealRequest) void reveal(props.revealRequest.key);
+    }, [props.revealRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const activate = useCallback(
         (id: string) => {
@@ -225,6 +235,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         ))}
                     </select>
                 </label>
+                {props.toolbarExtras}
                 {client.search ? (
                     <button type="button" className="ca-search-button" onClick={() => setSearching(true)}>
                         Search <kbd>⌘K</kbd>
@@ -232,7 +243,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 ) : null}
             </header>
             <div className="ca-body">
-                <Navigator client={client} revision={revision} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={drill} />
+                <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={drill} />
                 <section className="ca-canvas" aria-label="Architecture map">
                     {mode === 'matrix' && view ? (
                         <Matrix

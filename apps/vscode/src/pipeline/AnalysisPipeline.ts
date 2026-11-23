@@ -10,9 +10,11 @@ import * as path from 'path';
 import {
     AnalysisCancelledError,
     ArchitectureInference,
+    HierarchyIndex,
     IndexStore,
     Indexer,
     buildGraph,
+    buildHierarchy,
     classifyFiles,
     compileGlobs,
     getPackForExtension,
@@ -33,7 +35,19 @@ import {
     toPosix,
     walkFiles,
 } from '@codearchy/platform-node';
+import type { NodeDetails } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
+
+/** Requests the new UI (@codearchy/ui) sends through the webview. */
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search';
+
+export interface EngineSearchResult {
+    key: string;
+    name: string;
+    kind: string;
+    path: string;
+    line?: number;
+}
 
 /** Per-workspace state kept between analyses so file changes are incremental. Keys are POSIX paths. */
 interface WorkspaceState {
@@ -56,6 +70,9 @@ export class AnalysisPipeline {
     private readonly parsersDir: string;
     private readonly workerScript: string;
     private lastIndexStats: NonNullable<ArchitectureGraph['metadata']['indexStats']> | undefined;
+    /** The last graph built, and its hierarchy (built on first use, dropped when the graph changes). */
+    private lastGraph: ArchitectureGraph | undefined;
+    private hierarchyIndex: HierarchyIndex | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -291,7 +308,69 @@ export class AnalysisPipeline {
         };
         const stats = graph.metadata.parserStats;
         if (stats) stats.skipped = Math.max(0, state.discovery.sourceFiles.length - state.analyses.size);
+        this.lastGraph = graph;
+        this.hierarchyIndex = undefined;
         return graph;
+    }
+
+    /** The hierarchy of the last graph (System › Package › Component › Module › Symbol). */
+    private hierarchy(): HierarchyIndex | undefined {
+        const state = this.state;
+        if (!state || !this.lastGraph) return undefined;
+        this.hierarchyIndex ??= new HierarchyIndex(
+            buildHierarchy(this.lastGraph, { systemName: path.basename(state.root), packageMarkers: state.discovery.packageMarkers, manifests: state.manifests })
+        );
+        return this.hierarchyIndex;
+    }
+
+    /** Answers the new UI's engine requests (EngineClient in @codearchy/ui). */
+    engine(method: EngineMethod, params: Record<string, unknown>): unknown {
+        const h = this.hierarchy();
+        if (!h) return undefined;
+        const str = (k: string) => String(params[k] ?? '');
+        switch (method) {
+            case 'view':
+                return h.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
+            case 'children':
+                return h.children(str('key'));
+            case 'describe':
+                return h.describe(str('key'));
+            case 'explain':
+                return h.explainEdge(str('source'), str('target'));
+            case 'search':
+                return this.search(h, str('query'));
+            default:
+                return undefined;
+        }
+    }
+
+    /** Components and packages by name, then symbols from the index (prefix match). */
+    private search(h: HierarchyIndex, query: string): EngineSearchResult[] {
+        const q = query.trim().toLowerCase();
+        if (!q) return [];
+        const out: EngineSearchResult[] = [];
+        for (const n of h.hierarchy.nodes) {
+            if (n.kind === 'symbol' || n.kind === 'system' || !n.name.toLowerCase().includes(q)) continue;
+            out.push({ key: n.key, name: n.name, kind: n.kind === 'module' ? 'file' : n.kind, path: n.path });
+            if (out.length >= 15) break;
+        }
+        for (const hit of this.state?.store?.searchSymbols(query.trim(), 35) ?? []) {
+            out.push({ key: `mod:${hit.path}`, name: hit.container ? `${hit.container}.${hit.name}` : hit.name, kind: hit.kind, path: hit.path, line: hit.startLine });
+        }
+        return out;
+    }
+
+    /** Where a workspace file sits in the hierarchy (status bar, CodeLens); undefined if it isn't indexed. */
+    locate(fsPath: string): NodeDetails | undefined {
+        const state = this.state;
+        if (!state) return undefined;
+        const rel = toPosix(state.root, fsPath);
+        return rel ? this.hierarchy()?.describe(`mod:${rel}`) : undefined;
+    }
+
+    /** Absolute path of a workspace-relative POSIX path. */
+    toAbsolute(rel: string): string | undefined {
+        return this.state ? fromPosix(this.state.root, rel) : undefined;
     }
 
     private async discover(workspaceUri: vscode.Uri, config: ExtensionConfig): Promise<DiscoveryResult> {

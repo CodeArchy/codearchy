@@ -1,0 +1,4 @@
+/* The 2.0 panel fills the webview; @codearchy/ui lays out the rest. */
+.map-shell { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.map-shell > .ca-root { flex: 1; min-height: 0; }
+.map-shell > .loading { flex: 1; }

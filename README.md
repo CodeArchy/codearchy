@@ -102,11 +102,14 @@ Understanding *why* a module exists before changing it is the single most effect
 
 | Capability | Details |
 |---|---|
+| **Architecture Map** *(2.0 beta)* | Drill from System to Package, Component and File; expand in place; dependencies leaving the view shown as port stubs; Navigator, Inspector and ⌘K search |
+| **Matrix and lenses** *(2.0 beta)* | A dependency structure matrix that exposes cycles; Health (cycles, hubs, orphans) and Tests lenses |
+| **Editor integration** *(2.0 beta)* | A status bar entry and a CodeLens show where the current file sits; **Reveal in Map** from the editor or Explorer |
 | **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby via Tree-sitter WASM, with import resolution for each ecosystem |
 | **Semantic Subsystem Inference** | Heuristic grouping (API, Services, Models, Auth, Events, Storage …) |
 | **Gemma 4 AI Architect** | Local LLM via Ollama produces professional system architecture, not a file list |
 | **Interactive React Flow Diagram** | Pan, zoom, drag, click to inspect, double-click to open source files |
-| **Cytoscape.js Dense-Graph View** | Alternative layout for large, complex dependency graphs |
+| **Classic views** | The 1.x System, Flow and Dense (Cytoscape.js) views stay available during the 2.0 beta (`codearchy.ui`) |
 | **Conversational AI Assistant** | Ask architecture questions in natural language; context maintained across turns |
 | **Voice Input** *(coming)* | Speak your questions; audio is transcribed and sent to Gemma 4 |
 | **Kokoro Neural TTS** | AI responses are read aloud via an offline neural speech engine (GPU or CPU fallback) |
@@ -175,6 +178,8 @@ Ollama will be available at `http://localhost:11434`. CodeArchy handles all comm
 | `CodeArchy: Export as SVG` | Save the diagram as a vector graphic |
 | `CodeArchy: Export as PNG` | Save the diagram as a raster image |
 | `CodeArchy: Open Sidebar` | Open the subsystem and module explorer |
+| `CodeArchy: Reveal in Map` | Show the current file on the Map (also in the editor and Explorer context menus) |
+| `CodeArchy: Switch between the Map and the classic views` | Toggle `codearchy.ui` |
 
 ---
 
@@ -182,6 +187,8 @@ Ollama will be available at `http://localhost:11434`. CodeArchy handles all comm
 
 | Setting | Default | Description |
 |---|---|---|
+| `codearchy.ui` | `"map"` | `map`: the 2.0 Map · `classic`: the 1.x System, Flow and Dense views (kept through the 2.0 beta) |
+| `codearchy.codeLens` | `true` | Show where each file sits in the architecture at the top of the file |
 | `codearchy.includedLanguages` | all supported languages | Languages to analyse (`typescript`, `javascript`, `python`, `java`, `kotlin`, `go`, `rust`, `csharp`, `php`, `ruby`) |
 | `codearchy.excludePatterns` | `["**/node_modules/**", ...]` | Glob patterns to skip |
 | `codearchy.maxFileSize` | `500000` | Max file size in bytes to parse |

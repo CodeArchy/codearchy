@@ -27,8 +27,22 @@ function detectViewHint(question: string): 'system' | 'flow' | 'dense' {
   return 'flow';
 }
 
+/** What the new UI needs from the extension host (set by extension.ts). */
+export interface EngineHost {
+  request(method: string, params: Record<string, unknown>): unknown;
+  toAbsolute(rel: string): string | undefined;
+}
+
+/** Which UI the panel shows: the 2.0 Map, or the classic System/Flow/Dense views. */
+export function configuredUi(): 'map' | 'classic' {
+  return vscode.workspace.getConfiguration('codearchy').get<string>('ui', 'map') === 'classic' ? 'classic' : 'map';
+}
+
 export class ArchitecturePanel {
   private static instance: ArchitecturePanel | undefined;
+  static engineHost: EngineHost | undefined;
+  /** A reveal requested before the webview was ready. */
+  private pendingReveal: string | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private disposables: vscode.Disposable[] = [];
@@ -127,6 +141,21 @@ export class ArchitecturePanel {
     }
   }
 
+  /** Shows `key` on the Map (opening the panel first if needed). */
+  static reveal(context: vscode.ExtensionContext, graph: ArchitectureGraph, key: string) {
+    ArchitecturePanel.createOrShow(context, graph);
+    const panel = ArchitecturePanel.instance;
+    if (!panel) return;
+    panel.pendingReveal = key;
+    panel.panel.webview.postMessage({ type: WebviewMessageType.RevealNode, payload: { key } });
+  }
+
+  /** Re-renders the webview, e.g. after the `codearchy.ui` setting changed. */
+  static reload() {
+    const panel = ArchitecturePanel.instance;
+    if (panel && panel.modelServerPort) panel.panel.webview.html = panel.getWebviewContent();
+  }
+
   static dispose() {
     if (ArchitecturePanel.instance) {
       ArchitecturePanel.instance.panel.dispose();
@@ -134,6 +163,12 @@ export class ArchitecturePanel {
   }
 
   static triggerExport(format: 'svg' | 'png') {
+    if (configuredUi() === 'map') {
+      void vscode.window
+        .showInformationMessage('CodeArchy: export to SVG / PNG is available in the classic views for now.', 'Switch to the classic views')
+        .then((pick) => pick && vscode.workspace.getConfiguration('codearchy').update('ui', 'classic', vscode.ConfigurationTarget.Global));
+      return;
+    }
     if (ArchitecturePanel.instance) {
       ArchitecturePanel.instance.panel.webview.postMessage({
         type: format === 'svg' ? WebviewMessageType.ExportSVG : WebviewMessageType.ExportPNG,
@@ -159,6 +194,10 @@ export class ArchitecturePanel {
         if (this.currentGraph) {
           this.sendGraphData(this.currentGraph);
         }
+        if (this.pendingReveal) {
+          this.panel.webview.postMessage({ type: WebviewMessageType.RevealNode, payload: { key: this.pendingReveal } });
+          this.pendingReveal = undefined;
+        }
         // Send the persisted processing mode so the Sidebar reflects it.
         this.panel.webview.postMessage({
           type: WebviewMessageType.SetProcessingMode,
@@ -176,6 +215,36 @@ export class ArchitecturePanel {
           }
           vscode.window.showTextDocument(uri, options);
         }
+        break;
+      }
+
+      case WebviewMessageType.EngineRequest: {
+        const req = message.payload as { id: number; method: string; params?: Record<string, unknown> };
+        let reply: { id: number; result?: unknown; error?: string };
+        try {
+          reply = { id: req.id, result: ArchitecturePanel.engineHost?.request(req.method, req.params ?? {}) };
+        } catch (err) {
+          reply = { id: req.id, error: err instanceof Error ? err.message : String(err) };
+        }
+        this.panel.webview.postMessage({ type: WebviewMessageType.EngineResponse, payload: reply });
+        break;
+      }
+
+      case WebviewMessageType.OpenWorkspaceFile: {
+        const { path: rel, line } = message.payload as { path: string; line?: number };
+        const abs = rel ? ArchitecturePanel.engineHost?.toAbsolute(rel) : undefined;
+        if (abs) {
+          const options: vscode.TextDocumentShowOptions = { viewColumn: vscode.ViewColumn.One };
+          if (line !== undefined) options.selection = new vscode.Range(line, 0, line, 0);
+          void vscode.window.showTextDocument(vscode.Uri.file(abs), options);
+        }
+        break;
+      }
+
+      case WebviewMessageType.SetUi: {
+        const ui = (message.payload as { ui?: string })?.ui === 'classic' ? 'classic' : 'map';
+        // The configuration listener in extension.ts reloads the panel.
+        void vscode.workspace.getConfiguration('codearchy').update('ui', ui, vscode.ConfigurationTarget.Global);
         break;
       }
 
@@ -1145,6 +1214,10 @@ export class ArchitecturePanel {
       const kokoroWorkerUri = webview.asWebviewUri(
         vscode.Uri.joinPath(this.extensionUri, 'webview-ui', 'dist', 'kokoroWorker.js')
       );
+      // The new UI lays out the Map with ELK in a Web Worker (created from a blob: URL).
+      const elkWorkerUri = webview.asWebviewUri(
+        vscode.Uri.joinPath(this.extensionUri, 'webview-ui', 'dist', 'elk-worker.js')
+      );
 
       return /*html*/ `<!DOCTYPE html>
 <html lang="en">
@@ -1160,7 +1233,7 @@ export class ArchitecturePanel {
 </head>
 <body>
   <div id="root"></div>
-  <script nonce="${nonce}">window.CODEARCY_ICON_URI = "${iconUri}"; window.CODEARCHY_ORT_BASE_URI = "${ortBaseUri}/"; window.CODEARCHY_KOKORO_MODEL_BASE_URI = "${kokoroModelBaseUri}/"; window.CODEARCHY_KOKORO_WORKER_URI = "${kokoroWorkerUri}"; window.CODEARCHY_KOKORO_ACTIVATED = ${this.extensionContext.globalState.get<boolean>('codearchy.kokoroActivated') === true ? 'true' : 'false'}; window.__CODEARCHY_VOICE_CONFIG = ${JSON.stringify(this.extensionContext.globalState.get<object>('codearchy.voiceConfig') ?? {})};</script>
+  <script nonce="${nonce}">window.CODEARCHY_UI = "${configuredUi()}"; window.CODEARCHY_ELK_WORKER_URI = "${elkWorkerUri}"; window.CODEARCY_ICON_URI = "${iconUri}"; window.CODEARCHY_ORT_BASE_URI = "${ortBaseUri}/"; window.CODEARCHY_KOKORO_MODEL_BASE_URI = "${kokoroModelBaseUri}/"; window.CODEARCHY_KOKORO_WORKER_URI = "${kokoroWorkerUri}"; window.CODEARCHY_KOKORO_ACTIVATED = ${this.extensionContext.globalState.get<boolean>('codearchy.kokoroActivated') === true ? 'true' : 'false'}; window.__CODEARCHY_VOICE_CONFIG = ${JSON.stringify(this.extensionContext.globalState.get<object>('codearchy.voiceConfig') ?? {})};</script>
   <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

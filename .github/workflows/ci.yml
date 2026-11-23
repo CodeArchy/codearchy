@@ -198,6 +198,8 @@ jobs:
           required_files=(
             "dist/extension.js"
             "dist/parseWorker.js"
+            "webview-ui/dist/webview.js"
+            "webview-ui/dist/elk-worker.js"
             "package.json"
             "README.md"
             "parsers/web-tree-sitter.wasm"

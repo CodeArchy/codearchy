@@ -54,6 +54,15 @@
             {
                 "command": "codearchy.openSidebar",
                 "title": "CodeArchy: Open Sidebar"
+            },
+            {
+                "command": "codearchy.revealInMap",
+                "title": "CodeArchy: Reveal in Map",
+                "icon": "$(type-hierarchy)"
+            },
+            {
+                "command": "codearchy.switchUi",
+                "title": "CodeArchy: Switch between the Map and the classic views"
             }
         ],
         "viewsContainers": {
@@ -85,11 +94,42 @@
                     "command": "codearchy.showArchitecture",
                     "group": "navigation"
                 }
+            ],
+            "editor/context": [
+                {
+                    "command": "codearchy.revealInMap",
+                    "group": "navigation@90"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "codearchy.revealInMap",
+                    "when": "!explorerResourceIsFolder",
+                    "group": "navigation@90"
+                }
             ]
         },
         "configuration": {
             "title": "CodeArchy",
             "properties": {
+                "codearchy.ui": {
+                    "type": "string",
+                    "enum": [
+                        "map",
+                        "classic"
+                    ],
+                    "default": "map",
+                    "enumDescriptions": [
+                        "The new Map (2.0): drill-down architecture with Matrix, lenses, Navigator and Inspector.",
+                        "The classic views from 1.x: System, Flow and Dense. Kept through the 2.0 beta while you get familiar with the Map."
+                    ],
+                    "markdownDescription": "Which architecture view the CodeArchy panel shows. The classic System/Flow/Dense views remain available during the 2.0 beta. Also: **CodeArchy: Switch between the Map and the classic views**."
+                },
+                "codearchy.codeLens": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show where each file sits in the architecture (and what it uses / is used by) as a CodeLens at the top of the file."
+                },
                 "codearchy.includedLanguages": {
                     "type": "array",
                     "default": [

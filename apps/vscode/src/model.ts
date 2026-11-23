@@ -12,6 +12,15 @@ export interface WebviewMessage {
 
 export enum WebviewMessageType {
     Ready = 'ready',
+    /** New UI ↔ engine: { id, method, params } / { id, result?, error? }. */
+    EngineRequest = 'engineRequest',
+    EngineResponse = 'engineResponse',
+    /** Open a workspace-relative file: { path, line? }. */
+    OpenWorkspaceFile = 'openWorkspaceFile',
+    /** Switch between the new Map and the classic views: { ui: 'map' | 'classic' }. */
+    SetUi = 'setUi',
+    /** Host → new UI: show this node on the Map: { key }. */
+    RevealNode = 'revealNode',
     GraphData = 'graphData',
     NodeSelected = 'nodeSelected',
     RefreshRequest = 'refreshRequest',
