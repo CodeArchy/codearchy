@@ -164,7 +164,9 @@ jobs:
   package:
     name: Package VSIX
     runs-on: ubuntu-latest
-    needs: build
+    # validate is listed as well as build: a job can read outputs only from the jobs in its
+    # own `needs`, and the pre-release flag comes from validate.
+    needs: [validate, build]
     outputs:
       vsix_name: ${{ steps.vsix_meta.outputs.vsix_name }}
     defaults:
@@ -194,11 +196,13 @@ jobs:
       - name: Package VSIX
         env:
           CI: 'true'
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
         run: |
-          PRE_FLAG=""
-          if [ "${{ needs.validate.outputs.is_prerelease }}" == "true" ]; then
-            PRE_FLAG="--pre-release"
-          fi
+          case "$IS_PRERELEASE" in
+            true)  PRE_FLAG="--pre-release" ;;
+            false) PRE_FLAG="" ;;
+            *)     echo "::error::is_prerelease is '$IS_PRERELEASE'; expected true or false." && exit 1 ;;
+          esac
           pnpm exec vsce package --no-dependencies $PRE_FLAG
 
       - name: Capture VSIX filename
@@ -207,6 +211,23 @@ jobs:
           VSIX_FILE=$(ls *.vsix | head -1)
           echo "vsix_name=$VSIX_FILE" >> "$GITHUB_OUTPUT"
           echo "::notice::Release VSIX: $VSIX_FILE ($(du -sh "$VSIX_FILE" | cut -f1))"
+
+      - name: Check the pre-release marker
+        env:
+          VSIX_FILE: ${{ steps.vsix_meta.outputs.vsix_name }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          # `vsce publish --pre-release` refuses a package built without it, and a pre-release
+          # package must never reach the stable channel: the marker has to match the release.
+          if unzip -p "$VSIX_FILE" extension.vsixmanifest | grep -q 'Microsoft.VisualStudio.Code.PreRelease'; then
+            MARKED=true
+          else
+            MARKED=false
+          fi
+          if [ "$MARKED" != "$IS_PRERELEASE" ]; then
+            echo "::error::VSIX pre-release marker is $MARKED but this release is_prerelease=$IS_PRERELEASE." && exit 1
+          fi
+          echo "  ✓  pre-release marker: $MARKED"
 
       - name: Audit package contents
         run: |
