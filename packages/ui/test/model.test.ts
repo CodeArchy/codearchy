@@ -1,7 +1,9 @@
 import { describe, test } from 'vitest';
 import * as assert from 'node:assert';
 import type { View, ViewNode } from '@codearchy/protocol';
-import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, type MapModel } from '../src/index.js';
+import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, type MapModel } from '../src/index.js';
+
+const METRICS = { modules: 3, symbols: 0, codeModules: 3, testModules: 0, testedModules: 0, cyclicModules: 0, orphanModules: 0, hubModules: 0, fanIn: 0, fanOut: 0 };
 
 const node = (key: string, extra: Partial<ViewNode> = {}): ViewNode => ({
     key,
@@ -13,6 +15,7 @@ const node = (key: string, extra: Partial<ViewNode> = {}): ViewNode => ({
     modules: 3,
     fanIn: 0,
     fanOut: 0,
+    metrics: METRICS,
     ...extra,
 });
 
@@ -105,5 +108,55 @@ describe('Map model', () => {
         assert.deepStrictEqual(visibleEdges(m, { limit: 3, around: new Set(['b0']) }).map((e) => e.id), ['e0', 'e7', 'e8', 'e9']);
         assert.strictEqual(visibleEdges(m, { limit: 3, all: true }).length, 10);
         assert.strictEqual(visibleEdges(m, { limit: 20 }).length, 10);
+    });
+
+});
+
+describe('Lenses', () => {
+    const m = (over: Partial<typeof METRICS>) => ({ ...METRICS, ...over });
+    test('tests: a % on containers in 5 ordinal steps; tested / untested on files', () => {
+        assert.deepStrictEqual(lensBadge(m({ codeModules: 10, testedModules: 6, testModules: 4 }), 'tests', 'component'), {
+            level: 4,
+            text: '60% tested',
+            title: '6 of 10 code files have a test file depending on them (4 test files)',
+        });
+        assert.strictEqual(lensBadge(m({ codeModules: 10, testedModules: 0 }), 'tests', 'component')!.level, 1);
+        assert.strictEqual(lensBadge(m({ codeModules: 10, testedModules: 10 }), 'tests', 'component')!.level, 5);
+        assert.strictEqual(lensBadge(m({ codeModules: 1, testedModules: 1 }), 'tests', 'module')!.text, 'tested');
+        assert.strictEqual(lensBadge(m({ codeModules: 0, testModules: 2 }), 'tests', 'component')!.text, 'tests only');
+    });
+    test('health: the worst issue sets the status, every count is in the text', () => {
+        assert.deepStrictEqual(lensBadge(m({ cyclicModules: 2, orphanModules: 1 }), 'health', 'component'), { level: 'critical', text: '⟳ 2 in cycles · ○ 1 orphan', title: '⟳ 2 in cycles, ○ 1 orphan (of 3 files)' });
+        assert.strictEqual(lensBadge(m({ hubModules: 1 }), 'health', 'component')!.level, 'serious');
+        assert.deepStrictEqual(lensBadge(m({}), 'health', 'component'), { text: 'no issues', title: 'No files in cycles, no hubs, no orphans' });
+        assert.strictEqual(lensBadge(m({}), 'dependencies', 'component'), undefined);
+    });
+});
+
+describe('Matrix', () => {
+    test('providers first; a cycle stays together; only feedback lands above the diagonal', () => {
+        const v: View = {
+            ...VIEW,
+            nodes: [node('a', { name: 'a' }), node('b', { name: 'b', cycle: 1 }), node('c', { name: 'c', cycle: 1 }), node('d', { name: 'd' })],
+            edges: [
+                { source: 'a', target: 'b', weight: 1, count: 1, implicit: false },
+                { source: 'b', target: 'c', weight: 1, count: 1, implicit: false, cyclic: true },
+                { source: 'c', target: 'b', weight: 1, count: 1, implicit: false, cyclic: true },
+                { source: 'c', target: 'd', weight: 1, count: 1, implicit: false },
+            ],
+            ports: [],
+        };
+        const o = matrixOrder(v);
+        assert.deepStrictEqual(o.keys, ['d', 'b', 'c', 'a']);
+        const pos = new Map(o.keys.map((k, i) => [k, i]));
+        const above = v.edges.filter((e) => pos.get(e.target)! > pos.get(e.source)!).map((e) => `${e.source}->${e.target}`);
+        assert.deepStrictEqual(above, ['b->c']);
+        assert.deepStrictEqual([...o.cycleOf.keys()].sort(), ['b', 'c']);
+    });
+    test('heat steps grow with weight on a log scale', () => {
+        assert.strictEqual(heatStep(0, 10), 0);
+        assert.strictEqual(heatStep(1, 1), 7);
+        assert.ok(heatStep(2, 100) < heatStep(50, 100));
+        assert.strictEqual(heatStep(100, 100), 7);
     });
 });

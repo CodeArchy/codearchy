@@ -5,12 +5,13 @@
  */
 import { memo, useMemo } from 'react';
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
-import type { MapEdge, MapModel, MapNode } from './model.js';
+import { lensBadge, type LensId, type MapEdge, type MapModel, type MapNode } from './model.js';
 import type { Layout } from './layout.js';
 
 interface NodeData extends Record<string, unknown> {
     node: MapNode;
     dim: boolean;
+    lens: LensId;
     onExpand?: () => void;
     onCollapse?: () => void;
 }
@@ -21,14 +22,23 @@ const KIND_LABEL: Record<string, string> = { system: 'System', package: 'Package
 
 const NodeCard = memo(function NodeCard({ data, selected }: NodeProps<CardNode>) {
     const v = data.node.view!;
+    const badge = lensBadge(v.metrics, data.lens, v.kind);
     return (
-        <div className={`ca-node ca-kind-${v.kind}${v.virtual ? ' ca-virtual' : ''}${selected ? ' ca-selected' : ''}${data.dim ? ' ca-dim' : ''}`} title={v.path || v.name}>
+        <div
+            className={`ca-node ca-kind-${v.kind}${v.virtual ? ' ca-virtual' : ''}${selected ? ' ca-selected' : ''}${data.dim ? ' ca-dim' : ''}${badge?.level ? ` ca-level-${badge.level}` : ''}`}
+            title={v.path || v.name}
+        >
             <Handle type="target" position={Position.Left} className="ca-handle" />
             <div className="ca-node-head">
                 <span className="ca-node-kind">{v.virtual ? 'Group' : KIND_LABEL[v.kind] ?? v.kind}</span>
                 {v.role ? <span className="ca-chip">{v.role}</span> : null}
             </div>
             <div className="ca-node-name">{v.name}</div>
+            {badge ? (
+                <div className="ca-lens-badge" title={badge.title}>
+                    {badge.text}
+                </div>
+            ) : null}
             <div className="ca-node-meta">
                 {v.kind === 'module' ? null : <span>{v.modules.toLocaleString()} file{v.modules === 1 ? '' : 's'}</span>}
                 {v.hasChildren && data.onExpand ? (
@@ -98,6 +108,7 @@ export interface MapCanvasProps {
     selectedEdge?: string;
     /** When set, nodes outside it are dimmed. */
     lit?: Set<string>;
+    lens: LensId;
     onSelect(id: string | undefined): void;
     onActivate(id: string): void;
     onExpand(id: string): void;
@@ -127,6 +138,7 @@ export function MapCanvas(props: MapCanvasProps) {
                     data: {
                         node: n,
                         dim: !!lit && !lit.has(n.id),
+                        lens: props.lens,
                         onExpand: () => props.onExpand(n.id),
                         onCollapse: () => props.onCollapse(n.id),
                     },
@@ -135,7 +147,7 @@ export function MapCanvas(props: MapCanvasProps) {
             }),
         // Callbacks are stable per CodeArchyMap render; the model/layout/selection drive this.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [model, layout, lit, selected]
+        [model, layout, lit, selected, props.lens]
     );
 
     const edges = useMemo<Edge[]>(
@@ -150,13 +162,13 @@ export function MapCanvas(props: MapCanvasProps) {
                     type: 'smoothstep',
                     label: e.count > 1 ? String(e.count) : undefined,
                     selected: isSelected,
-                    className: `ca-edge${e.port ? ' ca-edge-port' : ''}${e.implicit ? ' ca-edge-implicit' : ''}${dim ? ' ca-dim' : ''}${isSelected ? ' ca-edge-selected' : ''}`,
+                    className: `ca-edge${e.port ? ' ca-edge-port' : ''}${e.implicit ? ' ca-edge-implicit' : ''}${e.cyclic && props.lens === 'health' ? ' ca-edge-cyclic' : ''}${dim ? ' ca-dim' : ''}${isSelected ? ' ca-edge-selected' : ''}`,
                     style: { strokeWidth: e.strokeWidth },
                     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
                     interactionWidth: 14,
                 };
             }),
-        [props.edges, lit, selectedEdge]
+        [props.edges, lit, selectedEdge, props.lens]
     );
 
     return (

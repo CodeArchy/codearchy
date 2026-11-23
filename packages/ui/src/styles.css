@@ -20,6 +20,12 @@
     --ca-edge: var(--vscode-editorLineNumber-foreground, #98a1b3);
     --ca-font: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
     --ca-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+    /* Lens colours (validated: single-hue ordinal ramp, monotone lightness, light end
+       clears the surface). Ordinal 1..5 for "% tested"; sequential 1..7 for matrix weight. */
+    --ca-ord-1: #86b6ef; --ca-ord-2: #5598e7; --ca-ord-3: #2a78d6; --ca-ord-4: #1c5cab; --ca-ord-5: #104281;
+    --ca-seq-1: #cde2fb; --ca-seq-2: #9ec5f4; --ca-seq-3: #6da7ec; --ca-seq-4: #3987e5; --ca-seq-5: #256abf; --ca-seq-6: #184f95; --ca-seq-7: #0d366b;
+    /* Status (fixed, never themed): always shown with an icon and a label. */
+    --ca-critical: #d03b3b; --ca-serious: #ec835a; --ca-warning: #fab219;
     color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -35,8 +41,15 @@
         --ca-hover: #23283a;
         --ca-selected: #2b3352;
         --ca-edge: #6b7486;
+        --ca-ord-1: #184f95; --ca-ord-2: #256abf; --ca-ord-3: #3987e5; --ca-ord-4: #6da7ec; --ca-ord-5: #9ec5f4;
+        --ca-seq-1: #0d366b; --ca-seq-2: #184f95; --ca-seq-3: #256abf; --ca-seq-4: #3987e5; --ca-seq-5: #6da7ec; --ca-seq-6: #9ec5f4; --ca-seq-7: #cde2fb;
         color-scheme: dark;
     }
+}
+/* VS Code dark and high-contrast themes: the lens ramps step from dark to light. */
+.vscode-dark .ca-root, .vscode-high-contrast .ca-root {
+    --ca-ord-1: #184f95; --ca-ord-2: #256abf; --ca-ord-3: #3987e5; --ca-ord-4: #6da7ec; --ca-ord-5: #9ec5f4;
+    --ca-seq-1: #0d366b; --ca-seq-2: #184f95; --ca-seq-3: #256abf; --ca-seq-4: #3987e5; --ca-seq-5: #6da7ec; --ca-seq-6: #9ec5f4; --ca-seq-7: #cde2fb;
 }
 
 .ca-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ca-bg); color: var(--ca-fg); font: 13px/1.4 var(--ca-font); outline: none; }
@@ -121,3 +134,51 @@
 .ca-search .ca-list { max-height: 50vh; overflow: auto; }
 .ca-search li { padding: 6px 14px; cursor: pointer; }
 .ca-search li.ca-active { background: var(--ca-selected); }
+
+/* ── lenses ─────────────────────────────────────────────────────────────── */
+.ca-lens-badge { font-size: 11px; color: var(--ca-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-node[class*="ca-level-"] { border-left-width: 6px; }
+.ca-node.ca-level-1 { border-left-color: var(--ca-ord-1); }
+.ca-node.ca-level-2 { border-left-color: var(--ca-ord-2); }
+.ca-node.ca-level-3 { border-left-color: var(--ca-ord-3); }
+.ca-node.ca-level-4 { border-left-color: var(--ca-ord-4); }
+.ca-node.ca-level-5 { border-left-color: var(--ca-ord-5); }
+.ca-node.ca-level-critical { border-left-color: var(--ca-critical); }
+.ca-node.ca-level-serious { border-left-color: var(--ca-serious); }
+.ca-node.ca-level-warning { border-left-color: var(--ca-warning); }
+.ca-edge-cyclic .react-flow__edge-path { stroke: var(--ca-critical); }
+.ca-status-text.ca-level-critical::before, .ca-status-text.ca-level-serious::before, .ca-status-text.ca-level-warning::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.ca-status-text.ca-level-critical::before { background: var(--ca-critical); }
+.ca-status-text.ca-level-serious::before { background: var(--ca-serious); }
+.ca-status-text.ca-level-warning::before { background: var(--ca-warning); }
+.ca-lens-section p { margin: 2px 0; }
+.ca-segmented { display: inline-flex; border: 1px solid var(--ca-line); border-radius: 6px; overflow: hidden; }
+.ca-segmented button { background: var(--ca-bg); border: 0; padding: 3px 10px; cursor: pointer; }
+.ca-segmented button + button { border-left: 1px solid var(--ca-line); }
+.ca-segmented button.ca-on { background: var(--ca-selected); font-weight: 600; }
+.ca-lens { color: var(--ca-muted); }
+.ca-lens select { font: inherit; color: var(--ca-fg); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 6px; padding: 2px 6px; }
+
+/* ── matrix ─────────────────────────────────────────────────────────────── */
+.ca-matrix-wrap { position: absolute; inset: 0; overflow: auto; padding: 8px 12px 24px; }
+.ca-matrix-legend { margin: 0 0 8px; max-width: 760px; }
+.ca-matrix { position: relative; }
+.ca-root .ca-matrix-col, .ca-root .ca-matrix-row { position: absolute; background: none; border: 0; padding: 0; cursor: pointer; color: var(--ca-fg); font-size: 11px; overflow: hidden; }
+.ca-matrix-col { top: 0; display: flex; align-items: flex-end; justify-content: center; }
+.ca-matrix-col span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 100%; padding-bottom: 4px; }
+.ca-matrix-row { left: 0; text-align: right; padding-right: 8px !important; white-space: nowrap; text-overflow: ellipsis; }
+.ca-matrix-col.ca-hover, .ca-matrix-row.ca-hover { background: var(--ca-hover); }
+.ca-matrix-col.ca-selected, .ca-matrix-row.ca-selected { font-weight: 700; color: var(--ca-accent); }
+.ca-cycle-mark { color: var(--ca-critical); }
+.ca-matrix-grid { position: absolute; border: 1px solid var(--ca-line); background-image: linear-gradient(to right, var(--ca-line) 1px, transparent 1px), linear-gradient(to bottom, var(--ca-line) 1px, transparent 1px); }
+.ca-matrix-diag { position: absolute; background: var(--ca-panel); }
+.ca-root .ca-matrix-cell { position: absolute; border: 0; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px var(--ca-bg); }
+.ca-matrix-cell.ca-heat-1 { background: var(--ca-seq-1); }
+.ca-matrix-cell.ca-heat-2 { background: var(--ca-seq-2); }
+.ca-matrix-cell.ca-heat-3 { background: var(--ca-seq-3); }
+.ca-matrix-cell.ca-heat-4 { background: var(--ca-seq-4); }
+.ca-matrix-cell.ca-heat-5 { background: var(--ca-seq-5); }
+.ca-matrix-cell.ca-heat-6 { background: var(--ca-seq-6); }
+.ca-matrix-cell.ca-heat-7 { background: var(--ca-seq-7); }
+.ca-root .ca-matrix-cell.ca-feedback { box-shadow: inset 0 0 0 2px var(--ca-critical); }
+.ca-root .ca-matrix-cell.ca-selected { outline: 2px solid var(--ca-accent); outline-offset: 1px; z-index: 1; }

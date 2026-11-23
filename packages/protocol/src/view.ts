@@ -15,6 +15,26 @@ export interface ViewRequest {
     budget?: number;
 }
 
+/** Counts behind the lenses; containers sum their modules. */
+export interface NodeMetrics {
+    modules: number;
+    symbols: number;
+    /** Non-test modules. */
+    codeModules: number;
+    testModules: number;
+    /** Code modules at least one test module depends on. */
+    testedModules: number;
+    /** Modules in a dependency cycle. */
+    cyclicModules: number;
+    /** Modules with no dependencies in either direction. */
+    orphanModules: number;
+    /** Highly connected modules. */
+    hubModules: number;
+    /** Weight of the dependencies entering / leaving the node's subtree. */
+    fanIn: number;
+    fanOut: number;
+}
+
 export interface ViewNode {
     key: string;
     kind: HierarchyKind;
@@ -33,6 +53,9 @@ export interface ViewNode {
     /** Edges into / out of this node within the view (for sizing and ranking). */
     fanIn: number;
     fanOut: number;
+    metrics: NodeMetrics;
+    /** Set when the node is in a cycle with other visible nodes (same id, same cycle). */
+    cycle?: number;
 }
 
 export interface ViewEdge {
@@ -44,6 +67,8 @@ export interface ViewEdge {
     count: number;
     /** Every dependency behind it is implicit (same package / namespace, no import). */
     implicit: boolean;
+    /** Part of a cycle among the visible nodes. */
+    cyclic?: boolean;
 }
 
 /** Dependencies between a visible node and something outside the scope. */
@@ -121,4 +146,9 @@ export interface NodeDetails extends NodeSummary {
     /** At the level of the node's siblings (and beyond, through port stubs). */
     dependsOn: NodeLink[];
     usedBy: NodeLink[];
+    metrics: NodeMetrics;
+    /** A module in a cycle: the other modules of that cycle (paths, up to 20). */
+    cycleWith?: string[];
+    /** A code module: the test modules that depend on it (paths, up to 20). */
+    testedBy?: string[];
 }

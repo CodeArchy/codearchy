@@ -3,6 +3,9 @@
  * ⌘K search. Owns the view state (scope, expanded nodes, selection, focus)
  * and asks the engine for projections through an EngineClient.
  *
+ * Modes: Map (node-link) or Matrix (DSM); lenses colour both by Health or
+ * Tests, always with the value as text too.
+ *
  * Keyboard: Enter drill · Space expand/collapse · Backspace up a level ·
  * F focus (2-hop neighbourhood) · Esc clear · ⌘K / Ctrl+K search.
  *
@@ -16,7 +19,8 @@ import type { EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { LayoutEngine, type Layout } from './layout.js';
 import { MapCanvas } from './MapCanvas.js';
-import { buildMapModel, DEFAULT_EDGE_LIMIT, keyOfExternal, neighbourhood, visibleEdges } from './model.js';
+import { buildMapModel, DEFAULT_EDGE_LIMIT, keyOfExternal, LENSES, neighbourhood, visibleEdges, type LensId } from './model.js';
+import { Matrix } from './Matrix.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
 export interface CodeArchyMapProps {
@@ -43,6 +47,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [selection, setSelection] = useState<Selection>();
     const [focus, setFocus] = useState(false);
     const [allEdges, setAllEdges] = useState(false);
+    const [mode, setMode] = useState<'map' | 'matrix'>('map');
+    const [lens, setLens] = useState<LensId>('dependencies');
     const [view, setView] = useState<View>();
     const [layout, setLayout] = useState<Layout>();
     const [details, setDetails] = useState<NodeDetails>();
@@ -193,7 +199,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 <span className="ca-toolbar-gap" />
                 {focus ? <span className="ca-chip" title="F toggles focus">Focus: 2 hops</span> : null}
                 {view?.skipped.length ? <span className="ca-muted">{view.skipped.length} expansion(s) over budget</span> : null}
-                {model && model.edges.length > DEFAULT_EDGE_LIMIT ? (
+                {mode === 'map' && model && model.edges.length > DEFAULT_EDGE_LIMIT ? (
                     <span className="ca-muted ca-edge-count">
                         {allEdges ? `all ${model.edges.length} dependencies` : `heaviest ${DEFAULT_EDGE_LIMIT} of ${model.edges.length} dependencies`}
                         {' · '}
@@ -202,6 +208,23 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         </button>
                     </span>
                 ) : null}
+                <div className="ca-segmented" role="group" aria-label="View mode">
+                    {(['map', 'matrix'] as const).map((m) => (
+                        <button key={m} type="button" aria-pressed={mode === m} className={mode === m ? 'ca-on' : ''} onClick={() => setMode(m)}>
+                            {m === 'map' ? 'Map' : 'Matrix'}
+                        </button>
+                    ))}
+                </div>
+                <label className="ca-lens">
+                    Lens{' '}
+                    <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
+                        {LENSES.map((l) => (
+                            <option key={l.id} value={l.id}>
+                                {l.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
                 {client.search ? (
                     <button type="button" className="ca-search-button" onClick={() => setSearching(true)}>
                         Search <kbd>⌘K</kbd>
@@ -211,7 +234,16 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             <div className="ca-body">
                 <Navigator client={client} revision={revision} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={drill} />
                 <section className="ca-canvas" aria-label="Architecture map">
-                    {model && layout && view ? (
+                    {mode === 'matrix' && view ? (
+                        <Matrix
+                            view={view}
+                            selected={selectedKey}
+                            selectedEdge={selection?.kind === 'edge' ? `${selection.source}->${selection.target}` : undefined}
+                            onSelect={(k) => setSelection({ kind: 'node', key: k })}
+                            onActivate={activate}
+                            onSelectEdge={(source, target) => setSelection({ kind: 'edge', source, target })}
+                        />
+                    ) : model && layout && view ? (
                         <ReactFlowProvider>
                             <MapCanvas
                                 model={model}
@@ -221,6 +253,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                                 selected={selectedKey}
                                 selectedEdge={selection?.kind === 'edge' ? `${selection.source}->${selection.target}` : undefined}
                                 lit={lit}
+                                lens={lens}
                                 onSelect={(id) => setSelection(id ? { kind: 'node', key: id } : undefined)}
                                 onActivate={activate}
                                 onExpand={toggleExpand}
@@ -239,6 +272,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         nameOf={nameOf}
                         host={host}
                         expanded={!!selectedKey && expanded.includes(selectedKey)}
+                        lens={lens}
                         onReveal={(k) => void reveal(k)}
                         onDrill={drill}
                         onToggleExpand={toggleExpand}
