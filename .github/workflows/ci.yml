@@ -197,11 +197,14 @@ jobs:
           echo "--- Verifying required files are present ---"
           required_files=(
             "dist/extension.js"
+            "dist/parseWorker.js"
             "package.json"
             "README.md"
             "parsers/web-tree-sitter.wasm"
-            "parsers/tree-sitter-typescript.wasm"
-            "parsers/tree-sitter-python.wasm"
+          )
+          # Every pinned grammar must ship (a new language can't be left out of the VSIX).
+          while IFS= read -r f; do required_files+=("parsers/$f"); done < <(
+            node -e "for (const g of require('../../packages/grammars/grammars.json').grammars) for (const f of g.files) console.log(f)"
           )
           for f in "${required_files[@]}"; do
             if grep -q "$f" package-manifest.txt; then
