@@ -12,12 +12,15 @@
  *   PHP          `use` FQNs, composer PSR-4 roots, include/require paths
  *   Go           module paths from go.mod, same-package use
  *   Rust         `mod x;`, `crate::`/`self::`/`super::` paths, workspace crates
+ *   others       the language pack's `resolveImport` hook (Ruby, ...)
  *
  * Package-level imports (Java wildcards, C# usings, Go packages, same-package
  * use) are narrowed to the files whose top-level names the importing file
  * actually references, so one `using App.Models;` doesn't fan out to every model.
  */
 import type { FileAnalysis, ImportInfo } from '@codearchy/protocol';
+import type { ResolveContext } from '@codearchy/sdk';
+import { getPackById } from '../languages/index.js';
 import { basename, commonPrefixLength, dirname, isWithin, join } from '../util/posixPath.js';
 
 /** Never a real file: what a path that climbs out of the workspace resolves to. */
@@ -109,9 +112,22 @@ export class ImportResolver {
                 targets = this.resolveRust(imp.source, from.filePath);
                 break;
             default:
-                targets = [];
+                targets = this.resolveWithPack(imp.source, from);
         }
         return unique(targets).filter((t) => t !== from.filePath);
+    }
+
+    /** Languages without built-in rules resolve through their pack's `resolveImport` hook. */
+    private resolveWithPack(source: string, from: FileAnalysis): string[] {
+        const pack = getPackById(from.language);
+        if (!pack?.resolveImport) return [];
+        const ctx: ResolveContext = {
+            fromFile: from.filePath,
+            exists: (p) => this.files.has(p),
+            join,
+            dirname,
+        };
+        return pack.resolveImport(source, ctx).filter((p) => this.files.has(p));
     }
 
     /** Dependencies that need no import: same package / namespace / Go package. */

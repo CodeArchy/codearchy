@@ -38,6 +38,13 @@ describe('Dependency graph (polyglot fixture)', () => {
         assert.ok(graph.nodes.every((n) => path.isAbsolute(n.filePath)), 'host paths are absolute');
     });
 
+    test('Ruby (pack resolveImport hook): require_relative, lib/ load path, gems are external', () => {
+        assert.deepStrictEqual(edgesFrom(graph, 'rb/bin/run.rb'), ['rb/lib/billing.rb']);
+        assert.deepStrictEqual(edgesFrom(graph, 'rb/lib/billing.rb'), ['rb/lib/billing/invoice.rb']);
+        assert.deepStrictEqual(edgesFrom(graph, 'rb/lib/billing/invoice.rb'), ['rb/lib/billing/money.rb']);
+        assert.deepStrictEqual(edgesFrom(graph, 'rb/tasks/release.rake'), ['rb/lib/billing.rb']);
+    });
+
     test('TypeScript: relative, tsconfig paths, workspace package, ESM .js → .ts', () => {
         assert.deepStrictEqual(edgesFrom(graph, 'web/src/index.ts'), [
             'packages/shared/src/index.ts',

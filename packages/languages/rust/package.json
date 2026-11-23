@@ -1,0 +1,32 @@
+{
+    "name": "@codearchy/lang-rust",
+    "version": "0.1.0",
+    "description": "CodeArchy language pack for Rust: tree-sitter query, export rules and import hooks.",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "@codearchy/sdk": "workspace:*"
+    },
+    "devDependencies": {
+        "typescript": "5.9.3"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "packages/languages/rust"
+    }
+}

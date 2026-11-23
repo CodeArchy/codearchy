@@ -5,3 +5,4 @@
  */
 export * from './syntax.js';
 export * from './language.js';
+export * from './helpers.js';

@@ -169,6 +169,36 @@ importers:
 
   packages/core:
     dependencies:
+      '@codearchy/lang-csharp':
+        specifier: workspace:*
+        version: link:../languages/csharp
+      '@codearchy/lang-go':
+        specifier: workspace:*
+        version: link:../languages/go
+      '@codearchy/lang-java':
+        specifier: workspace:*
+        version: link:../languages/java
+      '@codearchy/lang-javascript':
+        specifier: workspace:*
+        version: link:../languages/javascript
+      '@codearchy/lang-kotlin':
+        specifier: workspace:*
+        version: link:../languages/kotlin
+      '@codearchy/lang-php':
+        specifier: workspace:*
+        version: link:../languages/php
+      '@codearchy/lang-python':
+        specifier: workspace:*
+        version: link:../languages/python
+      '@codearchy/lang-ruby':
+        specifier: workspace:*
+        version: link:../languages/ruby
+      '@codearchy/lang-rust':
+        specifier: workspace:*
+        version: link:../languages/rust
+      '@codearchy/lang-typescript':
+        specifier: workspace:*
+        version: link:../languages/typescript
       '@codearchy/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -184,6 +214,109 @@ importers:
         version: 5.1.0(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
   packages/grammars: {}
+
+  packages/languages/csharp:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/go:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/java:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/javascript:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/kotlin:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/php:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/python:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/ruby:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/rust:
+    dependencies:
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/languages/typescript:
+    dependencies:
+      '@codearchy/lang-javascript':
+        specifier: workspace:*
+        version: link:../javascript
+      '@codearchy/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   packages/platform-browser:
     dependencies:

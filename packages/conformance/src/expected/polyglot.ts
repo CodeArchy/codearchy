@@ -28,6 +28,11 @@ export const GOLDEN_POLYGLOT = {
         "py/app/models/user.py",
         "py/app/services/billing.py",
         "py/utils/json.py",
+        "rb/bin/run.rb",
+        "rb/lib/billing.rb",
+        "rb/lib/billing/invoice.rb",
+        "rb/lib/billing/money.rb",
+        "rb/tasks/release.rake",
         "rust/src/config.rs",
         "rust/src/handlers/mod.rs",
         "rust/src/lib.rs",
@@ -51,6 +56,10 @@ export const GOLDEN_POLYGLOT = {
         "py/app/main.py -> py/app/models/__init__.py",
         "py/app/main.py -> py/app/models/user.py",
         "py/app/main.py -> py/app/services/billing.py",
+        "rb/bin/run.rb -> rb/lib/billing.rb",
+        "rb/lib/billing.rb -> rb/lib/billing/invoice.rb",
+        "rb/lib/billing/invoice.rb -> rb/lib/billing/money.rb",
+        "rb/tasks/release.rake -> rb/lib/billing.rb",
         "rust/src/handlers/mod.rs -> rust/src/config.rs",
         "rust/src/handlers/mod.rs -> rust/src/models.rs",
         "rust/src/lib.rs -> rust/src/config.rs",
@@ -62,5 +71,5 @@ export const GOLDEN_POLYGLOT = {
         "web/src/index.ts -> web/src/ui/Button.tsx",
         "web/src/legacy.cjs -> web/src/lib/util.ts"
     ],
-    "symbols": 35
+    "symbols": 45
 };

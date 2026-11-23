@@ -21,6 +21,7 @@ export interface SyntaxNode {
     readonly startPosition: Point;
     readonly endPosition: Point;
     readonly parent: SyntaxNode | null;
+    readonly previousNamedSibling: SyntaxNode | null;
     readonly namedChildren: ReadonlyArray<SyntaxNode | null>;
     childForFieldName(fieldName: string): SyntaxNode | null;
     childrenForFieldName(fieldName: string): ReadonlyArray<SyntaxNode | null>;

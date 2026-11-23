@@ -54,6 +54,12 @@
             "version": "0.24.2",
             "integrity": "sha512-zwgAePc/HozNaWOOfwRAA+3p8yhuehRw8Fb7vn5qd2XjiIc93uJPryDTMYTSjBRjVIUg/KY6pM3rRzs8dSwKfw==",
             "files": ["tree-sitter-php.wasm"]
+        },
+        {
+            "package": "tree-sitter-ruby",
+            "version": "0.23.1",
+            "integrity": "sha512-d9/RXgWjR6HanN7wTYhS5bpBQLz1VkH048Vm3CodPGyJVnamXMGb8oEhDypVCBq4QnHui9sTXuJBBP3WtCw5RA==",
+            "files": ["tree-sitter-ruby.wasm"]
         }
     ]
 }

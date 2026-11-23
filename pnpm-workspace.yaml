@@ -5,6 +5,7 @@ packages:
   - apps/*
   - apps/vscode/webview-ui
   - packages/*
+  - packages/languages/*
 
 # Security pins for transitive dependencies whose parents have not picked up
 # the fixes yet (all dev/build tooling; see PR #16). Parent-scoped so only

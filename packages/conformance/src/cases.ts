@@ -25,18 +25,6 @@ interface Case {
     run(h: ConformanceHarness): Promise<void | 'skip'>;
 }
 
-const SAMPLE: Record<string, string> = {
-    typescript: 'export function f(): number { return 1; }',
-    javascript: 'export function f() { return 1; }',
-    python: 'def f():\n    return 1\n',
-    java: 'class A { void f() {} }',
-    kotlin: 'class A {\n    fun f() = 1\n}\n',
-    go: 'package a\nfunc F() {}\n',
-    rust: 'pub fn f() {}',
-    csharp: 'class A { void F() {} }',
-    php: '<?php function f() {}',
-};
-
 /** UTF-8 byte length without TextEncoder (keeps the suite free of host types). */
 function utf8Length(s: string): number {
     let n = 0;
@@ -132,7 +120,7 @@ export const CASES: Case[] = [
                 const lang = await runtime.loadLanguage(file);
                 ok(lang, `grammar ${file} loads`);
                 const query = runtime.compileQuery(lang, pack.query);
-                const tree = runtime.parse(lang, SAMPLE[id] ?? '');
+                const tree = runtime.parse(lang, pack.sample);
                 ok(tree, `${file} parses`);
                 ok(query.matches(tree.rootNode).length > 0, `${id} query matches a sample`);
                 tree.delete();
