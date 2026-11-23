@@ -52,6 +52,8 @@ describe('Summarizer', () => {
             keyNodes: ['sym:src/auth/session.ts#login', 'sym:src/auth/session.ts#logout'],
         });
         expect(session.responsibilities[0]).toBe('export function login(user: string)');
+        // No header doc: the first documented top-level symbol's doc stands in.
+        expect((await s.card('mod:src/auth/tokens.ts')).purpose).toBe('Token signing.');
         const billing = ix.hierarchy.nodes.find((n) => n.path === 'src/billing' && n.kind !== 'module')!;
         expect((await s.card(billing.key)).purpose).toBe('Invoices and payment runs for the shop.');
         expect((await s.card('sys:root')).purpose).toBe('A small online shop.');

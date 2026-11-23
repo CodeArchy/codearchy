@@ -253,7 +253,7 @@ The extension lives in `apps/vscode/`.
 
 Press **F5** in VS Code to launch the extension in a dedicated development host window.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and the contribution workflow, [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is put together, and the [adding-a-language guide](docs/guides/adding-a-language.md) to add a language.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and the contribution workflow, [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is put together, and the [adding-a-language guide](docs/guides/adding-a-language.md) to add a language. To use CodeArchy's map from your own AI agent (Claude Code, Codex, Gemini CLI, Copilot), see the [MCP guide](docs/guides/mcp.md).
 
 ---
 
