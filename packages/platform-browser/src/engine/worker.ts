@@ -83,6 +83,9 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
     };
     const sqliteWasmUrl = config.sqliteWasmUrl ?? asset('sqlite3.wasm');
     const maxFileSize = config.maxFileSize ?? 1_000_000;
+    // A Map of the handler object's own entries: a request name can never reach
+    // Object.prototype (`constructor`, `__proto__`, ...).
+    const handlers = new Map(Object.entries(config.handlers ?? {}).filter(([, h]) => typeof h === 'function'));
     const emit = (event: EngineEvent) => scope.postMessage({ event });
 
     let ws: (EngineWorkspace & { indexer: Indexer; pool: BrowserWorkerPool; live: boolean; lazy: { hierarchy?: HierarchyIndex; resolver?: ImportResolver } }) | undefined;
@@ -308,8 +311,8 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             case 'readFile':
                 return w.fs.readText(s('path'));
             default: {
-                const custom = config.handlers?.[method];
-                if (!custom) throw new Error(`unknown engine request: ${method}`);
+                const custom = handlers.get(method);
+                if (!custom) throw new Error(`unknown engine request: ${String(method).slice(0, 60)}`);
                 return custom(w, params);
             }
         }
