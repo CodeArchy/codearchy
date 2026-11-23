@@ -266,7 +266,9 @@
 .ca-provider { border: 1px solid var(--ca-line); border-radius: 8px; padding: 8px 10px; background: var(--ca-bg); display: flex; flex-direction: column; gap: 6px; }
 .ca-provider-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ca-state-ready { color: var(--ca-fg); border-color: var(--ca-accent); }
-.ca-state-blocked, .ca-state-unauthorized, .ca-state-error { color: var(--ca-critical); }
+/* Blocked by the privacy tier is the user's choice, not a fault: muted. A rejected key or an error is red. */
+.ca-state-blocked { color: var(--ca-muted); border-style: dashed; }
+.ca-state-unauthorized, .ca-state-error { color: var(--ca-critical); }
 .ca-key { display: flex; gap: 6px; }
 .ca-key input, .ca-budget input, .ca-settings select { font: inherit; color: var(--ca-fg); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 5px; padding: 3px 6px; }
 .ca-key input { flex: 1; min-width: 0; }
