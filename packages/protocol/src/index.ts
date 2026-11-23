@@ -9,6 +9,7 @@
 export const PROTOCOL_VERSION = '0.2.0';
 
 export * from './hierarchy.js';
+export * from './view.js';
 
 export interface SymbolInfo {
     name: string;

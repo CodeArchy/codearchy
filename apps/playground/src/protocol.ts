@@ -1,5 +1,5 @@
 /** Messages between the UI thread (main.ts) and the engine worker (engine.worker.ts). */
-import type { SymbolInfo } from '@codearchy/protocol';
+import type { SymbolInfo, ViewRequest } from '@codearchy/protocol';
 
 export type Source =
     | { kind: 'sample' }
@@ -11,7 +11,11 @@ export type Source =
 export type Request =
     | { id: number; type: 'open'; source: Source }
     | { id: number; type: 'search'; query: string }
-    | { id: number; type: 'file'; path: string };
+    | { id: number; type: 'file'; path: string }
+    /** A projection of the hierarchy (drill, expand) — the Map's data. */
+    | { id: number; type: 'view'; request: ViewRequest }
+    /** The module dependencies behind a view edge or port. */
+    | { id: number; type: 'explain'; source: string; target: string };
 
 export interface FileRow {
     path: string;

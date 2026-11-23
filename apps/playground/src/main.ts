@@ -3,6 +3,7 @@
  * Everything a repository supplies (paths, names, import specifiers) is
  * rendered as text, never as HTML.
  */
+import type { EdgeExplanation, View } from '@codearchy/protocol';
 import type { FileDetail, FileRow, Request, Response, SearchHit, Source, Summary, TreeRow } from './protocol.js';
 
 // ─── engine connection ──────────────────────────────────────────────────────
@@ -71,8 +72,11 @@ function table<T>(rows: T[], headers: string[], cells: (r: T) => Array<string | 
 
 // ─── state + views ──────────────────────────────────────────────────────────
 
-type Tab = 'tree' | 'files' | 'edges' | 'unresolved' | 'search';
-const TABS: Tab[] = ['tree', 'files', 'edges', 'unresolved', 'search'];
+type Tab = 'tree' | 'view' | 'files' | 'edges' | 'unresolved' | 'search';
+const TABS: Tab[] = ['tree', 'view', 'files', 'edges', 'unresolved', 'search'];
+/** The View tab's request: what the Map will ask the engine for. */
+let viewScope = 'sys:root';
+let viewExpanded: string[] = [];
 let summary: Summary | undefined;
 let tab: Tab = 'tree';
 /** Expanded rows of the hierarchy tree (indexes into summary.tree). */
@@ -114,6 +118,11 @@ function renderList(): void {
     if (!summary) return list.replaceChildren(el('p', { className: 'note', textContent: 'Load the sample or open a folder.' }));
     if (tab === 'tree') {
         list.replaceChildren(renderTree(summary.tree, filter));
+    } else if (tab === 'view') {
+        const seq = ++searchSeq;
+        void call<View>({ type: 'view', request: { scope: viewScope, expanded: viewExpanded } }).then((v) => {
+            if (seq === searchSeq && tab === 'view') list.replaceChildren(renderView(v));
+        });
     } else if (tab === 'files') {
         list.replaceChildren(table<FileRow>(summary.files, ['path', 'language', 'symbols', 'imports', 'out', 'in'], (r) => [r.path, r.language, r.symbols, r.imports, r.out, r.in], filter, (r) => showFile(r.path)));
     } else if (tab === 'edges') {
@@ -176,6 +185,53 @@ function renderTree(rows: TreeRow[], filter: string): HTMLElement {
     return el('div', {}, el('p', { className: 'note', textContent: 'System › Package › Component › Module. Hover a role for its reason.' }), box);
 }
 
+/** A textual view debugger: exactly what a Map canvas receives for this scope and expansion. */
+function renderView(v: View): HTMLElement {
+    const go = (scope: string, expanded: string[] = []) => {
+        viewScope = scope;
+        viewExpanded = expanded;
+        renderList();
+    };
+    const nameOf = (key: string) => v.nodes.find((n) => n.key === key)?.name ?? key;
+    const crumbs = el('nav', { className: 'crumbs', ariaLabel: 'Breadcrumb' });
+    v.breadcrumb.forEach((b, i) => {
+        if (i) crumbs.append(' › ');
+        crumbs.append(i === v.breadcrumb.length - 1 ? el('strong', { textContent: b.name }) : el('a', { href: '#', textContent: b.name, onclick: (e: Event) => (e.preventDefault(), go(b.key)) }));
+    });
+    const nodeRows = v.nodes.map((n) => {
+        const actions = el('span', { className: 'actions' });
+        if (n.hasChildren) {
+            actions.append(el('button', { type: 'button', textContent: 'Drill', dataset: { action: 'drill', key: n.key }, onclick: () => go(n.key) }));
+            const open = viewExpanded.includes(n.key);
+            actions.append(el('button', { type: 'button', textContent: open ? 'Collapse' : 'Expand', dataset: { action: 'expand', key: n.key }, onclick: () => go(viewScope, open ? viewExpanded.filter((k) => k !== n.key) : [...viewExpanded, n.key]) }));
+        }
+        const depth = n.group ? v.nodes.filter((m) => m.expanded && (m.key === n.group)).length : 0;
+        const name = el('span', { textContent: `${n.expanded ? '▣ ' : ''}${n.name}` });
+        name.style.paddingLeft = `${depth * 16}px`;
+        return el('tr', { dataset: { key: n.key } },
+            el('td', {}, name), el('td', { textContent: n.kind }), el('td', { textContent: String(n.modules) }),
+            el('td', { textContent: n.role ?? '' }), el('td', { textContent: `${n.fanIn} / ${n.fanOut}` }), el('td', {}, actions));
+    });
+    const explain = async (source: string, target: string) => {
+        const x = await call<EdgeExplanation | undefined>({ type: 'explain', source, target });
+        if (!x) return;
+        $('detail').replaceChildren(
+            el('h2', { textContent: `${nameOf(source)} → ${nameOf(target)}`, title: `${source} → ${target}` }),
+            el('p', { className: 'note', textContent: `${x.total} module dependenc${x.total === 1 ? 'y' : 'ies'}${x.total > x.dependencies.length ? `, heaviest ${x.dependencies.length} shown` : ''}` }),
+            el('ul', {}, ...x.dependencies.map((d) => el('li', {}, `${d.from} → ${d.to} ×${d.weight}${d.implicit ? ' (same package)' : ''} `, el('code', { textContent: d.evidence.map((ev) => `${ev.source}${ev.line === undefined ? '' : `:${ev.line + 1}`}`).join(', ') })))),
+        );
+    };
+    const edgeTable = table(v.edges, ['from', 'to', 'weight', 'deps'], (e) => [nameOf(e.source), nameOf(e.target), e.weight, e.count], '', (e) => void explain(e.source, e.target));
+    const portTable = table(v.ports, ['node', 'direction', 'outside', 'weight'], (p) => [nameOf(p.node), p.direction === 'out' ? '→ out' : '← in', p.externalName, p.weight], '', (p) => void (p.direction === 'out' ? explain(p.node, p.external) : explain(p.external, p.node)));
+    return el('div', { className: 'view' },
+        crumbs,
+        el('p', { className: 'note', textContent: `${v.nodes.length} nodes · ${v.edges.length} edges · ${v.ports.length} port stubs · frontier ${v.frontierHash}${v.skipped.length ? ` · over budget, not expanded: ${v.skipped.join(', ')}` : ''}` }),
+        el('table', {}, el('thead', {}, el('tr', {}, ...['node', 'kind', 'files', 'role', 'in / out', ''].map((h) => el('th', { textContent: h })))), el('tbody', {}, ...nodeRows)),
+        el('h3', { textContent: 'Edges (click to explain)' }), edgeTable,
+        el('h3', { textContent: 'Port stubs (dependencies leaving this scope)' }), portTable,
+    );
+}
+
 async function showFile(path: string): Promise<void> {
     const d = await call<FileDetail | undefined>({ type: 'file', path });
     const pane = $('detail');
@@ -203,6 +259,8 @@ async function load(source: Source, label: string): Promise<void> {
         treeChildren = summary.tree.map(() => []);
         summary.tree.forEach((r, i) => r.parent >= 0 && treeChildren[r.parent].push(i));
         expanded = new Set([0, ...treeChildren[0] ?? []]);
+        viewScope = 'sys:root';
+        viewExpanded = [];
         $('detail').replaceChildren(el('p', { className: 'note', textContent: 'Pick a row to inspect a file.' }));
         renderList();
     } catch (err) {
