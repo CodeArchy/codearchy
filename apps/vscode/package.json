@@ -1,0 +1,212 @@
+{
+    "name": "codearchy",
+    "displayName": "CodeArchy",
+    "description": "Offline-first privacy system that visualizes codebase into explainable system architecture for education, onboarding, and safer software development/maintenance",
+    "version": "1.1.1",
+    "publisher": "iyinusa",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/CodeArchy/codearchy",
+        "directory": "apps/vscode"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Visualization",
+        "Other"
+    ],
+    "keywords": [
+        "architecture",
+        "visualization",
+        "education",
+        "AI",
+        "Chat"
+    ],
+    "icon": "media/icon.jpg",
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "codearchy.showArchitecture",
+                "title": "CodeArchy: Show Architecture",
+                "icon": "$(type-hierarchy)"
+            },
+            {
+                "command": "codearchy.analyzeWorkspace",
+                "title": "CodeArchy: Analyze Workspace"
+            },
+            {
+                "command": "codearchy.refreshView",
+                "title": "CodeArchy: Refresh Architecture",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "codearchy.exportSVG",
+                "title": "CodeArchy: Export as SVG"
+            },
+            {
+                "command": "codearchy.exportPNG",
+                "title": "CodeArchy: Export as PNG"
+            },
+            {
+                "command": "codearchy.openSidebar",
+                "title": "CodeArchy: Open Sidebar"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "codearch-explorer",
+                    "title": "CodeArchy",
+                    "icon": "media/icon.png"
+                }
+            ]
+        },
+        "views": {
+            "codearch-explorer": [
+                {
+                    "id": "codearchy.commandsView",
+                    "name": "CodeArchy",
+                    "icon": "media/icon.png"
+                },
+                {
+                    "id": "codearchy.modulesView",
+                    "name": "Modules",
+                    "icon": "media/icon.png"
+                }
+            ]
+        },
+        "menus": {
+            "editor/title": [
+                {
+                    "command": "codearchy.showArchitecture",
+                    "group": "navigation"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "CodeArchy",
+            "properties": {
+                "codearchy.includedLanguages": {
+                    "type": "array",
+                    "default": [
+                        "typescript",
+                        "javascript",
+                        "python",
+                        "java",
+                        "kotlin",
+                        "go",
+                        "rust",
+                        "csharp",
+                        "php"
+                    ],
+                    "description": "Languages to include in architecture analysis.",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "typescript",
+                            "javascript",
+                            "python",
+                            "java",
+                            "kotlin",
+                            "go",
+                            "rust",
+                            "csharp",
+                            "php"
+                        ]
+                    }
+                },
+                "codearchy.excludePatterns": {
+                    "type": "array",
+                    "default": [
+                        "**/node_modules/**",
+                        "**/dist/**",
+                        "**/out/**",
+                        "**/build/**",
+                        "**/.git/**",
+                        "**/vendor/**",
+                        "**/target/**",
+                        "**/__pycache__/**",
+                        "**/.venv/**",
+                        "**/venv/**",
+                        "**/.next/**",
+                        "**/coverage/**",
+                        "**/*.min.js"
+                    ],
+                    "description": "Glob patterns to exclude from analysis. Files ignored by .gitignore are always excluded in git repositories."
+                },
+                "codearchy.maxFileSize": {
+                    "type": "number",
+                    "default": 500000,
+                    "description": "Maximum file size in bytes to analyze."
+                },
+                "codearchy.maxFiles": {
+                    "type": "number",
+                    "default": 20000,
+                    "minimum": 0,
+                    "description": "Maximum number of source files to analyze (0 = no limit). CodeArchy warns when a workspace exceeds it."
+                },
+                "codearchy.aiModel": {
+                    "type": "string",
+                    "enum": [
+                        "gemma-e2b",
+                        "gemma-e4b",
+                        "none"
+                    ],
+                    "default": "none",
+                    "description": "Local AI model for architecture inference. 'none' uses heuristic grouping."
+                },
+                "codearchy.aiProcessing": {
+                    "type": "string",
+                    "enum": [
+                        "fast",
+                        "moderate",
+                        "indepth"
+                    ],
+                    "enumDescriptions": [
+                        "Smallest prompt, lowest token budget — fastest responses.",
+                        "Balanced prompt size and depth (default).",
+                        "Largest prompt, full reasoning with thinking tokens — slowest, deepest analysis."
+                    ],
+                    "default": "moderate",
+                    "description": "AI processing tier. Trades response speed for analytical depth."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "node scripts/prepublish.js",
+        "build:webview": "node webview-ui/esbuild.js",
+        "compile": "tsc -p ./",
+        "build": "npm run compile && npm run grammars",
+        "typecheck": "tsc --noEmit -p ./",
+        "watch": "tsc -watch -p ./",
+        "grammars": "node scripts/fetch-grammars.js",
+        "download-kokoro": "node scripts/download-kokoro.js",
+        "lint": "eslint src --ext ts",
+        "test": "npm run compile && npm run grammars && vscode-test",
+        "test:unit": "npm run compile && npm run grammars && mocha --ui tdd \"out/test/unit/**/*.test.js\"",
+        "test:webview": "node --test \"webview-ui/test/*.test.ts\"",
+        "bench": "node scripts/bench.js",
+        "package": "vsce package --no-dependencies"
+    },
+    "devDependencies": {
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^20.11.0",
+        "@types/vscode": "^1.85.0",
+        "@typescript-eslint/eslint-plugin": "^8.73.0",
+        "@typescript-eslint/parser": "^8.73.0",
+        "@vscode/test-cli": "^0.0.15",
+        "@vscode/test-electron": "^3.1.0",
+        "@vscode/vsce": "^4.1.1",
+        "eslint": "^8.56.0",
+        "mocha": "^12.0.3",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "web-tree-sitter": "^0.27.2"
+    }
+}

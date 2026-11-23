@@ -19,6 +19,8 @@ env:
   # onnxruntime-node (pulled in by @huggingface/transformers) tries to download
   # CUDA GPU binaries on Linux x64; CI has no GPU and the webview never uses them.
   ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+  # Corepack provides the pnpm version pinned in package.json#packageManager.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +34,9 @@ jobs:
   lint-typecheck:
     name: Lint & Typecheck
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/vscode
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -40,22 +45,21 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: Install extension dependencies
-        run: npm ci
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
 
       - name: Lint (ESLint)
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Typecheck extension
-        run: npx tsc --noEmit -p tsconfig.json
-
-      - name: Install webview dependencies
-        run: cd webview-ui && npm ci
+        run: pnpm run typecheck
 
       - name: Typecheck webview
-        run: cd webview-ui && npx tsc --noEmit -p tsconfig.json
+        run: pnpm --filter codearchy-webview-ui run typecheck
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 2. BUILD
@@ -66,6 +70,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     needs: lint-typecheck
+    defaults:
+      run:
+        working-directory: apps/vscode
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -74,35 +81,37 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: Install extension dependencies
-        run: npm ci
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
 
       - name: Build Webview UI
-        run: npm run build:webview
+        run: pnpm run build:webview
 
       - name: Compile extension host (TypeScript)
-        run: npm run compile
+        run: pnpm run compile
 
       - name: Fetch tree-sitter grammars
-        run: npm run grammars
+        run: pnpm run grammars
 
       # Parser/resolver golden tests: plain Node, no VS Code needed.
       - name: Unit tests
-        run: npx mocha --ui tdd "out/test/unit/**/*.test.js"
+        run: pnpm exec mocha --ui tdd "out/test/unit/**/*.test.js"
 
       # Webview pure modules (phrase chunker); Node 22.18+ strips TS types natively.
       - name: Webview unit tests
-        run: npm run test:webview
+        run: pnpm run test:webview
 
       - name: Upload compiled artefacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-output-${{ github.sha }}
           path: |
-            out/
-            webview-ui/dist/
+            apps/vscode/out/
+            apps/vscode/webview-ui/dist/
           retention-days: 3
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +123,9 @@ jobs:
     name: Package Extension
     runs-on: ubuntu-latest
     needs: build
+    defaults:
+      run:
+        working-directory: apps/vscode
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -122,27 +134,30 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: Install extension dependencies
-        run: npm ci
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
 
       - name: Restore compiled artefacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: build-output-${{ github.sha }}
+          path: apps/vscode
 
       - name: Package VSIX (skip prepublish — already built)
         env:
           CI: 'true'
-        run: npx @vscode/vsce package --no-dependencies --no-git-tag-version
+        run: pnpm exec vsce package --no-dependencies --no-git-tag-version
 
       - name: Verify package contents
         run: |
           VSIX=$(ls *.vsix | head -1)
           echo "::notice::Packaged VSIX: $VSIX ($(du -sh "$VSIX" | cut -f1))"
 
-          npx @vscode/vsce ls --no-dependencies | tee package-manifest.txt
+          pnpm exec vsce ls --no-dependencies | tee package-manifest.txt
 
           echo "--- Verifying required files are present ---"
           required_files=(
@@ -186,7 +201,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: codearchy-vsix-${{ github.sha }}
-          path: '*.vsix'
+          path: apps/vscode/*.vsix
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -212,15 +227,18 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: Install extension dependencies
-        run: npm ci
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
 
       - name: Restore compiled artefacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: build-output-${{ github.sha }}
+          path: apps/vscode
 
       # Linux requires a virtual framebuffer — VS Code's Electron renderer needs
       # a display server even in headless CI.
@@ -230,10 +248,10 @@ jobs:
 
       - name: Run sandbox tests — Linux (Xvfb)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npm test
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" pnpm run test
         env:
           DISPLAY: ':99.0'
 
       - name: Run sandbox tests — macOS / Windows
         if: runner.os != 'Linux'
-        run: npm test
+        run: pnpm run test
