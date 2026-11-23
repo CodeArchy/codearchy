@@ -5,7 +5,10 @@
  * cards), file access, the current index, and the providers they can offer.
  *
  * Defaults are private: the tier starts at "local only", so nothing leaves the
- * machine until the user chooses otherwise.
+ * machine until the user chooses otherwise. Providers aren't even checked until
+ * AI is used (settings or chat opened, a question asked, "Summarize with AI"):
+ * showing an auto-built card makes no network request, so a web page doesn't
+ * reach for localhost just because someone selected a node.
  */
 import type { HierarchyIndex } from '@codearchy/core';
 import type { AiAuditEntry, AiCard, AiHostEvent, AiProviderInfo, AiResolution, AiRole, AiSettings, AiState, ChatEvent as UiChatEvent, SendPreview } from '@codearchy/protocol';
@@ -79,6 +82,8 @@ export class AiHost {
     private previewSeq = 0;
     private current?: IndexState;
     private ready?: Promise<void>;
+    /** Providers are only checked once AI is used (never just to show an auto-built card). */
+    private checked?: Promise<void>;
 
     constructor(private readonly options: AiHostOptions) {
         this.cards = options.cards ?? new MemoryCardStore();
@@ -95,13 +100,14 @@ export class AiHost {
     }
 
     async state(): Promise<AiState> {
-        await this.init();
+        await this.used();
         return this.snapshot();
     }
 
     async refresh(): Promise<AiState> {
         await this.init();
-        await this.registry.refresh();
+        this.checked = this.registry.refresh().then(() => undefined);
+        await this.checked;
         return this.changed();
     }
 
@@ -131,6 +137,7 @@ export class AiHost {
         const node = s?.index.node(key);
         if (!s || !node || node.kind === 'symbol') return undefined;
         if (options.generate) {
+            await this.used();
             await s.summarizer.crawl([key], {
                 maxCalls: this.options.summarizeCallLimit ?? 40,
                 onCard: (c) => this.options.emit({ type: 'card', card: toAiCard(c) }),
@@ -146,7 +153,7 @@ export class AiHost {
     }
 
     async ask(conversation: string, question: string, options: { selection?: string }, onEvent: (event: UiChatEvent) => void): Promise<void> {
-        await this.init();
+        await this.used();
         const s = this.indexState();
         if (!s) return onEvent({ type: 'error', code: 'unavailable', message: 'The workspace is still being indexed' });
         const conv = this.conversations.get(conversation) ?? { history: [] };
@@ -234,6 +241,13 @@ export class AiHost {
 
     // ── internals ──────────────────────────────────────────────────────────
 
+    /** Settings and keys loaded, and providers checked (once). */
+    private async used(): Promise<void> {
+        await this.init();
+        this.checked ??= this.registry.refresh().then(() => undefined);
+        await this.checked;
+    }
+
     private async rebuild(): Promise<void> {
         const adapters: ProviderAdapter[] = [];
         for (const f of this.options.providers) {
@@ -247,7 +261,11 @@ export class AiHost {
             { usage: this.usage, inspect: (p, signal) => this.inspect(p, signal) },
         );
         this.current = undefined; // summarizer and chat hold the registry
-        await this.registry.refresh();
+        // Re-check only if providers were checked before (settings or keys changed while in use).
+        if (this.checked) {
+            this.checked = this.registry.refresh().then(() => undefined);
+            await this.checked;
+        }
     }
 
     private indexState(): IndexState | undefined {

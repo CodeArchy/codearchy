@@ -7,6 +7,7 @@ import { FILES, index, reader } from './fixture.js';
 /** A provider that answers card requests with a valid card and chat with a short cited answer. */
 function provider(id: string, opts: { local?: boolean; needsKey?: boolean; slow?: boolean } = {}) {
     const requests: ChatRequest[] = [];
+    const detects: number[] = [];
     const factory: ProviderFactory = {
         id,
         label: id.toUpperCase(),
@@ -18,7 +19,10 @@ function provider(id: string, opts: { local?: boolean; needsKey?: boolean; slow?
                 label: id.toUpperCase(),
                 kind: opts.local ? 'local' : 'api-key',
                 baseUrl: opts.local ? 'http://localhost:1' : `https://${id}.example.com`,
-                detect: async () => (opts.needsKey && !apiKey ? { state: 'needs-key' } : { state: 'ready' }),
+                detect: async () => {
+                    detects.push(Date.now());
+                    return opts.needsKey && !apiKey ? { state: 'needs-key' } : { state: 'ready' };
+                },
                 listModels: async () => [{ id: 'm', label: 'M', provider: id, supports: { tools: true, jsonSchema: true }, locality: opts.local ? 'on-device' : 'cloud' }],
                 async *chat(request, signal) {
                     requests.push(request);
@@ -45,7 +49,7 @@ function provider(id: string, opts: { local?: boolean; needsKey?: boolean; slow?
             };
         },
     };
-    return { factory, requests };
+    return { factory, requests, detects };
 }
 
 function host(factories: ProviderFactory[], saved?: Partial<AiSettings>) {
@@ -83,6 +87,19 @@ describe('AiHost', () => {
         ]);
         expect(state.providers[0]!.setup).toEqual({ title: 'Install it', steps: ['run it'] });
         expect(state.resolved.chat).toMatchObject({ ok: true, provider: 'ollama' });
+    });
+
+    it('checks no provider until AI is used: an auto-built card makes no network request', async () => {
+        const local = provider('ollama', { local: true });
+        const { h } = host([local.factory]);
+        expect(await h.card('mod:src/auth/session.ts')).toMatchObject({ source: 'deterministic' });
+        expect(local.detects).toHaveLength(0);
+        await h.state(); // the Ask panel or AI settings opened
+        expect(local.detects).toHaveLength(1);
+        await h.state();
+        expect(local.detects).toHaveLength(1); // checked once
+        await h.updateSettings({ askBeforeSend: true });
+        expect(local.detects).toHaveLength(2); // re-checked after a change, once in use
     });
 
     it('stores keys only in the secret store and never returns them', async () => {
