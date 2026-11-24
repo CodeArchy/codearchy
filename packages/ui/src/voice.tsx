@@ -6,6 +6,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { VoiceClient, VoiceEngineId, VoiceState } from '@codearchy/protocol';
 import { Icon, type IconName } from './icons.js';
+import type { Narrator } from './narration.js';
 
 /** Plain text for speech: links keep their label, code and markup marks go. */
 export function speechText(markdown: string): string {
@@ -78,10 +79,15 @@ export function kokoroLabel(s: VoiceState['kokoro']): string {
     }
 }
 
-export function VoiceSettingsPanel({ voice, onClose }: { voice: VoiceClient; onClose(): void }) {
+export function VoiceSettingsPanel({ voice, narrator, onClose }: { voice: VoiceClient; narrator?: Narrator; onClose(): void }) {
     const state = useVoiceState(voice);
     const [previewing, setPreviewing] = useState(false);
     useEffect(() => () => voice.stop(), [voice]);
+    // The sample is made (and kept) as soon as this voice can be kept, so Preview plays at once.
+    const cacheKey = voice.cacheKey?.() ?? '';
+    useEffect(() => {
+        if (cacheKey) narrator?.prefetch([SAMPLE], { first: 1, priority: 'now' });
+    }, [narrator, cacheKey]);
     const k = state.kokoro;
     const busy = k.status === 'downloading' || k.status === 'loading';
     const preview = () => {
@@ -90,7 +96,7 @@ export function VoiceSettingsPanel({ voice, onClose }: { voice: VoiceClient; onC
             return setPreviewing(false);
         }
         setPreviewing(true);
-        voice.speak(SAMPLE, { onEnd: () => setPreviewing(false), onError: () => setPreviewing(false) });
+        (narrator ?? voice).speak(SAMPLE, { onEnd: () => setPreviewing(false), onError: () => setPreviewing(false) });
     };
 
     return (

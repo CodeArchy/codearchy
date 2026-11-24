@@ -7,6 +7,8 @@
  * API keys only ever travel UI → host (setKey); no method returns one.
  */
 
+import type { Architecture } from './architecture.js';
+
 export type PrivacyTier = 'local-only' | 'structure' | 'excerpts';
 export type AiRole = 'summarizer' | 'architect' | 'chat' | 'embedder';
 export type AiModelRef = { provider: string; model: string };
@@ -47,6 +49,30 @@ export interface AiProviderInfo {
     models: AiModelInfo[];
     /** A one-time setup step the host can explain (e.g. allowing this page's origin in Ollama). */
     setup?: { title: string; steps: string[] };
+    /** Models can be downloaded and removed here (Ollama). */
+    managesModels?: boolean;
+}
+
+/** A model on this machine, for the model manager. */
+export interface AiLocalModel {
+    id: string;
+    /** Bytes on disk. */
+    size: number;
+    family?: string;
+    parameterSize?: string;
+    quantization?: string;
+    modifiedAt?: string;
+}
+
+/** A model download's progress (one event per update, then one with `state` done / error / cancelled). */
+export interface AiPullProgress {
+    provider: string;
+    model: string;
+    state: 'running' | 'done' | 'error' | 'cancelled';
+    status: string;
+    completed?: number;
+    total?: number;
+    error?: string;
 }
 
 export type AiResolution = { ok: true; provider: string; model: string; why: string } | { ok: false; reason: string };
@@ -130,7 +156,8 @@ export interface AiAuditEntry {
 export type AiHostEvent =
     | { type: 'state'; state: AiState }
     | { type: 'card'; card: AiCard }
-    | { type: 'preview'; preview: SendPreview };
+    | { type: 'preview'; preview: SendPreview }
+    | { type: 'pull'; progress: AiPullProgress };
 
 export interface AiClient {
     state(): Promise<AiState>;
@@ -150,4 +177,16 @@ export interface AiClient {
     answerPreview(id: string, send: boolean): void;
     subscribe(listener: (event: AiHostEvent) => void): () => void;
     audit?(): Promise<AiAuditEntry[]>;
+    /** Models on this machine, for providers that manage them (`managesModels`). */
+    localModels?(provider: string): Promise<AiLocalModel[]>;
+    /** Downloads a model; progress arrives as `pull` events. Resolves with the new state once it's ready. */
+    pullModel?(provider: string, model: string): Promise<AiState>;
+    cancelPull?(provider: string, model: string): void;
+    deleteModel?(provider: string, model: string): Promise<AiState>;
+    /**
+     * The architecture diagram described by the architect model: pattern,
+     * summary, and what each part and relationship is for. `generate` asks the
+     * model now; otherwise the last description (if any) is returned.
+     */
+    describeArchitecture?(options?: { generate?: boolean }): Promise<Architecture | undefined>;
 }

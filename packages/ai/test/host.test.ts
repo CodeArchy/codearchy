@@ -190,3 +190,59 @@ describe('AiHost', () => {
         await expect(h.handle('frobnicate', {})).rejects.toThrow(/Unknown AI method/);
     });
 });
+
+describe('local models', () => {
+    function managed() {
+        const installed = new Map([['gemma3:4b', 3_300_000_000]]);
+        const p = provider('ollama', { local: true });
+        const create = p.factory.create;
+        p.factory.create = (key) => ({
+            ...create(key),
+            listModels: async () => [...installed.keys()].map((id) => ({ id, label: id, provider: 'ollama', supports: { tools: true }, locality: 'on-device' as const })),
+            manage: {
+                installed: async () => [...installed].map(([id, size]) => ({ id, size })),
+                async pull(model, onProgress, signal) {
+                    for (let i = 1; i <= 3; i++) {
+                        if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+                        onProgress({ status: 'downloading', completed: i * 100, total: 300 });
+                        await new Promise((r) => setTimeout(r, model === 'slow:1b' ? 300 : 210));
+                    }
+                    installed.set(model, 300);
+                },
+                remove: async (model) => void installed.delete(model),
+            },
+        });
+        return p;
+    }
+
+    it('lists, downloads (with progress events) and removes models; the new model is offered at once', async () => {
+        const { h, events } = host([managed().factory], { tier: 'local-only' });
+        const before = await h.state();
+        expect(before.providers[0]).toMatchObject({ id: 'ollama', managesModels: true });
+        expect(await h.localModels('ollama')).toEqual([{ id: 'gemma3:4b', size: 3_300_000_000 }]);
+        const after = await h.pullModel('ollama', ' qwen3:8b ');
+        expect(after.providers[0]!.models.map((m) => m.id)).toEqual(['gemma3:4b', 'qwen3:8b']);
+        const pulls = events.flatMap((e) => (e.type === 'pull' ? [e.progress] : []));
+        expect(pulls[0]).toMatchObject({ provider: 'ollama', model: 'qwen3:8b', state: 'running' });
+        expect(pulls.some((p) => p.total === 300 && (p.completed ?? 0) > 0)).toBe(true);
+        expect(pulls.at(-1)).toMatchObject({ state: 'done' });
+        await h.updateSettings({ defaults: { ollama: 'qwen3:8b' } });
+        const removed = await h.deleteModel('ollama', 'qwen3:8b');
+        expect(removed.providers[0]!.models.map((m) => m.id)).toEqual(['gemma3:4b']);
+        expect(removed.settings.defaults.ollama).toBeUndefined(); // the default that pointed at it is gone
+    });
+
+    it('a download can be cancelled; odd names and unmanaged providers are refused', async () => {
+        const { h, events } = host([managed().factory, provider('anthropic', { needsKey: true }).factory], { tier: 'local-only' });
+        await h.state();
+        const pending = h.pullModel('ollama', 'slow:1b');
+        await new Promise((r) => setTimeout(r, 50));
+        h.cancelPull('ollama', 'slow:1b');
+        await pending;
+        expect(events.flatMap((e) => (e.type === 'pull' ? [e.progress.state] : [])).at(-1)).toBe('cancelled');
+        expect(await h.localModels('ollama')).toEqual([{ id: 'gemma3:4b', size: 3_300_000_000 }]);
+        await expect(h.pullModel('ollama', 'rm -rf /')).rejects.toThrow(/isn't a model name/);
+        await expect(h.localModels('anthropic')).rejects.toThrow(/doesn't manage/);
+    });
+});
+

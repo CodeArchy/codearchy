@@ -4,9 +4,10 @@
  * same components run in VS Code and the web app.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AiCard, AiClient, AiProviderInfo, AiRole, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, PrivacyTier, SendPreview } from '@codearchy/protocol';
+import type { AiCard, AiClient, AiLocalModel, AiProviderInfo, AiPullProgress, AiRole, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, PrivacyTier, SendPreview } from '@codearchy/protocol';
 import { parseAnswer, type Block, type Inline } from './answer.js';
 import { Icon, type IconName } from './icons.js';
+import { formatBytes } from './voice.js';
 
 // ── Answers ─────────────────────────────────────────────────────────────────
 
@@ -719,6 +720,7 @@ function ProviderGroup(props: {
                 {props.providers.map((p) => (
                     <ProviderRow
                         key={p.id}
+                        ai={props.ai}
                         provider={p}
                         defaultModel={props.settings.defaults[p.id]}
                         onKey={(k) => props.run(() => props.ai.setKey(p.id, k))}
@@ -730,7 +732,7 @@ function ProviderGroup(props: {
     );
 }
 
-function ProviderRow({ provider: p, defaultModel, onKey, onModel }: { provider: AiProviderInfo; defaultModel?: string; onKey(key: string | null): Promise<void>; onModel(model: string): void }) {
+function ProviderRow({ ai, provider: p, defaultModel, onKey, onModel }: { ai: AiClient; provider: AiProviderInfo; defaultModel?: string; onKey(key: string | null): Promise<void>; onModel(model: string): void }) {
     const [key, setKey] = useState('');
     const status = !p.allowed ? p.blockedReason ?? 'Not allowed by the privacy level' : stateLabel(p);
     const tone: Tone = !p.allowed ? 'off' : p.state === 'ready' ? 'ok' : p.state === 'unauthorized' || p.state === 'error' ? 'bad' : 'warn';
@@ -799,7 +801,179 @@ function ProviderRow({ provider: p, defaultModel, onKey, onModel }: { provider: 
                     </select>
                 </label>
             ) : null}
+            {p.managesModels && p.allowed && p.state === 'ready' && ai.localModels ? <ModelManager ai={ai} provider={p.id} inUse={defaultModel} onUse={onModel} /> : null}
         </li>
+    );
+}
+
+/** Popular models worth suggesting (any Ollama tag can be typed). Sizes are the download. */
+const SUGGESTED_MODELS: Array<{ id: string; note: string }> = [
+    { id: 'qwen3:8b', note: '5.2 GB · tools · a strong all-rounder' },
+    { id: 'gemma3:4b', note: '3.3 GB · fast on a laptop' },
+    { id: 'llama3.1:8b', note: '4.9 GB · tools' },
+    { id: 'qwen3:4b', note: '2.5 GB · tools · small' },
+    { id: 'gemma3:12b', note: '8.1 GB · better answers, needs 16 GB RAM' },
+    { id: 'qwen2.5-coder:7b', note: '4.7 GB · code' },
+    { id: 'gpt-oss:20b', note: '14 GB · tools · needs a big machine' },
+    { id: 'llama3.2:3b', note: '2.0 GB · tiny' },
+    { id: 'mistral:7b', note: '4.1 GB' },
+    { id: 'phi4-mini', note: '2.5 GB · tools · tiny' },
+];
+
+/** Ollama's models on this machine: use one, remove one, or download another (any tag). */
+function ModelManager({ ai, provider, inUse, onUse }: { ai: AiClient; provider: string; inUse?: string; onUse(model: string): void }) {
+    const [models, setModels] = useState<AiLocalModel[]>();
+    const [pulls, setPulls] = useState<Map<string, AiPullProgress>>(new Map());
+    const [name, setName] = useState('');
+    const [error, setError] = useState('');
+    const [confirm, setConfirm] = useState<string>();
+    const [reload, setReload] = useState(0);
+    useEffect(() => {
+        let live = true;
+        ai.localModels!(provider).then(
+            (m) => live && setModels(m),
+            (e: unknown) => live && setError(e instanceof Error ? e.message : String(e))
+        );
+        return () => {
+            live = false;
+        };
+    }, [ai, provider, reload]);
+    useEffect(
+        () =>
+            ai.subscribe((e) => {
+                if (e.type !== 'pull' || e.progress.provider !== provider) return;
+                const p = e.progress;
+                setPulls((m) => {
+                    const next = new Map(m);
+                    if (p.state === 'running') next.set(p.model, p);
+                    else next.delete(p.model);
+                    return next;
+                });
+                if (p.state === 'done') setReload((n) => n + 1);
+                if (p.state === 'error') setError(`${p.model}: ${p.error ?? 'the download failed'}`);
+            }),
+        [ai, provider]
+    );
+    const pull = (model: string) => {
+        const m = model.trim();
+        if (!m) return;
+        setError('');
+        setName('');
+        setPulls((x) => new Map(x).set(m, { provider, model: m, state: 'running', status: 'starting' }));
+        void ai.pullModel!(provider, m).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    };
+    const remove = async (model: string) => {
+        setConfirm(undefined);
+        try {
+            await ai.deleteModel!(provider, model);
+            setReload((n) => n + 1);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        }
+    };
+    const installed = new Set(models?.map((m) => m.id));
+    const ideas = SUGGESTED_MODELS.filter((s) => !installed.has(s.id) && !pulls.has(s.id));
+    return (
+        <div className="ca-models">
+            <div className="ca-models-head">
+                <strong>Models on this machine</strong>
+                <span className="ca-muted">{models ? `${models.length} · ${formatBytes(models.reduce((n, m) => n + m.size, 0))}` : 'Loading…'}</span>
+            </div>
+            {models?.length === 0 ? <p className="ca-muted ca-models-empty">None yet: download one below.</p> : null}
+            <ul className="ca-model-list">
+                {models?.map((m) => (
+                    <li key={m.id} className={`ca-model${inUse === m.id ? ' ca-on' : ''}`}>
+                        <span className="ca-model-name">{m.id}</span>
+                        <span className="ca-muted ca-model-meta">
+                            {[m.parameterSize, m.quantization, formatBytes(m.size)].filter(Boolean).join(' · ')}
+                        </span>
+                        <span className="ca-toolbar-gap" />
+                        {confirm === m.id ? (
+                            <>
+                                <span className="ca-muted">Remove it from this machine?</span>
+                                <button type="button" className="ca-button ca-button-danger" onClick={() => void remove(m.id)}>
+                                    Remove
+                                </button>
+                                <button type="button" className="ca-button" onClick={() => setConfirm(undefined)}>
+                                    Keep
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                {inUse === m.id ? (
+                                    <span className="ca-chip ca-chip-ok">
+                                        <Icon name="check" size={11} /> in use
+                                    </span>
+                                ) : (
+                                    <button type="button" className="ca-button ca-button-soft" onClick={() => onUse(m.id)}>
+                                        Use
+                                    </button>
+                                )}
+                                <button type="button" className="ca-icon-button" title={`Remove ${m.id}`} aria-label={`Remove ${m.id}`} onClick={() => setConfirm(m.id)}>
+                                    <Icon name="trash" size={14} />
+                                </button>
+                            </>
+                        )}
+                    </li>
+                ))}
+                {[...pulls.values()].map((p) => {
+                    const pct = p.total ? Math.round(((p.completed ?? 0) / p.total) * 100) : undefined;
+                    return (
+                        <li key={`pull:${p.model}`} className="ca-model ca-model-pulling" role="status">
+                            <span className="ca-model-name">{p.model}</span>
+                            <span className="ca-muted ca-model-meta">
+                                {p.status}
+                                {p.total ? ` · ${formatBytes(p.completed ?? 0)} of ${formatBytes(p.total)}` : ''}
+                            </span>
+                            <span className="ca-toolbar-gap" />
+                            <button type="button" className="ca-button" onClick={() => ai.cancelPull?.(provider, p.model)}>
+                                Cancel
+                            </button>
+                            <span className="ca-meter ca-model-meter" aria-label={pct === undefined ? 'Starting' : `${pct}%`}>
+                                <span style={{ width: `${pct ?? 2}%` }} />
+                            </span>
+                        </li>
+                    );
+                })}
+            </ul>
+            <form
+                className="ca-model-pull"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    pull(name);
+                }}
+            >
+                <input list={`ca-model-ideas-${provider}`} value={name} placeholder="Download a model, e.g. qwen3:8b" aria-label="Model to download" onChange={(e) => setName(e.target.value)} />
+                <datalist id={`ca-model-ideas-${provider}`}>
+                    {SUGGESTED_MODELS.map((s) => (
+                        <option key={s.id} value={s.id}>
+                            {s.note}
+                        </option>
+                    ))}
+                </datalist>
+                <button type="submit" className="ca-button ca-button-primary" disabled={!name.trim()}>
+                    <Icon name="download" size={13} /> Download
+                </button>
+            </form>
+            {ideas.length ? (
+                <div className="ca-model-ideas">
+                    <span className="ca-muted">Popular:</span>
+                    {ideas.slice(0, 5).map((s) => (
+                        <button key={s.id} type="button" className="ca-pill" title={s.note} onClick={() => pull(s.id)}>
+                            {s.id}
+                        </button>
+                    ))}
+                    <a className="ca-muted" href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">
+                        Browse all
+                    </a>
+                </div>
+            ) : null}
+            {error ? (
+                <p className="ca-card-note ca-model-error" role="alert">
+                    <Icon name="alert" size={13} /> <span>{error}</span>
+                </p>
+            ) : null}
+        </div>
     );
 }
 

@@ -40,6 +40,14 @@ interface OllamaShow {
     model_info?: Record<string, unknown>;
 }
 
+interface OllamaTag {
+    name: string;
+    model?: string;
+    size?: number;
+    modified_at?: string;
+    details?: { family?: string; parameter_size?: string; quantization_level?: string };
+}
+
 interface OllamaChunk {
     message?: { content?: string; thinking?: string; tool_calls?: Array<{ function?: { name?: string; arguments?: unknown } }> };
     done?: boolean;
@@ -130,6 +138,40 @@ export function ollama(options: OllamaOptions = {}): ProviderAdapter {
 
         chat(request, signal) {
             return guarded(ID, signal, () => run(request, signal));
+        },
+
+        manage: {
+            async installed(signal) {
+                const tags = await sendJson<{ models?: OllamaTag[] }>(endpoint, url('/api/tags'), { signal });
+                return (tags.models ?? []).map((m) => ({
+                    id: m.model ?? m.name,
+                    size: m.size ?? 0,
+                    ...(m.details?.family ? { family: m.details.family } : {}),
+                    ...(m.details?.parameter_size ? { parameterSize: m.details.parameter_size } : {}),
+                    ...(m.details?.quantization_level ? { quantization: m.details.quantization_level } : {}),
+                    ...(m.modified_at ? { modifiedAt: m.modified_at } : {}),
+                }));
+            },
+            async pull(model, onProgress, signal) {
+                const res = await send(endpoint, url('/api/pull'), post({ model, stream: true }, signal));
+                if (!res.body) throw new ProviderError('invalid_response', ID, 'Ollama sent no progress');
+                // One line per update; a model is several layers, each with its own byte counts.
+                const layers = new Map<string, { completed: number; total: number }>();
+                for await (const raw of ndjson(ID, res.body, signal)) {
+                    const line = raw as { status?: string; digest?: string; total?: number; completed?: number; error?: string };
+                    if (line.error) throw new ProviderError('bad_request', ID, line.error);
+                    if (line.digest && line.total) layers.set(line.digest, { completed: line.completed ?? 0, total: line.total });
+                    let completed = 0;
+                    let total = 0;
+                    for (const l of layers.values()) (completed += l.completed), (total += l.total);
+                    onProgress({ status: line.status ?? '', ...(total ? { completed, total } : {}) });
+                }
+                known.delete(model);
+            },
+            async remove(model, signal) {
+                await send(endpoint, url('/api/delete'), { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }), signal });
+                known.delete(model);
+            },
         },
 
         async embed(request: EmbedRequest, signal?: SignalLike) {

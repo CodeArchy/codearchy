@@ -25,6 +25,7 @@ import {
     anchorTour,
     serializeTour,
     tourSlug,
+    buildArchitecture,
     TOURS_DIR,
     IndexStore,
     Indexer,
@@ -61,7 +62,7 @@ import type { AuthorshipOrigin, AuthorshipRange, AuthorshipStatus, NodeDetails, 
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'deleteTour' | 'authorshipStatus' | 'authorship' | 'authorshipMark';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'architecture' | 'anchorTour' | 'saveTour' | 'deleteTour' | 'authorshipStatus' | 'authorship' | 'authorshipMark';
 
 export interface EngineSearchResult {
     key: string;
@@ -434,6 +435,8 @@ export class AnalysisPipeline {
                 return this.flows(h).trace(str('id'));
             case 'tours':
                 return this.tours(h).list();
+            case 'architecture':
+                return buildArchitecture(h, this.flows(h));
             case 'tour':
                 return this.tours(h).get(str('id'));
             case 'anchorTour':

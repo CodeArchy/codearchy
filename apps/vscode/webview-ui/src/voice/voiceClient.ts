@@ -3,6 +3,10 @@
  * model the extension host downloads once and serves locally) and the system
  * voice. Tours narrate through it; the Voice dialog (VoiceSelector) stays the
  * place to activate Kokoro and pick voices.
+ *
+ * Narration is made ahead and kept (the shared Narrator) through v1's Kokoro
+ * job queue: the step on screen and the next one go first ('narrator'), the
+ * rest of the tour behind them ('message').
  */
 import type { VoiceClient, VoiceState } from '@codearchy/protocol';
 import { KOKORO_VOICES } from './kokoroVoices';
@@ -10,8 +14,12 @@ import { getVoiceConfig, setVoiceConfig, subscribeVoiceConfig } from './voiceCon
 import {
     getKokoroStatus,
     getWebSpeechVoices,
+    getActiveKokoroVoiceId,
+    isKokoroActive,
     isKokoroEverActivated,
     isSpeaking,
+    playCachedAudio,
+    synthesizeKokoroAudio,
     isSynthesizing,
     speak,
     startKokoroEngine,
@@ -93,5 +101,13 @@ export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
         },
         stop: () => stopSpeaking(),
         openSettings,
+        cacheKey: () => (isKokoroActive() ? `kokoro-vscode:${getActiveKokoroVoiceId()}` : undefined),
+        synthesize: async (text, priority) => {
+            const audio = await synthesizeKokoroAudio(text, getActiveKokoroVoiceId(), undefined, priority === 'later' ? 'message' : 'narrator');
+            return audio ? { pcm: audio.pcm, sampleRate: audio.sampleRate } : undefined;
+        },
+        play: (audio, options) => {
+            void playCachedAudio(audio.pcm, audio.sampleRate, { onEnd: options?.onEnd, onError: (e) => options?.onError?.(e instanceof Error ? e : new Error(String(e))) });
+        },
     };
 }

@@ -11,7 +11,7 @@
  * reach for localhost just because someone selected a node.
  */
 import type { HierarchyIndex } from '@codearchy/core';
-import type { AiAuditEntry, AiCard, AiHostEvent, AiProviderInfo, AiResolution, AiRole, AiSettings, AiState, ChatEvent as UiChatEvent, SendPreview } from '@codearchy/protocol';
+import type { AiAuditEntry, AiCard, AiHostEvent, AiLocalModel, AiPullProgress, Architecture, AiProviderInfo, AiResolution, AiRole, AiSettings, AiState, ChatEvent as UiChatEvent, SendPreview } from '@codearchy/protocol';
 import {
     apiKeyName,
     MemoryUsageStore,
@@ -24,6 +24,7 @@ import {
 } from '@codearchy/providers';
 import type { Card } from './card.js';
 import { GroundedChat } from './chat.js';
+import { applyDesign, designArchitecture, designFacts, type StoredDesign } from './architecture.js';
 import type { FlowSource } from './tools.js';
 import { NodeSearch } from './search.js';
 import { MemoryCardStore, Summarizer, type CardStore } from './summarizer.js';
@@ -61,11 +62,15 @@ export interface AiHostOptions {
     cardSearchLimit?: number;
     /** Entrypoints and flows for the current index (enables chat's find_flows). */
     flows?(): FlowSource | undefined;
+    /** Where the architect model's system design is kept (per workspace), so it survives a reload. */
+    designs?: { load(key: string): Promise<StoredDesign | undefined>; save(key: string, design: StoredDesign): Promise<void> };
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = { tier: 'local-only', askBeforeSend: false, roles: {}, defaults: {}, budgets: {} };
 
 const ROLES: AiRole[] = ['chat', 'summarizer', 'architect', 'embedder'];
+/** Ollama-style names: `qwen3:8b`, `hf.co/org/model:Q4_K_M`, `library/llama3.2`. */
+const MODEL_NAME = /^[A-Za-z0-9][\w.\-/:]{0,159}$/;
 
 interface IndexState {
     index: HierarchyIndex;
@@ -78,6 +83,12 @@ export class AiHost {
     private settings: AiSettings = structuredClone(DEFAULT_AI_SETTINGS);
     private registry!: ProviderRegistry;
     private readonly keys = new Map<string, boolean>();
+    /** Adapters as built (before the registry wraps them), for model management. */
+    private readonly raw = new Map<string, ProviderAdapter>();
+    /** The architect model's last design, by workspace. */
+    private readonly designed = new Map<string, StoredDesign>();
+    /** Downloads in progress, by `provider model`. */
+    private readonly pulls = new Map<string, AbortController>();
     private readonly cards: CardStore;
     private readonly usage: UsageStore;
     private readonly conversations = new Map<string, { history: ChatMessage[]; controller?: AbortController }>();
@@ -216,6 +227,98 @@ export class AiHost {
         }));
     }
 
+    /**
+     * The system architecture designed by the architect model (subsystems,
+     * services, layers, the systems around it). Without `generate`, the last
+     * design for this workspace (kept across reloads), re-checked against
+     * today's code; with it, a new design.
+     */
+    async describeArchitecture(options: { generate?: boolean } = {}): Promise<Architecture | undefined> {
+        const index = this.options.index();
+        if (!index) return undefined;
+        const key = index.hierarchy.nodes[0]?.name ?? 'workspace';
+        const facts = designFacts(index, this.options.flows?.());
+        if (!options.generate) {
+            if (!this.designed.has(key)) {
+                const stored = await this.options.designs?.load(key).catch(() => undefined);
+                if (stored) this.designed.set(key, stored);
+            }
+            const kept = this.designed.get(key);
+            if (!kept) return undefined;
+            try {
+                return applyDesign(facts, kept);
+            } catch {
+                return undefined;
+            }
+        }
+        await this.used();
+        const design = await designArchitecture(this.registry, facts);
+        this.designed.set(key, design);
+        await this.options.designs?.save(key, design).catch(() => undefined);
+        return applyDesign(facts, design);
+    }
+
+    // ── local models (download, remove) ──────────────────────────────────────
+
+    async localModels(provider: string): Promise<AiLocalModel[]> {
+        return (await this.manager(provider).installed()).sort((a, b) => a.id.localeCompare(b.id));
+    }
+
+    /** Downloads a model, reporting progress as `pull` events; the provider is re-checked when it's done. */
+    async pullModel(provider: string, model: string): Promise<AiState> {
+        const name = model.trim();
+        if (!MODEL_NAME.test(name)) throw new Error(`"${model}" isn't a model name (like qwen3:8b or gemma3:4b)`);
+        const manager = this.manager(provider);
+        const id = `${provider} ${name}`;
+        if (this.pulls.has(id)) throw new Error(`${name} is already downloading`);
+        const abort = new AbortController();
+        this.pulls.set(id, abort);
+        const emit = (p: Omit<AiPullProgress, 'provider' | 'model'>) => this.options.emit({ type: 'pull', progress: { provider, model: name, ...p } });
+        let last = 0;
+        emit({ state: 'running', status: 'starting' });
+        try {
+            await manager.pull(
+                name,
+                (p) => {
+                    // A few updates a second is plenty for a progress bar.
+                    const now = Date.now();
+                    if (now - last < 200) return;
+                    last = now;
+                    emit({ state: 'running', status: p.status, ...(p.total ? { completed: p.completed ?? 0, total: p.total } : {}) });
+                },
+                abort.signal,
+            );
+            emit({ state: 'done', status: 'ready' });
+        } catch (err) {
+            const cancelled = abort.signal.aborted;
+            emit({ state: cancelled ? 'cancelled' : 'error', status: cancelled ? 'cancelled' : 'failed', ...(cancelled ? {} : { error: err instanceof Error ? err.message : String(err) }) });
+            if (!cancelled) throw err;
+        } finally {
+            this.pulls.delete(id);
+        }
+        return this.refresh();
+    }
+
+    cancelPull(provider: string, model: string): void {
+        this.pulls.get(`${provider} ${model.trim()}`)?.abort();
+    }
+
+    async deleteModel(provider: string, model: string): Promise<AiState> {
+        await this.manager(provider).remove(model);
+        // A default that pointed at it goes back to automatic.
+        if (this.settings.defaults[provider] === model) {
+            const { [provider]: _gone, ...defaults } = this.settings.defaults;
+            await this.updateSettings({ defaults });
+        }
+        return this.refresh();
+    }
+
+    private manager(provider: string) {
+        const m = this.raw.get(provider)?.manage;
+        if (!m) throw new Error(`"${provider}" doesn't manage its models here`);
+        return m;
+    }
+
     /** One entry point for RPC transports: `method` names an AiClient method. */
     async handle(method: string, params: Record<string, unknown>): Promise<unknown> {
         switch (method) {
@@ -237,6 +340,16 @@ export class AiHost {
                 return this.answerPreview(String(params.id), params.send === true);
             case 'audit':
                 return this.audit();
+            case 'describeArchitecture':
+                return this.describeArchitecture({ generate: params.generate === true });
+            case 'localModels':
+                return this.localModels(String(params.provider));
+            case 'pullModel':
+                return this.pullModel(String(params.provider), String(params.model));
+            case 'cancelPull':
+                return this.cancelPull(String(params.provider), String(params.model));
+            case 'deleteModel':
+                return this.deleteModel(String(params.provider), String(params.model));
             default:
                 throw new Error(`Unknown AI method "${method}"`);
         }
@@ -256,7 +369,9 @@ export class AiHost {
         for (const f of this.options.providers) {
             const key = f.acceptsKey ? await this.options.secrets.get(apiKeyName(f.id)) : undefined;
             this.keys.set(f.id, !!key);
-            adapters.push(f.create(key));
+            const adapter = f.create(key);
+            this.raw.set(f.id, adapter);
+            adapters.push(adapter);
         }
         this.registry = new ProviderRegistry(
             adapters,
@@ -338,6 +453,7 @@ export class AiHost {
                     .filter((m) => m.supports.embeddings !== true || m.supports.tools === true)
                     .map((m) => ({ id: m.id, label: m.label, ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}), ...(m.supports.tools !== undefined ? { tools: m.supports.tools } : {}) })),
                 ...(f.setup ? { setup: f.setup } : {}),
+                ...(this.raw.get(p.id)?.manage ? { managesModels: true } : {}),
             };
         });
         const resolved = Object.fromEntries(

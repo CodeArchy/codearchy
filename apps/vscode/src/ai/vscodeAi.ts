@@ -14,7 +14,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AiHost, type Card, type CardStore, type FlowSource, type ProviderFactory } from '@codearchy/ai';
+import { AiHost, type Card, type CardStore, type FlowSource, type ProviderFactory, type StoredDesign } from '@codearchy/ai';
 import type { AiHostEvent, AiSettings } from '@codearchy/protocol';
 import { anthropic, gemini, groq, lmStudio, mistral, ollama, openai, openrouter, vscodeLm, type SecretStore, type UsageStore, type VscodeLmApi } from '@codearchy/providers';
 import type { HierarchyIndex } from '@codearchy/core';
@@ -84,6 +84,11 @@ export function createVscodeAiHost(context: vscode.ExtensionContext, sources: Ai
         },
         usage,
         cards: context.storageUri ? new FileCardStore(path.join(context.storageUri.fsPath, 'ai-cards.json')) : undefined,
+        // The architect model's system design, per workspace.
+        designs: {
+            load: async (key) => context.workspaceState.get<StoredDesign>(`codearchy.architecture:${key}`),
+            save: async (key, design) => context.workspaceState.update(`codearchy.architecture:${key}`, design),
+        },
         emit,
     });
 }

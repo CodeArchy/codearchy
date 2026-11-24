@@ -3,7 +3,7 @@
  * It answers from the real engine (search and describe), so the chat, card,
  * settings and preview UI can be seen and smoke-tested in every browser.
  */
-import type { AiCard, AiClient, AiHostEvent, AiProviderInfo, AiSettings, AiState, ChatEvent, EngineClient } from '@codearchy/protocol';
+import type { AiCard, AiClient, AiHostEvent, AiLocalModel, AiProviderInfo, AiSettings, AiState, Architecture, ChatEvent, EngineClient } from '@codearchy/protocol';
 
 export function demoAi(engine: EngineClient): AiClient {
     const listeners = new Set<(e: AiHostEvent) => void>();
@@ -14,6 +14,9 @@ export function demoAi(engine: EngineClient): AiClient {
     const pending = new Map<string, (send: boolean) => void>();
     const cancelled = new Set<string>();
     let previews = 0;
+    /** The demo provider's "installed" models (downloads are simulated). */
+    const installed: AiLocalModel[] = [{ id: 'scripted', size: 2_100_000_000, parameterSize: '3B', quantization: 'Q4_K_M' }];
+    let described: Architecture | undefined;
 
     const providers = (): AiProviderInfo[] => [
         {
@@ -25,7 +28,8 @@ export function demoAi(engine: EngineClient): AiClient {
             state: 'ready',
             acceptsKey: false,
             hasKey: false,
-            models: [{ id: 'scripted', label: 'scripted', tools: true }],
+            models: installed.map((m) => ({ id: m.id, label: m.id, tools: true })),
+            managesModels: true,
         },
         {
             id: 'cloud',
@@ -150,6 +154,52 @@ export function demoAi(engine: EngineClient): AiClient {
         subscribe(listener) {
             listeners.add(listener);
             return () => listeners.delete(listener);
+        },
+        localModels: async () => installed.map((m) => ({ ...m })),
+        async pullModel(provider, model) {
+            for (const completed of [0, 400, 800, 1200]) {
+                emit({ type: 'pull', progress: { provider, model, state: 'running', status: 'downloading', completed, total: 1200 } });
+                await new Promise((r) => setTimeout(r, 150));
+            }
+            installed.push({ id: model, size: 1_200_000_000 });
+            emit({ type: 'pull', progress: { provider, model, state: 'done', status: 'ready' } });
+            return changed();
+        },
+        cancelPull: () => undefined,
+        async deleteModel(_provider, model) {
+            installed.splice(installed.findIndex((m) => m.id === model), 1);
+            if (settings.defaults.demo === model) delete settings.defaults.demo;
+            return changed();
+        },
+        async describeArchitecture(options) {
+            if (!options?.generate) return described;
+            const base = await engine.architecture?.();
+            if (!base) return undefined;
+            // A scripted design: the code's main parts grouped into two named subsystems.
+            const parts = base.nodes.filter((n) => n.kind === 'part');
+            const half = Math.ceil(parts.length / 2);
+            const group = (id: string, label: string, type: 'subsystem' | 'service', layer: 'domain' | 'interface', members: typeof parts) => ({
+                id,
+                label,
+                kind: 'part' as const,
+                type,
+                layer,
+                description: `${label}: ${members.map((m) => m.label).join(', ')}.`,
+                parts: members.flatMap((m) => m.parts),
+                files: members.reduce((n, m) => n + (m.files ?? 0), 0),
+            });
+            const nodes = [group('ai:core', 'Core Platform', 'subsystem', 'domain', parts.slice(0, half)), group('ai:runtimes', 'Language Runtimes', 'service', 'interface', parts.slice(half)), ...base.nodes.filter((n) => n.kind !== 'part')];
+            described = {
+                pattern: 'Polyglot monorepo (demo)',
+                summary: 'Designed by the demo model: a core platform and the language runtimes around it.',
+                nodes,
+                edges: [{ source: 'ai:runtimes', target: 'ai:core', label: 'builds on', kind: 'depends' }],
+                source: 'ai',
+                provider: 'demo',
+                model: 'scripted',
+                createdAt: Date.now(),
+            };
+            return described;
         },
     };
 }

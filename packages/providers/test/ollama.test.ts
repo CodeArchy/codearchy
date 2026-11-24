@@ -119,4 +119,37 @@ describe('ollama', () => {
         const [event] = await collect(ollama({ fetch }).chat({ model: 'qwen3:8b', messages: [] }, controller.signal));
         expect(event).toMatchObject({ type: 'error', error: { code: 'cancelled' } });
     });
+
+    it('manages models: what is installed (with sizes), a download with progress across layers, a removal', async () => {
+        const tags = { models: [{ name: 'gemma3:4b', model: 'gemma3:4b', size: 3_338_801_804, modified_at: '2026-11-01T10:00:00Z', details: { family: 'gemma3', parameter_size: '4.3B', quantization_level: 'Q4_K_M' } }] };
+        const pull = ndjson(
+            { status: 'pulling manifest' },
+            { status: 'downloading', digest: 'sha256:a', total: 100, completed: 40 },
+            { status: 'downloading', digest: 'sha256:b', total: 300, completed: 0 },
+            { status: 'downloading', digest: 'sha256:b', total: 300, completed: 300 },
+            { status: 'downloading', digest: 'sha256:a', total: 100, completed: 100 },
+            { status: 'success' },
+        );
+        const { fetch, requests } = mockFetch(
+            (url) => (url.endsWith('/api/tags') ? { json: tags } : undefined),
+            (url) => (url.endsWith('/api/pull') ? { chunks: split(pull, 7) } : undefined),
+            (url) => (url.endsWith('/api/delete') ? { json: {} } : undefined),
+        );
+        const manage = ollama({ fetch }).manage!;
+        expect(await manage.installed()).toEqual([{ id: 'gemma3:4b', size: 3_338_801_804, family: 'gemma3', parameterSize: '4.3B', quantization: 'Q4_K_M', modifiedAt: '2026-11-01T10:00:00Z' }]);
+        const seen: string[] = [];
+        await manage.pull('qwen3:8b', (p) => seen.push(`${p.status}${p.total ? ` ${p.completed}/${p.total}` : ''}`));
+        expect(seen).toEqual(['pulling manifest', 'downloading 40/100', 'downloading 40/400', 'downloading 340/400', 'downloading 400/400', 'success 400/400']);
+        expect(requests.find((r) => r.url.endsWith('/api/pull'))!.body).toEqual({ model: 'qwen3:8b', stream: true });
+        await manage.remove('gemma3:4b');
+        const del = requests.find((r) => r.url.endsWith('/api/delete'))!;
+        expect(del.method).toBe('DELETE');
+        expect(del.body).toEqual({ model: 'gemma3:4b' });
+    });
+
+    it('a failed download reports Ollama\'s reason', async () => {
+        const { fetch } = mockFetch((url) => (url.endsWith('/api/pull') ? { chunks: [ndjson({ status: 'pulling manifest' }, { error: 'pull model manifest: file does not exist' })] } : undefined));
+        await expect(ollama({ fetch }).manage!.pull('nope:1b', () => undefined)).rejects.toThrow(/file does not exist/);
+    });
 });
+

@@ -60,7 +60,18 @@ export interface VoiceState {
 export interface SpeakOptions {
     onEnd?(): void;
     onError?(error: Error): void;
+    /** With `capturesSpeech`: the whole audio once it's made, so the caller can keep it. */
+    onAudio?(audio: VoiceAudio): void;
 }
+
+/** Mono PCM, as made by the voice (kept by the narration cache). */
+export interface VoiceAudio {
+    pcm: Float32Array;
+    sampleRate: number;
+}
+
+/** How soon audio is needed: the step on screen, the next one, the rest. */
+export type SynthesisPriority = 'now' | 'soon' | 'later';
 
 export interface VoiceClient {
     /** The current state (synchronous: the UI renders from it). */
@@ -74,5 +85,22 @@ export interface VoiceClient {
     stop(): void;
     /** The host's own voice settings, instead of the shared panel. */
     openSettings?(): void;
+
+    // ── cacheable speech (narration made ahead and kept) ────────────────────
+    /**
+     * Who is speaking right now (engine, model, voice, speed) when that voice's
+     * audio can be kept: kept audio is replayed only under the same key, so a
+     * new voice or speed records again. Undefined: nothing to keep (the system
+     * voice), or the voice isn't ready.
+     */
+    cacheKey?(): string | undefined;
+    /** Makes the audio for `text` without playing it; undefined when the cacheable voice isn't ready. */
+    synthesize?(text: string, priority: SynthesisPriority): Promise<VoiceAudio | undefined>;
+    /** Plays audio from `synthesize` (or the cache), replacing anything playing. */
+    play?(audio: VoiceAudio, options?: SpeakOptions): void;
+    /** Drops queued synthesis that hasn't started (a closed tour's remaining steps). */
+    cancelPending?(): void;
+    /** `speak` reports the whole audio through `onAudio` (streamed speech can be kept). */
+    capturesSpeech?: boolean;
 }
 

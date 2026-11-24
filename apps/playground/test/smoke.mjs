@@ -149,6 +149,15 @@ for (const name of wanted) {
         await page.locator('.ca-inspector[data-key="mod:go/cmd/server/main.go"]').waitFor();
         await page.getByRole('button', { name: 'Show on map' }).click();
         await mapNode('mod:go/cmd/server/main.go').waitFor();
+        // Architecture: the system in layers, from the index and flows; a part opens on the map.
+        await page.click('.ca-segmented button:has-text("Architecture")');
+        await page.locator('.ca-arch-head h2').waitFor();
+        assert.ok((await page.locator('.ca-arch-part').count()) >= 4, 'main parts drawn');
+        const firstPart = page.locator('.ca-arch-part').first();
+        const partName = await firstPart.getAttribute('aria-label');
+        await firstPart.dblclick();
+        await page.locator('.ca-segmented button[aria-pressed="true"]', { hasText: 'Map' }).waitFor();
+        assert.ok(partName, 'parts are labelled for screen readers');
         // Panels resize from their edges (keyboard too), and hide from the toolbar.
         const navEdge = page.getByRole('separator', { name: 'Navigator width' });
         const before = Number(await navEdge.getAttribute('aria-valuenow'));
@@ -307,6 +316,17 @@ for (const name of wanted) {
         await page.locator('.react-flow__node[data-id="pkg:rust"] .ca-node:not(.ca-selected)').waitFor();
         await chat.locator('.ca-cite', { hasText: 'rusty-core' }).click();
         await page.locator('.react-flow__node[data-id="pkg:rust"] .ca-node.ca-selected').waitFor();
+        // Architecture, designed by the (demo) architect model: named subsystems over the real code.
+        await page.click('.ca-segmented button:has-text("Architecture")');
+        await page.getByRole('button', { name: 'Design with AI' }).click();
+        await page.locator('.ca-arch-kicker', { hasText: 'by scripted' }).waitFor();
+        const core = page.locator('.ca-arch-type-subsystem').first();
+        await core.click();
+        const details = page.locator('.ca-arch-details');
+        await details.locator('h3', { hasText: 'Core Platform' }).waitFor();
+        assert.ok((await details.locator('.ca-arch-parts .ca-pill').count()) >= 1, 'the code it consists of');
+        await details.locator('.ca-arch-parts .ca-pill').first().click();
+        await page.locator('.ca-segmented button[aria-pressed="true"]', { hasText: 'Map' }).waitFor();
         // Settings: a key turns the cloud provider ready (the field never shows it); local only blocks it.
         await page.getByRole('button', { name: 'AI', exact: true }).click();
         const settings = page.getByRole('dialog', { name: 'AI settings' });
@@ -319,6 +339,17 @@ for (const name of wanted) {
         await cloud.getByRole('button', { name: 'Save' }).click();
         await cloud.getByText(/ready · 1 model/).waitFor();
         await cloud.getByText('key saved').waitFor();
+        // Local models: what's installed, a download with progress, use it, remove it.
+        const local = settings.locator('[data-provider="demo"]');
+        await local.getByText('Models on this machine').waitFor();
+        await local.getByLabel('Model to download').fill('qwen3:8b');
+        await local.getByRole('button', { name: 'Download' }).click();
+        const pulled = local.locator('.ca-model:not(.ca-model-pulling)', { hasText: 'qwen3:8b' });
+        await pulled.getByRole('button', { name: 'Use' }).click();
+        await pulled.getByText('in use').waitFor();
+        await local.getByRole('button', { name: 'Remove qwen3:8b' }).click();
+        await local.getByRole('button', { name: 'Remove', exact: true }).click();
+        await pulled.waitFor({ state: 'detached' });
         assert.equal(await cloud.getByLabel('Cloud (demo) API key').inputValue(), '', 'the key field is cleared after saving');
         await tab('Privacy');
         await settings.getByLabel(/Local only/).check();

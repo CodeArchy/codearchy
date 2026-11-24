@@ -7,6 +7,7 @@ import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } fro
 import type { Flow, FlowSummary } from './flows.js';
 import type { Tour, TourDetails, TourSummary } from './tours.js';
 import type { AuthorshipOrigin, AuthorshipStatus, NodeAuthorship } from './authorship.js';
+import type { Architecture } from './architecture.js';
 
 export interface SearchResult {
     /** A hierarchy key (`mod:src/a.ts`, `dir:src/auth`, ...) to reveal. */
@@ -38,6 +39,8 @@ export interface EngineClient {
     saveTour?(tour: Tour): Promise<{ file: string }>;
     /** Removes an authored tour's file from the workspace; hosts that can't write leave it out. */
     deleteTour?(id: string): Promise<void>;
+    /** The system at a glance, in layers (built from the index and flows, no AI). */
+    architecture?(): Promise<Architecture | undefined>;
     /** Whether authorship is known here (it needs git history: VS Code, the Companion). */
     authorshipStatus?(): Promise<AuthorshipStatus>;
     /** A node's authorship: counts, agents, AI-heavy files, timeline and commits. */

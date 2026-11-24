@@ -88,6 +88,18 @@
     --ca-seq-1: #0d366b; --ca-seq-2: #184f95; --ca-seq-3: #256abf; --ca-seq-4: #3987e5; --ca-seq-5: #6da7ec; --ca-seq-6: #9ec5f4; --ca-seq-7: #cde2fb;
 }
 
+/* Scrollbars: thin and quiet, a little clearer on hover (every scrolling area in the UI). */
+.ca-root, .ca-root * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ca-fg) 16%, transparent) transparent; }
+.ca-root *:hover { scrollbar-color: color-mix(in srgb, var(--ca-fg) 30%, transparent) transparent; }
+.ca-root ::-webkit-scrollbar { width: 6px; height: 6px; }
+.ca-root ::-webkit-scrollbar-track { background: transparent; }
+.ca-root ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ca-fg) 16%, transparent); border-radius: 3px; }
+.ca-root ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--ca-fg) 32%, transparent); }
+.ca-root ::-webkit-scrollbar-corner { background: transparent; }
+/* Strips that scroll sideways only when they must (tabs): no bar at all. */
+.ca-root .ca-tabs, .ca-root .ca-settings-tabs { scrollbar-width: none; }
+.ca-root .ca-tabs::-webkit-scrollbar, .ca-root .ca-settings-tabs::-webkit-scrollbar { display: none; }
+
 .ca-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ca-bg); color: var(--ca-fg); font: 13px/1.4 var(--ca-font); outline: none; }
 .ca-root button { font: inherit; color: inherit; }
 .ca-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--ca-line); min-height: 36px; flex-wrap: wrap; }
@@ -720,3 +732,67 @@ details[open] > summary .ca-steps-chevron { transform: rotate(90deg); }
 .ca-field select { font: inherit; color: var(--ca-fg); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 8px; padding: 5px 8px; }
 .ca-field input[type="range"] { accent-color: var(--ca-accent); }
 @media (max-width: 560px) { .ca-voice-grid { grid-template-columns: 1fr; } }
+
+/* ── Local models (Ollama) ──────────────────────────────────────────────── */
+.ca-models { display: grid; gap: 8px; border-top: 1px solid var(--ca-line); padding-top: 10px; margin-top: 2px; }
+.ca-models-head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.ca-models-empty { margin: 0; font-size: 12px; }
+.ca-model-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ca-model { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--ca-line); background: var(--ca-panel); font-size: 12px; }
+.ca-model.ca-on { border-color: color-mix(in srgb, var(--ca-ok) 45%, var(--ca-line)); }
+.ca-model-name { font: 600 12px var(--ca-mono); }
+.ca-model-meta { font-size: 11px; }
+.ca-model .ca-button { padding: 2px 10px; font-size: 12px; }
+.ca-model-meter { flex-basis: 100%; margin-top: 2px; }
+.ca-model-pull { display: flex; gap: 6px; }
+.ca-model-pull input { flex: 1; min-width: 0; font: 12px var(--ca-mono); color: var(--ca-fg); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 8px; padding: 5px 9px; }
+.ca-model-pull input:focus { outline: none; border-color: var(--ca-accent); }
+.ca-model-ideas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; }
+.ca-model-ideas .ca-pill { font-family: var(--ca-mono); font-size: 11px; }
+.ca-model-error { margin: 0; color: var(--ca-critical); }
+
+/* ── Architecture mode ──────────────────────────────────────────────────── */
+.ca-arch { position: absolute; inset: 0; overflow: auto; padding: 0 0 24px; }
+.ca-arch-head { display: flex; align-items: flex-start; gap: 16px; padding: 16px 24px 8px; max-width: 980px; }
+.ca-arch-title { flex: 1; min-width: 0; }
+.ca-arch-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ca-accent); font-weight: 600; }
+.ca-arch-title h2 { margin: 2px 0 6px; font-size: 18px; }
+.ca-arch-title p { margin: 0; line-height: 1.55; color: var(--ca-fg); max-width: 760px; }
+.ca-arch-error { margin: 0 24px; color: var(--ca-critical); }
+.ca-arch-hint { padding: 0 24px; font-size: 12px; }
+.ca-arch-svg { display: block; font-family: var(--ca-font); }
+.ca-arch-row rect { fill: color-mix(in srgb, var(--ca-panel) 70%, transparent); stroke: none; }
+.ca-arch-row-external rect, .ca-arch-row-actors rect { fill: transparent; stroke: var(--ca-line); stroke-dasharray: 4 4; }
+.ca-arch-row text { fill: var(--ca-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.ca-arch-box { cursor: default; transition: opacity 0.2s ease; outline: none; }
+.ca-arch-part { cursor: pointer; }
+.ca-arch-shape { fill: var(--ca-node); stroke: var(--ca-node-border); stroke-width: 1.2; filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.08)); }
+.ca-arch-shape-line { fill: none; stroke: var(--ca-node-border); stroke-width: 1.2; }
+.ca-arch-part:hover .ca-arch-shape, .ca-arch-part:focus-visible .ca-arch-shape { stroke: var(--ca-accent); }
+.ca-arch-box.ca-selected .ca-arch-shape { stroke: var(--ca-accent); stroke-width: 2.4; }
+.ca-arch-accent { fill: var(--ca-accent); }
+.ca-arch-external .ca-arch-shape { fill: color-mix(in srgb, var(--ca-flow-in) 8%, var(--ca-node)); stroke: color-mix(in srgb, var(--ca-flow-in) 55%, var(--ca-node-border)); }
+.ca-arch-actor .ca-arch-shape { fill: color-mix(in srgb, var(--ca-accent) 8%, var(--ca-node)); stroke: color-mix(in srgb, var(--ca-accent) 45%, var(--ca-node-border)); }
+.ca-arch-label { fill: var(--ca-fg); font-size: 13px; font-weight: 600; }
+.ca-arch-sub { fill: var(--ca-muted); font-size: 11px; }
+.ca-arch-box.ca-dim, .ca-arch-edge.ca-dim { opacity: 0.25; }
+.ca-arch-edge path { fill: none; stroke: var(--ca-edge); transition: stroke 0.2s ease, opacity 0.2s ease; }
+.ca-arch-edge-data path { stroke: color-mix(in srgb, var(--ca-flow-in) 70%, var(--ca-edge)); }
+.ca-arch-edge-request path { stroke: color-mix(in srgb, var(--ca-accent) 70%, var(--ca-edge)); stroke-dasharray: 6 4; }
+.ca-arch-edge-event path { stroke-dasharray: 2 4; }
+.ca-arch-edge.ca-on path { stroke: var(--ca-accent); }
+.ca-arch-arrowhead { fill: var(--ca-edge); }
+.ca-arch-edge-label rect { fill: var(--ca-bg); stroke: var(--ca-line); }
+.ca-arch-edge-label text { fill: var(--ca-muted); font-size: 10.5px; }
+@media (prefers-reduced-motion: reduce) { .ca-arch-box, .ca-arch-edge path { transition: none; } }
+.ca-arch-nudge { margin-top: 6px !important; font-size: 12px; }
+.ca-arch-busy { margin: 0 24px 6px; }
+.ca-arch-details { position: absolute; top: 12px; right: 12px; width: min(320px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 12px; box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18); padding: 10px 14px 14px; z-index: 5; }
+.ca-arch-details header { display: flex; align-items: center; }
+.ca-arch-details h3 { margin: 6px 0 4px; font-size: 15px; }
+.ca-arch-details p { margin: 0 0 8px; line-height: 1.5; }
+.ca-arch-details h4 { margin: 10px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ca-muted); display: flex; gap: 6px; }
+.ca-arch-parts { display: flex; flex-wrap: wrap; gap: 4px; }
+.ca-arch-parts .ca-pill { font-family: var(--ca-mono); font-size: 11px; }
+.ca-arch-type-service .ca-arch-shape { stroke-width: 1.6; }
+.ca-arch-type-layer .ca-arch-shape { fill: color-mix(in srgb, var(--ca-accent) 5%, var(--ca-node)); }
