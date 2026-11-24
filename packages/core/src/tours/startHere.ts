@@ -42,7 +42,7 @@ const ENTRY_PREFERENCE = ['http', 'cli', 'event', 'job', 'ui', 'main'];
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** Folder names that say nothing alone: `packages/core/src` reads better as `core/src`. */
-const VAGUE = new Set(['src', 'lib', 'app', 'source', 'main', 'internal', 'pkg', 'java', 'kotlin', 'python', 'code']);
+const VAGUE = new Set(['src', 'lib', 'app', 'source', 'main', 'internal', 'pkg', 'java', 'kotlin', 'python', 'code', 'test', 'tests', 'spec', '__tests__']);
 export function displayName(n: Pick<HierarchyNode, 'name' | 'path' | 'kind'>): string {
     if (n.kind === 'module' || !VAGUE.has(n.name.toLowerCase())) return n.name;
     const parts = n.path.split('/').filter(Boolean);

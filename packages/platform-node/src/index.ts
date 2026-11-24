@@ -206,3 +206,4 @@ export { NodeWorkerPool, runParseWorker, type NodeWorkerPoolOptions, type ParseW
 export { computeGitAuthorship, parseIncrementalBlame, readAuthorshipNotes, writeAuthorshipNote, type GitAuthorship, type GitAuthorshipOptions, type NoteWriteResult } from './authorship.js';
 export { FileLedgerStore, companionDataDir } from './ledgerStore.js';
 export { AgentLogIngester, AGENT_IDS, type AgentLogOptions, type AgentLogReport } from './agentLogs.js';
+export { computeBranchReport, type BranchReportOptions } from './branchReport.js';

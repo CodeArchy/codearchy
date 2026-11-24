@@ -231,12 +231,32 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
             void vscode.window.showErrorMessage(`Couldn't write the authorship note: ${err instanceof Error ? err.message : String(err)}`);
         }
     });
+    const branchReportCmd = vscode.commands.registerCommand('codearchy.authorship.branchReport', async () => {
+        if (!pipeline) return;
+        const base = await vscode.window.showInputBox({
+            title: 'Branch authorship report',
+            prompt: 'Compare this branch with… (leave empty for the repository’s main branch)',
+            placeHolder: 'main',
+            validateInput: (v) => (v.trim().startsWith('-') ? 'A branch, tag or commit' : undefined),
+        });
+        if (base === undefined) return;
+        try {
+            const md = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'CodeArchy: reading the branch…' }, () => pipeline!.branchReport(base.trim() || undefined));
+            if (!md) return void vscode.window.showInformationMessage('Analyze the workspace first.');
+            const doc = await vscode.workspace.openTextDocument({ content: md, language: 'markdown' });
+            await vscode.window.showTextDocument(doc, { preview: false });
+            await vscode.commands.executeCommand('markdown.showPreviewToSide', doc.uri);
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Couldn't build the branch report: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    });
     const notesOnCommit = watchCommits(async () => {
         if (vscode.workspace.getConfiguration('codearchy').get<string>('authorship.gitNotes', 'off') !== 'onCommit') return;
         await pipeline?.writeNote('HEAD').catch((err: unknown) => output.appendLine(`authorship note failed: ${err instanceof Error ? err.message : String(err)}`));
     });
 
     context.subscriptions.push(
+        branchReportCmd,
         writeNotesCmd,
         notesOnCommit,
         authorshipEditor,

@@ -126,6 +126,17 @@ describe('the Companion (codearchy serve)', () => {
         c.ws.close();
     });
 
+    it('serves the branch report, and refuses a base that would be a git option', async () => {
+        const c = await connect(companion.port, { origin: APP });
+        c.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));
+        await c.next();
+        const r = (await request(c, 'authorshipReport', { base: 'HEAD' })).result as { report: { commits: number; base: string }; markdown: string };
+        expect(r.report).toMatchObject({ base: 'HEAD', commits: 0 });
+        expect(r.markdown).toMatch(/^## Authorship: this branch vs `HEAD`/);
+        expect((await request(c, 'authorshipReport', { base: '--output=/tmp/x' })).error).toMatch(/branch, tag or commit/);
+        c.ws.close();
+    });
+
     it('without a ledger, marks are refused', async () => {
         const c = await connect(companion.port, { origin: APP });
         c.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));

@@ -50,3 +50,19 @@ git fetch origin refs/notes/codearchy-authorship:refs/notes/codearchy-authorship
 ```
 
 A note records, for the files a commit changed, which lines were AI, reviewed or human, in that commit's line numbers. CodeArchy maps them onto today's code with `git blame`, through later edits and renames.
+
+## The branch report
+
+Before a review, see what a branch adds and who wrote it:
+
+- **VS Code:** **CodeArchy: Branch Authorship Report**. It opens as Markdown with a preview.
+- **CLI:** `codearchy authorship report [--base main] [--json] [--agent-logs claude-code]`.
+- **The Companion:** the `authorshipReport` request, for the web app.
+
+The report covers every line added since the branch left its base, including lines not committed yet. It shows:
+
+- **Totals:** lines by origin (AI and unchanged, reviewed, human, unknown) and by tool.
+- **Per part:** the same split for each part of the system, plus the files with the most unreviewed AI lines.
+- **New dependencies:** links between parts that the branch introduces, with the files behind them. Tests depending on the code they test aren't listed.
+
+The Markdown is ready to paste into a pull request description.

@@ -15,6 +15,8 @@ import {
     TourIndex,
     AuthorshipIndex,
     AuthorshipLedger,
+    Analyzer,
+    renderBranchReport,
     withLedger,
     markLines,
     type LineEdit,
@@ -44,6 +46,7 @@ import {
     gitIgnoredPaths,
     computeGitAuthorship,
     writeAuthorshipNote,
+    computeBranchReport,
     type NoteWriteResult,
     FileLedgerStore,
     AgentLogIngester,
@@ -107,6 +110,8 @@ export class AnalysisPipeline {
     private ledgerTimer: NodeJS.Timeout | undefined;
     /** Agents' session logs (opt-in per agent: codearchy.authorship.agentLogs). */
     private agentLogs: { key: string; ingester: AgentLogIngester } | undefined;
+    /** Analyses files as they were at a branch's base (the branch report). */
+    private reportAnalyzer: { fs: NodeFileSystem; analyzer: Analyzer } | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -504,6 +509,28 @@ export class AnalysisPipeline {
         this.log(`authorship note: ${result.files.length} file(s) written to ${result.commit.slice(0, 7)}${result.skipped.length ? `, ${result.skipped.length} skipped (changed since the commit)` : ''}`);
         if (result.files.length) this.refreshAuthorship(500);
         return result;
+    }
+
+    /** What the current branch adds since `base`, by who wrote it, as Markdown (and the data behind it). */
+    async branchReport(base?: string): Promise<string | undefined> {
+        const state = this.state;
+        const h = this.hierarchy();
+        if (!state || !h) return undefined;
+        // One analyzer for base versions of files, kept: disposing it would tear down the shared parser runtime.
+        const parser = await this.getParser();
+        if (this.reportAnalyzer?.fs !== state.fs) this.reportAnalyzer = { fs: state.fs, analyzer: new Analyzer({ fs: state.fs, parser, maxFileSize: getConfig().maxFileSize }) };
+        const analyzer = this.reportAnalyzer.analyzer;
+        const report = await computeBranchReport({
+            root: state.root,
+            ...(base ? { base } : {}),
+            index: h,
+            rangesFor: (rel) => this.authorship(h)?.describe(`mod:${rel}`)?.ranges ?? [],
+            analyses: state.analyses,
+            manifests: state.manifests,
+            analyze: (rel, text) => analyzer.analyzeFile(rel, text),
+            read: (rel) => this.readWorkspaceFile(rel),
+        });
+        return renderBranchReport(report);
     }
 
     /** A file's attributed ranges for the editor gutter, with what the hover says about each. */

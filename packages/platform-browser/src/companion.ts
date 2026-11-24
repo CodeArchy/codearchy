@@ -14,6 +14,7 @@ import {
     type EngineEvent,
     type AuthorshipOrigin,
     type AuthorshipStatus,
+    type BranchReport,
     type Flow,
     type NodeAuthorship,
     type FlowSummary,
@@ -162,6 +163,10 @@ export class CompanionEngine implements EngineClient {
     }
     authorship(key: string): Promise<NodeAuthorship | undefined> {
         return this.call('authorship', { key });
+    }
+    /** What the current branch adds since `base` (default: the repository's main branch), by who wrote it. */
+    authorshipReport(base?: string): Promise<{ report: BranchReport; markdown: string }> {
+        return this.call('authorshipReport', base ? { base } : {});
     }
     /** "Mark as reviewed" / "Correct attribution": kept in the Companion's ledger (outside the workspace). */
     authorshipMark(path: string, start: number, end: number, as: 'reviewed' | AuthorshipOrigin): Promise<{ marked: number }> {

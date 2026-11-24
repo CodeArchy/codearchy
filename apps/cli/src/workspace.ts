@@ -7,9 +7,9 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AuthorshipIndex, markLines, withLedger, type AgentId, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
-import type { AuthorshipOrigin, AuthorshipStatus } from '@codearchy/protocol';
-import { AgentLogIngester, computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
+import { AuthorshipIndex, markLines, renderBranchReport, withLedger, type AgentId, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
+import type { AuthorshipOrigin, AuthorshipStatus, BranchReport, FileAnalysis } from '@codearchy/protocol';
+import { AgentLogIngester, computeBranchReport, computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
 export interface Snapshot {
@@ -27,6 +27,9 @@ export interface Snapshot {
     edges: number;
     /** Source files per language. */
     languageCounts: Record<string, number>;
+    /** The facts and manifests the snapshot was built from (the branch report compares against them). */
+    analyses: Map<string, FileAnalysis>;
+    manifests: Map<string, string>;
     /** Authorship from git, filled in the background after the build (see `onAuthorship`). */
     authorship?: AuthorshipIndex;
     authorshipStatus: AuthorshipStatus;
@@ -125,7 +128,8 @@ export class Workspace {
         const { analyzer, fs: fsPort } = await this.engine;
         const discovery = await discover(this.root, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 });
         const analyses = await analyzer.analyzeAll(discovery.sourceFiles);
-        const graph = buildGraph(analyses.values(), await readManifests(fsPort, discovery.manifests), {
+        const manifests = await readManifests(fsPort, discovery.manifests);
+        const graph = buildGraph(analyses.values(), manifests, {
             toHostPath: (p) => fromPosix(this.root, p),
         });
         const index = new HierarchyIndex(buildHierarchy(graph, { systemName: path.basename(this.root), packageMarkers: discovery.packageMarkers }));
@@ -147,6 +151,8 @@ export class Workspace {
             flows,
             tours: new TourIndex({ index, flows, files: discovery.tours, read: (p) => this.readFile(p), name: path.basename(this.root) }),
             tourFiles: discovery.tours,
+            analyses,
+            manifests,
             authorshipStatus: this.options.noAuthorship ? { state: 'unavailable', reason: 'Turned off.' } : { state: 'computing' },
             files,
             symbols,
@@ -200,6 +206,34 @@ export class Workspace {
         const data = this.options.ledger ? withLedger(inputs.data, this.options.ledger) : inputs.data!;
         inputs.snap.authorship = new AuthorshipIndex(inputs.snap.index, (p) => inputs.lines.get(p), data);
         inputs.snap.authorshipStatus = inputs.snap.authorship.status();
+    }
+
+    /** Resolves once the current snapshot's authorship has been traced (or found unavailable). */
+    async authorshipReady(timeoutMs = 120_000): Promise<Snapshot> {
+        const started = Date.now();
+        let snap = await this.snapshot();
+        while (snap.authorshipStatus.state === 'computing' && Date.now() - started < timeoutMs) {
+            await new Promise((r) => setTimeout(r, 100));
+            snap = await this.snapshot();
+        }
+        return snap;
+    }
+
+    /** What the current branch adds since `base`, by who wrote it (see computeBranchReport). */
+    async branchReport(base?: string): Promise<{ report: BranchReport; markdown: string }> {
+        const snap = await this.authorshipReady();
+        const { analyzer } = await this.engine!;
+        const report = await computeBranchReport({
+            root: this.root,
+            ...(base ? { base } : {}),
+            index: snap.index,
+            rangesFor: (rel) => snap.authorship?.describe(`mod:${rel}`)?.ranges ?? [],
+            analyses: snap.analyses,
+            manifests: snap.manifests,
+            analyze: (rel, text) => analyzer.analyzeFile(rel, text),
+            read: (rel) => this.readFile(rel),
+        });
+        return { report, markdown: renderBranchReport(report) };
     }
 
     /** "Mark as reviewed" / "Correct attribution" from the web app (through the Companion). */

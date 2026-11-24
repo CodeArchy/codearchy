@@ -575,6 +575,23 @@ numbering.
     `codearchy authorship hook install|uninstall`. That's a post-commit hook
     with a marker, which never replaces a hook CodeArchy didn't write.
 
+**The branch report** (`platform-node/src/branchReport.ts`; the pure parts
+are in `core/src/authorship/report.ts`) covers lines added since the branch
+left its base. The default base is origin's default branch, then main, then
+master. A base that looks like a git option is refused.
+
+- **Added lines:** lines blamed on a branch commit, or not committed yet,
+  plus untracked files. They're counted by today's attributed ranges.
+- **Per part:** totals by the nearest component or package (or the file
+  itself when it has none).
+- **New dependencies:** the changed files are re-analysed as they were at
+  the merge base with the host's analyzer. Then module dependencies from
+  both graphs, starting at the changed files, are lifted to parts and
+  compared. Dependencies from tests are left out.
+- **Output:** `renderBranchReport` writes it as Markdown. It's available
+  from VS Code (a command), the CLI (`codearchy authorship report`) and the
+  Companion (`authorshipReport`).
+
 User guide: [docs/guides/authorship.md](docs/guides/authorship.md).
 
 ## Apps

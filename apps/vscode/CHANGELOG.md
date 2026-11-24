@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **What's kept:** only which lines, which agent and when. Nothing from your prompts or conversations.
   - **Reviewed lines:** lines you changed afterwards show as reviewed, and so does an edit you modified before accepting it.
   - **A limit:** edits an agent makes through shell commands aren't in its logs, so later changes to those lines also show as reviewed.
+- **Branch authorship report.** **CodeArchy: Branch Authorship Report** shows what the current branch adds since it left its base: lines by who wrote them (AI and unchanged, reviewed, people, unknown) and by tool, per part of the system, and the dependencies between parts it introduces. The Markdown is ready for a pull request. Also on the command line: `codearchy authorship report`.
 - **Share authorship with git notes.** **Write Authorship Notes for the Last Commit**, or set `codearchy.authorship.gitNotes` to `onCommit`, and CodeArchy records which lines of a commit AI tools wrote as a git note (`refs/notes/codearchy-authorship`).
   - Teammates' notes show up for you once fetched. They're mapped onto today's code through later edits and renames.
   - Notes stay local until you push them.

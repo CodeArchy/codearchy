@@ -78,6 +78,11 @@
                 "command": "codearchy.authorship.writeNotes",
                 "title": "Write Authorship Notes for the Last Commit",
                 "category": "CodeArchy"
+            },
+            {
+                "command": "codearchy.authorship.branchReport",
+                "title": "Branch Authorship Report",
+                "category": "CodeArchy"
             }
         ],
         "viewsContainers": {
