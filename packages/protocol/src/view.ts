@@ -5,6 +5,7 @@
  * dependencies that leave the scope become port stubs.
  */
 import type { ComponentRole, HierarchyKind } from './hierarchy.js';
+import type { AuthorshipCounts } from './authorship.js';
 
 export interface ViewRequest {
     /** Key of the node being drilled into (default: the system root). */
@@ -56,6 +57,8 @@ export interface ViewNode {
     metrics: NodeMetrics;
     /** Set when the node is in a cycle with other visible nodes (same id, same cycle). */
     cycle?: number;
+    /** Lines per authorship origin, when the host has git history to attribute them. */
+    authorship?: AuthorshipCounts;
 }
 
 export interface ViewEdge {

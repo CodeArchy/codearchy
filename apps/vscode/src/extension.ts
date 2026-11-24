@@ -35,6 +35,10 @@ export interface CodeArchyApi {
 export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     output = vscode.window.createOutputChannel('CodeArchy');
     pipeline = new AnalysisPipeline(context.extensionPath, output, context.storageUri?.fsPath);
+    // Authorship arrives after indexing (git log + blame in the background): refresh the panel then.
+    pipeline.onAuthorshipChange = () => {
+        if (currentGraph) ArchitecturePanel.update(currentGraph);
+    };
     pipeline.initParser().catch((err) => {
         output.appendLine(`Parser init failed: ${err instanceof Error ? err.message : String(err)}`);
     });

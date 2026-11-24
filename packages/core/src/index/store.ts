@@ -16,7 +16,7 @@ import { contentHash } from '../util/hash.js';
 export const SCHEMA_VERSION = 2;
 
 /** Bump when extraction logic changes in ways the queries don't capture. */
-const EXTRACTOR_REVISION = 2;
+const EXTRACTOR_REVISION = 3;
 
 /**
  * Identifies the extractor that produced stored facts: changing any language
@@ -345,21 +345,23 @@ export class IndexStore {
 }
 
 /** Calls are stored as `[name, line, from, via]` tuples (a file can have thousands): from -1 = top level, via 0 bare / 1 self / 2 member. */
-type StoredFlowFacts = { e?: EntryPoint[]; c?: Array<[string, number, number, number]> };
+type StoredFlowFacts = { e?: EntryPoint[]; c?: Array<[string, number, number, number]>; n?: number };
 const VIA = [undefined, 'self', 'member'] as const;
 
 function encodeFlowFacts(a: FileAnalysis): string | null {
-    if (!a.entrypoints?.length && !a.calls?.length) return null;
+    if (!a.entrypoints?.length && !a.calls?.length && a.lines === undefined) return null;
     const facts: StoredFlowFacts = {};
+    if (a.lines !== undefined) facts.n = a.lines;
     if (a.entrypoints?.length) facts.e = a.entrypoints;
     if (a.calls?.length) facts.c = a.calls.map((c) => [c.name, c.line, c.from ?? -1, c.via ? VIA.indexOf(c.via) : 0]);
     return JSON.stringify(facts);
 }
 
-function decodeFlowFacts(json: string): Pick<FileAnalysis, 'entrypoints' | 'calls'> {
+function decodeFlowFacts(json: string): Pick<FileAnalysis, 'entrypoints' | 'calls' | 'lines'> {
     const facts = JSON.parse(json) as StoredFlowFacts;
-    const out: Pick<FileAnalysis, 'entrypoints' | 'calls'> = {};
+    const out: Pick<FileAnalysis, 'entrypoints' | 'calls' | 'lines'> = {};
     if (facts.e?.length) out.entrypoints = facts.e;
+    if (typeof facts.n === 'number') out.lines = facts.n;
     if (facts.c?.length) {
         out.calls = facts.c.map(([name, line, from, via]): CallSite => {
             const v = VIA[via];

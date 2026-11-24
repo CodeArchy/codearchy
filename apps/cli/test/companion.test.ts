@@ -108,6 +108,23 @@ describe('the Companion (codearchy serve)', () => {
         c.ws.close();
     });
 
+    it('serves authorship once git history is traced, on the view nodes too', async () => {
+        const c = await connect(companion.port, { origin: APP });
+        c.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));
+        await c.next();
+        let status: { state: string; counts?: { ai: number; unknown: number } } = { state: 'computing' };
+        for (let i = 0; i < 50 && status.state === 'computing'; i++) {
+            status = (await request(c, 'authorshipStatus')).result as typeof status;
+            if (status.state === 'computing') await new Promise((r) => setTimeout(r, 200));
+        }
+        expect(status.state).toBe('ready'); // the fixture lives in this repository's git history
+        expect(status.counts!.unknown).toBeGreaterThan(0);
+        const view = (await request(c, 'view', { request: {} })).result as { nodes: Array<{ key: string; authorship?: object }> };
+        expect(view.nodes.every((n) => n.authorship)).toBe(true);
+        expect((await request(c, 'authorship', { key: 'sys:root' })).result).toMatchObject({ key: 'sys:root', counts: status.counts });
+        c.ws.close();
+    });
+
     it('the token works once; the session key resumes', async () => {
         const again = await connect(companion.port, { origin: APP });
         again.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: 'one-time-token' }));

@@ -15,6 +15,7 @@ export * from './ai.js';
 export * from './flows.js';
 export * from './tours.js';
 export * from './companion.js';
+export * from './authorship.js';
 
 export interface SymbolInfo {
     name: string;
@@ -68,6 +69,8 @@ export interface FileAnalysis {
     entrypoints?: EntryPoint[];
     /** Calls made in this file (approximate: by name, from a text scan). */
     calls?: CallSite[];
+    /** Lines in the file (authorship shares are per line). */
+    lines?: number;
 }
 
 export type EntryPointKind = 'http' | 'cli' | 'job' | 'event' | 'ui' | 'main';

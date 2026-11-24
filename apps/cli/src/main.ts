@@ -130,7 +130,7 @@ async function serve(args: string[]): Promise<number> {
     }
 
     let notify: ((file?: string) => void) | undefined;
-    const workspace = new Workspace(root, { log, onChange: (file) => notify?.(file) });
+    const workspace = new Workspace(root, { log, onChange: (file) => notify?.(file), onAuthorship: () => notify?.() });
     workspace.watch();
     void workspace.snapshot().catch((err: unknown) => log(`Indexing failed: ${err instanceof Error ? err.message : String(err)}`));
     const companion = await startCompanion(workspace, { port, allowOrigins, version: version(), log, ...(app ? { appUrl: app } : {}) });
