@@ -106,6 +106,16 @@ describe('Hierarchy', () => {
         assert.deepStrictEqual(children(h, 'grp:packages'), ['pkg:packages/a', 'pkg:packages/b', 'pkg:packages/c']);
     });
 
+    test('a group inside another group\'s folder nests in it, as does a lone package', () => {
+        // sample/31-federation holds three packages of its own; sample/x/y/z is a lone package deeper down.
+        const dirs = ['packages/a', 'packages/b', 'sample/01-cats', 'sample/02-dogs', 'sample/31-federation/gateway', 'sample/31-federation/users', 'sample/31-federation/posts', 'sample/x/y/z'];
+        const h = buildHierarchy(graph(dirs.map((d) => `${d}/x.ts`)), { systemName: 'mono', packageMarkers: dirs.map((d) => `${d}/package.json`), maxChildren: 4 });
+        assertEulerInvariants(h);
+        assert.deepStrictEqual(children(h, 'sys:root'), ['grp:packages', 'grp:sample']);
+        assert.deepStrictEqual(children(h, 'grp:sample'), ['pkg:sample/01-cats', 'pkg:sample/02-dogs', 'grp:sample/31-federation', 'pkg:sample/x/y/z']);
+        assert.deepStrictEqual(children(h, 'grp:sample/31-federation'), ['pkg:sample/31-federation/gateway', 'pkg:sample/31-federation/posts', 'pkg:sample/31-federation/users']);
+    });
+
     test('a wide folder is split by its dependency communities into virtual components', () => {
         const files: string[] = [];
         const edges: Array<[string, string]> = [];

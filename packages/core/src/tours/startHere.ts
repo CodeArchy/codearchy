@@ -9,6 +9,10 @@
  *   6. Shared foundations    utilities, config and hubs everything leans on
  *   7. A first change        a tested, lightly used module outside cycles
  *
+ * The tour is about the product: samples, examples, benchmarks, integration
+ * tests, docs and repo scripts are left out. When one part holds most of the
+ * product's code (django/, packages/), the core is picked from inside it.
+ *
  * Steps that have nothing to show are left out. Bodies are built from the
  * index (names, roles, counts, dependencies); the Inspector beside the player
  * adds each part's summary card.
@@ -39,6 +43,15 @@ const KIND_WORDS: Record<string, [string, string]> = {
     main: ['program entry', 'program entries'],
 };
 const ENTRY_PREFERENCE = ['http', 'cli', 'event', 'job', 'ui', 'main'];
+
+/** Folders that hold something other than the product: what it's shown, measured, tested or built with. */
+const NOT_PRODUCT = new Set(['sample', 'samples', 'example', 'examples', 'demo', 'demos', 'benchmark', 'benchmarks', 'bench', 'integration', 'e2e', 'docs', 'doc', 'scripts', 'fixtures', '__fixtures__']);
+/** True when a workspace path lies in a sample, example, benchmark, docs… folder. */
+export function outsideProduct(path: string): boolean {
+    return path.split('/').some((seg) => NOT_PRODUCT.has(seg.toLowerCase()));
+}
+/** Descend into a part holding at least this share of the product's code. */
+const DOMINANT_SHARE = 0.6;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** Folder names that say nothing alone: `packages/core/src` reads better as `core/src`. */
@@ -78,9 +91,27 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
     const m = (n: HierarchyNode) => metrics.nodes[n.tin];
     const degree = (n: HierarchyNode) => m(n).fanIn + m(n).fanOut;
     const isTesty = (n: HierarchyNode) => n.role?.role === 'test' || m(n).codeModules === 0;
+    const isContainer = (n: HierarchyNode) => n.kind === 'package' || n.kind === 'component';
 
-    // Containers worth a stop: packages and components with real code, most connected first.
-    const containers = nodes.filter((n) => (n.kind === 'package' || n.kind === 'component') && !isTesty(n) && n.modules >= 1);
+    // Product code per node: modules that aren't tests and aren't in a sample, example, benchmark… folder.
+    const product = new Array<number>(nodes.length).fill(0);
+    for (const [i, facts] of metrics.modules) {
+        if (facts.test || outsideProduct(nodes[i].path)) continue;
+        for (let j = i; j >= 0; j = nodes[j].parent) product[j]++;
+    }
+    const inProduct = (n: HierarchyNode) => product[n.tin] > 0 && !outsideProduct(n.path);
+
+    // Where the product's code is: from the root, into any part that holds most of it (django/, packages/).
+    let focus = root;
+    for (;;) {
+        const kids = index.childrenOf(focus.tin).map((i) => nodes[i]).filter(isContainer);
+        const big = kids.find((k) => product[k.tin] >= DOMINANT_SHARE * product[focus.tin]);
+        if (!big || !product[focus.tin] || !index.childrenOf(big.tin).some((i) => isContainer(nodes[i]))) break;
+        focus = big;
+    }
+
+    // Containers worth a stop: packages and components with real product code, most connected first.
+    const containers = nodes.filter((n) => isContainer(n) && !isTesty(n) && n.modules >= 1 && inProduct(n));
     // Ties go to the higher level (a package over its own src folder).
     const byDegree = [...containers].sort((a, b) => degree(b) - degree(a) || a.depth - b.depth || b.modules - a.modules || (a.key < b.key ? -1 : 1));
     /** Parts featured as core, data or shared so far: one stop per area, never a part and its own folder. */
@@ -91,7 +122,7 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
     // 1. The big picture.
     const top = index.childrenOf(0).map((i) => nodes[i]);
     const packages = nodes.filter((n) => n.kind === 'package').length;
-    const mostUsed = [...top].filter((n) => !isTesty(n)).sort((a, b) => m(b).fanIn - m(a).fanIn)[0];
+    const mostUsed = [...top].filter((n) => !isTesty(n) && inProduct(n)).sort((a, b) => m(b).fanIn - m(a).fanIn)[0];
     add({
         target: { node: root.key },
         view: { mode: 'map', scope: root.key },
@@ -99,6 +130,7 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
         body: [
             `${name} has ${plural(root.modules, 'source file')} in ${plural(top.length, 'top-level part')}: ${list(top.map(link), 6)}.`,
             packages > 1 ? `It is split into ${plural(packages, 'package')}, each with its own manifest.` : '',
+            focus !== root ? `Most of the code is in ${link(focus)}.` : '',
             mostUsed && m(mostUsed).fanIn > 0 ? `${link(mostUsed)} is the most depended-on part, so it's a good anchor while you explore.` : '',
             'Double-click a part on the map to open it in place; the Inspector on the right summarises whatever you select.',
         ]
@@ -107,7 +139,7 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
     });
 
     // 2. Where things start.
-    const entries = flows?.list() ?? [];
+    const entries = (flows?.list() ?? []).filter((e) => !outsideProduct(e.file));
     if (entries.length) {
         const counts = new Map<string, number>();
         for (const e of entries) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
@@ -139,8 +171,10 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
         const x = index.node(key);
         return x ? link(x) : key;
     };
+    // The main parts of the focus first (django/'s db, http, template…); anything else if none qualify.
+    const isCore = (c: HierarchyNode) => coreRoles.has(c.role?.role) && c.key !== root.key && c.key !== focus.key && degree(c) > 0 && !overlaps(c);
     for (let picked = 0; picked < 3; picked++) {
-        const n = byDegree.find((c) => coreRoles.has(c.role?.role) && c.key !== root.key && degree(c) > 0 && !overlaps(c));
+        const n = byDegree.find((c) => isCore(c) && c.parent === focus.tin) ?? byDegree.find((c) => isCore(c) && index.contains(focus.tin, c.tin)) ?? byDegree.find(isCore);
         if (!n) break;
         featured.push(n);
         const d = index.describe(n.key);
@@ -163,7 +197,8 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
     }
 
     // 4. The data layer.
-    const data = byDegree.find((n) => n.role?.role === 'data' && !overlaps(n));
+    // Only on real evidence: a folder name, or most of its files (not "1 of 2 files look like data").
+    const data = byDegree.find((n) => n.role?.role === 'data' && n.role.confidence >= 0.5 && !overlaps(n));
     if (data) {
         featured.push(data);
         add({
@@ -226,7 +261,7 @@ export function generateStartHere(index: HierarchyIndex, flows?: FlowIndex, opti
     // 7. A first change: tested, lightly used, outside cycles.
     const candidates: HierarchyNode[] = [];
     for (const [i, facts] of metrics.modules) {
-        if (facts.tested && !facts.hub && !facts.cyclic && !facts.test) candidates.push(nodes[i]);
+        if (facts.tested && !facts.hub && !facts.cyclic && !facts.test && !outsideProduct(nodes[i].path)) candidates.push(nodes[i]);
     }
     candidates.sort((a, b) => m(a).fanIn - m(b).fanIn || (a.key < b.key ? -1 : 1));
     const first = candidates.find((n) => !used.has(n.key));
