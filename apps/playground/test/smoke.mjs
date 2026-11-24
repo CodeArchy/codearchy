@@ -30,6 +30,37 @@ let failed = 0;
 
 const stat = (page, key) => page.locator(`[data-stat="${key}"]`).textContent();
 
+/**
+ * Clicks a point on an edge's path that the edge itself is on top at, once
+ * the layout has settled. (A forced click at the bounding box's centre can
+ * miss a curved path, or land while the layout is still animating.)
+ */
+async function clickEdge(page, id) {
+    const pointOn = () =>
+        page.evaluate((edgeId) => {
+            const edge = [...document.querySelectorAll('.react-flow__edge')].find((e) => e.getAttribute('data-id') === edgeId);
+            const path = edge?.querySelector('.react-flow__edge-interaction') ?? edge?.querySelector('path');
+            const ctm = path?.getScreenCTM();
+            if (!path || !ctm) return undefined;
+            const length = path.getTotalLength();
+            for (const f of [0.4, 0.5, 0.3, 0.6, 0.2, 0.7]) {
+                const p = path.getPointAtLength(length * f);
+                const x = ctm.a * p.x + ctm.c * p.y + ctm.e;
+                const y = ctm.b * p.x + ctm.d * p.y + ctm.f;
+                if (document.elementFromPoint(x, y)?.closest('.react-flow__edge')?.getAttribute('data-id') === edgeId) return { x, y };
+            }
+            return undefined;
+        }, id);
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+        const a = await pointOn();
+        await page.waitForTimeout(150);
+        const b = await pointOn();
+        if (a && b && Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1) return page.mouse.click(b.x, b.y);
+        if (Date.now() > deadline) throw new Error(`no stable, visible point on edge ${id}`);
+    }
+}
+
 for (const name of wanted) {
     // WebKit's default context behaves like Private Browsing (no OPFS sync access).
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), `codearchy-playground-${name}-`));
@@ -66,7 +97,7 @@ for (const name of wanted) {
         await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge.animated.ca-edge-out').length === 4);
         assert.match(await page.locator('.ca-legend').textContent(), /uses 4/);
         await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge.ca-faded').length > 0); // unrelated edges fade
-        await page.locator('.react-flow__edge[data-id="mod:web/src/index.ts->mod:web/src/esm.ts"]').click({ force: true });
+        await clickEdge(page, 'mod:web/src/index.ts->mod:web/src/esm.ts');
         await page.locator('.ca-inspector', { hasText: 'Dependency' }).locator('h2', { hasText: 'index.ts → esm.ts' }).waitFor();
         // Double-clicking an expanded node's header collapses it, in place.
         await mapNode('dir:web/src').locator('.ca-container-head').dblclick();

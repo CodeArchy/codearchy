@@ -136,6 +136,11 @@ export class AnalysisPipeline {
         return !!this.parser;
     }
 
+    /** Jobs the bundled parse workers have completed (diagnostics and the extension's tests). */
+    workerJobs(): number {
+        return this.state?.pool.workerJobs ?? 0;
+    }
+
     /** Parser health, for diagnostics and the extension's smoke tests. */
     async parserStatus(): Promise<{ treeSitter: boolean; grammars: string[] }> {
         const parser = await this.getParser();
