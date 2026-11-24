@@ -19,6 +19,8 @@ import {
     IndexStore,
     Indexer,
     FlowIndex,
+    TourIndex,
+    isTourFile,
     buildGraph,
     buildHierarchy,
     classifyFiles,
@@ -75,6 +77,8 @@ export interface EngineWorkspace {
     hierarchy: HierarchyIndex;
     /** Entrypoints and their traces (Flows), built with the hierarchy. */
     flows: FlowIndex;
+    /** The Start Here tour and `.codearchy/tours`, built with the hierarchy. */
+    tours: TourIndex;
     resolver: ImportResolver;
     stats: IndexStats;
     workers: number;
@@ -143,7 +147,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             indexer,
             pool,
             live,
-            lazy: {} as { hierarchy?: HierarchyIndex; flows?: FlowIndex; resolver?: ImportResolver },
+            lazy: {} as { hierarchy?: HierarchyIndex; flows?: FlowIndex; tours?: TourIndex; resolver?: ImportResolver },
             get hierarchy(): HierarchyIndex {
                 this.lazy.hierarchy ??= new HierarchyIndex(buildHierarchy(this.graph, { systemName: name, packageMarkers: this.discovery.packageMarkers, manifests: this.manifests }));
                 return this.lazy.hierarchy;
@@ -151,6 +155,17 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             get flows(): FlowIndex {
                 this.lazy.flows ??= new FlowIndex(this.analyses, this.hierarchy);
                 return this.lazy.flows;
+            },
+            get tours(): TourIndex {
+                const read = async (p: string) => {
+                    try {
+                        return await this.fs.readText(p);
+                    } catch {
+                        return undefined;
+                    }
+                };
+                this.lazy.tours ??= new TourIndex({ index: this.hierarchy, flows: this.flows, files: this.discovery.tours, read, name });
+                return this.lazy.tours;
             },
             get resolver(): ImportResolver {
                 this.lazy.resolver ??= new ImportResolver(this.analyses.values(), this.manifests);
@@ -197,7 +212,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const scan = async () => {
             const files = (await listHandleFiles(handle)).filter(tracked);
             const d = classifyFiles(files, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 }, 'handle');
-            const current = new Set([...d.sourceFiles, ...d.manifests]);
+            const current = new Set([...d.sourceFiles, ...d.manifests, ...d.tours]);
             const changed: string[] = [];
             for (const p of current) {
                 const sig = await signature(p);
@@ -213,7 +228,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const baseline = (async () => {
             const w = ws;
             if (!w) return;
-            for (const p of [...w.discovery.sourceFiles, ...w.discovery.manifests]) {
+            for (const p of [...w.discovery.sourceFiles, ...w.discovery.manifests, ...w.discovery.tours]) {
                 const sig = await signature(p);
                 if (sig !== undefined) known.set(p, sig);
             }
@@ -264,7 +279,8 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const w = ws;
         if (!w) return;
         const manifestPaths = changed.filter((p) => isManifest(posixPath.basename(p)));
-        const sources = changed.filter((p) => !manifestPaths.includes(p));
+        // Tour files only need the tours rebuilt (below, with the rest of the lazy state).
+        const sources = changed.filter((p) => !manifestPaths.includes(p) && !isTourFile(p));
         for (const [p, text] of await readManifests(w.fs, manifestPaths)) {
             w.manifests.set(p, text);
             w.store.putManifest(p, text);
@@ -272,7 +288,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const gone: string[] = [];
         for (const p of removed) {
             if (w.manifests.delete(p)) w.store.removeManifest(p);
-            else gone.push(p);
+            else if (!isTourFile(p)) gone.push(p);
         }
         if (gone.length) {
             w.indexer.remove(gone);
@@ -325,6 +341,10 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
                 return w.flows.list();
             case 'flow':
                 return w.flows.trace(s('id'));
+            case 'tours':
+                return w.tours.list();
+            case 'tour':
+                return w.tours.get(s('id'));
             case 'readFile':
                 return w.fs.readText(s('path'));
             default: {

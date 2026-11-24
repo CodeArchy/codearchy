@@ -5,6 +5,7 @@
  */
 import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from './view.js';
 import type { Flow, FlowSummary } from './flows.js';
+import type { TourDetails, TourSummary } from './tours.js';
 
 export interface SearchResult {
     /** A hierarchy key (`mod:src/a.ts`, `dir:src/auth`, ...) to reveal. */
@@ -26,6 +27,10 @@ export interface EngineClient {
     flows?(): Promise<FlowSummary[]>;
     /** One traced flow. */
     flow?(id: string): Promise<Flow | undefined>;
+    /** The generated Start Here tour and the workspace's authored tours. */
+    tours?(): Promise<TourSummary[]>;
+    /** One tour, with each step checked for staleness. */
+    tour?(id: string): Promise<TourDetails | undefined>;
 }
 
 /** What opening a workspace produced. */

@@ -393,6 +393,44 @@ part (grouping, row order) is `flowModel.ts`. Chat and the MCP server share one
 tool, `find_flows`: without an id it lists entrypoints, and with one it returns
 the trace. Hosts provide a `FlowSource`, which is core's `FlowIndex`.
 
+## Tours
+
+A tour is an ordered walk through the codebase
+([`packages/protocol/src/tours.ts`](packages/protocol/src/tours.ts)). Each step
+has:
+- a target: a node, a flow, or both;
+- the canvas view it wants;
+- a short explanation;
+- optional code ranges;
+- an optional anchor hash.
+
+- **Start Here** (`core/src/tours/startHere.ts`) is generated from the index,
+  with no AI. It covers:
+  1. the big picture;
+  2. where things start (one flow, followed end to end);
+  3. up to three core parts (the most connected domain, API or UI
+     containers, never a part together with its own subfolder);
+  4. the data layer;
+  5. the integrations the flows reach;
+  6. shared foundations;
+  7. a good first change: a tested module with few dependents, outside any
+     cycle.
+
+  Steps with nothing to show are left out. The Inspector beside the player
+  adds each part's summary card.
+- **Authored tours** are `.codearchy/tours/<slug>.json`, so they can be
+  committed and reviewed like code. Discovery lists them, and `parseTour`
+  validates them: version, sizes, targets, and code ranges that must stay
+  inside the workspace. A committed `start-here.json` replaces the generated
+  tour.
+- **Staleness.** `TourIndex.check` compares each step with the current
+  index. A target node, flow or file that's gone is `missing`. A step whose
+  anchor hash no longer matches is `changed`. The anchor covers the step's
+  code ranges, or else its node's identity.
+
+Hosts answer `tours()` and `tour(id)`. VS Code keeps the tour list current as
+files change. The browser engine notices tour edits in a watched folder.
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs
