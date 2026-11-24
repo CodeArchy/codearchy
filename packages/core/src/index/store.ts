@@ -5,18 +5,18 @@
  * migrated in place, and facts produced by a different extractor version are
  * treated as stale.
  *
- * Schema v1 is the foundation of doc 08's model (`file` + facts). Hierarchy,
- * summaries, flows and authorship tables join it in later phases.
+ * Schema v1 is the foundation of doc 08's model (`file` + facts); v2 adds each
+ * file's flow facts (entrypoints and call sites, as compact JSON).
  */
-import type { FileAnalysis, ImportInfo, SymbolInfo, SymbolKind } from '@codearchy/protocol';
+import type { CallSite, EntryPoint, FileAnalysis, ImportInfo, SymbolInfo, SymbolKind } from '@codearchy/protocol';
 import { LANGUAGE_PACKS } from '../languages/index.js';
 import type { SqlRow, SqlStatement, StoragePort } from '../ports.js';
 import { contentHash } from '../util/hash.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Bump when extraction logic changes in ways the queries don't capture. */
-const EXTRACTOR_REVISION = 1;
+const EXTRACTOR_REVISION = 2;
 
 /**
  * Identifies the extractor that produced stored facts: changing any language
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS file (
   mtime_ms INTEGER,
   namespace TEXT,
   references_json TEXT,
+  flow_json TEXT,
   facts_version TEXT NOT NULL,
   indexed_at INTEGER NOT NULL
 );
@@ -139,8 +140,8 @@ export class IndexStore {
         this.stmts = {
             fileId: db.prepare('SELECT id FROM file WHERE path = ?'),
             insertFile: db.prepare(
-                `INSERT INTO file (path, lang, parser, content_hash, size, mtime_ms, namespace, references_json, facts_version, indexed_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+                `INSERT INTO file (path, lang, parser, content_hash, size, mtime_ms, namespace, references_json, flow_json, facts_version, indexed_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
             ),
             deleteFile: db.prepare('DELETE FROM file WHERE id = ?'),
             deleteSymbols: db.prepare('DELETE FROM symbol WHERE file_id = ?'),
@@ -175,7 +176,7 @@ export class IndexStore {
     loadAnalyses(paths?: Iterable<string>): Map<string, FileAnalysis> {
         const wanted = paths ? new Set(paths) : undefined;
         const files = new Map<number, FileAnalysis>();
-        for (const r of this.db.prepare('SELECT id, path, lang, parser, namespace, references_json FROM file').all()) {
+        for (const r of this.db.prepare('SELECT id, path, lang, parser, namespace, references_json, flow_json FROM file').all()) {
             const path = String(r.path);
             if (wanted && !wanted.has(path)) continue;
             files.set(Number(r.id), {
@@ -187,6 +188,7 @@ export class IndexStore {
                 ...(r.namespace !== null ? { namespace: String(r.namespace) } : {}),
                 ...(r.references_json !== null ? { references: JSON.parse(String(r.references_json)) as string[] } : {}),
                 ...(r.parser !== null ? { parser: String(r.parser) as FileAnalysis['parser'] } : {}),
+                ...(r.flow_json !== null ? decodeFlowFacts(String(r.flow_json)) : {}),
             });
         }
         for (const r of this.db.prepare('SELECT file_id, name, kind, container, start_line, end_line, exported FROM symbol ORDER BY id').all()) {
@@ -319,6 +321,7 @@ export class IndexStore {
             state.mtimeMs ?? null,
             a.namespace ?? null,
             a.references ? JSON.stringify(a.references) : null,
+            encodeFlowFacts(a),
             FACTS_VERSION,
             Date.now()
         );
@@ -339,4 +342,29 @@ export class IndexStore {
         this.stmts.deleteImports.run(id);
         this.stmts.deleteFile.run(id);
     }
+}
+
+/** Calls are stored as `[name, line, from, via]` tuples (a file can have thousands): from -1 = top level, via 0 bare / 1 self / 2 member. */
+type StoredFlowFacts = { e?: EntryPoint[]; c?: Array<[string, number, number, number]> };
+const VIA = [undefined, 'self', 'member'] as const;
+
+function encodeFlowFacts(a: FileAnalysis): string | null {
+    if (!a.entrypoints?.length && !a.calls?.length) return null;
+    const facts: StoredFlowFacts = {};
+    if (a.entrypoints?.length) facts.e = a.entrypoints;
+    if (a.calls?.length) facts.c = a.calls.map((c) => [c.name, c.line, c.from ?? -1, c.via ? VIA.indexOf(c.via) : 0]);
+    return JSON.stringify(facts);
+}
+
+function decodeFlowFacts(json: string): Pick<FileAnalysis, 'entrypoints' | 'calls'> {
+    const facts = JSON.parse(json) as StoredFlowFacts;
+    const out: Pick<FileAnalysis, 'entrypoints' | 'calls'> = {};
+    if (facts.e?.length) out.entrypoints = facts.e;
+    if (facts.c?.length) {
+        out.calls = facts.c.map(([name, line, from, via]): CallSite => {
+            const v = VIA[via];
+            return { name, line, ...(from >= 0 ? { from } : {}), ...(v ? { via: v } : {}) };
+        });
+    }
+    return out;
 }

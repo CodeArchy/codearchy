@@ -68,6 +68,10 @@ describeSqlite('IndexStore (node:sqlite)', () => {
         const loaded = store.loadAnalyses();
         expect(loaded.size).toBe(analyses.size);
         for (const [p, a] of analyses) expect(loaded.get(p)).toEqual(a);
+        // …including the flow facts (entrypoints, and calls with their receivers).
+        const all = [...analyses.values()];
+        expect(all.some((a) => a.entrypoints?.length)).toBe(true);
+        expect(all.some((a) => a.calls?.some((c) => c.via === 'member') && a.calls.some((c) => !c.via))).toBe(true);
 
         const hits = store.searchSymbols('OrderSer');
         expect(hits.map((h) => `${h.path}#${h.name}`)).toEqual(

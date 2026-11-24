@@ -12,6 +12,7 @@ export * from './hierarchy.js';
 export * from './view.js';
 export * from './engine.js';
 export * from './ai.js';
+export * from './flows.js';
 
 export interface SymbolInfo {
     name: string;
@@ -61,6 +62,37 @@ export interface FileAnalysis {
     references?: string[];
     /** Which extractor produced this analysis. */
     parser?: 'tree-sitter' | 'regex';
+    /** Where execution enters the system from outside (routes, commands, jobs, main). */
+    entrypoints?: EntryPoint[];
+    /** Calls made in this file (approximate: by name, from a text scan). */
+    calls?: CallSite[];
+}
+
+export type EntryPointKind = 'http' | 'cli' | 'job' | 'event' | 'ui' | 'main';
+
+export interface EntryPoint {
+    kind: EntryPointKind;
+    /** What a person would call it: `GET /api/login`, `deploy`, `main`. */
+    label: string;
+    /** The framework or convention the rule matched (express, fastapi, cobra…). */
+    framework: string;
+    /** 0-based line of the declaration. */
+    line: number;
+    /** The handler, when the declaration names one (`views.login`, `handlers.Login`) or it decorates a function. */
+    handler?: string;
+    /** Last line of an inline handler (`app.get('/x', (req, res) => { … })`), 0-based. */
+    endLine?: number;
+}
+
+export interface CallSite {
+    /** The called name (the last segment: `repo.find(` → `find`). */
+    name: string;
+    /** 0-based line. */
+    line: number;
+    /** Index into `symbols` of the innermost function or method containing the call. */
+    from?: number;
+    /** How it was called: on `this`/`self` (`self`), on another object or module (`member`); absent = a bare call. */
+    via?: 'self' | 'member';
 }
 
 export interface GraphNode {
