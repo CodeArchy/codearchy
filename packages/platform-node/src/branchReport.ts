@@ -5,7 +5,7 @@
  * Read-only git: merge-base, rev-list, diff, blame, show.
  */
 import { execFile } from 'node:child_process';
-import { addCounts, buildGraph, countLines, displayName, emptyCounts, newDependencies, partOf, type HierarchyIndex } from '@codearchy/core';
+import { addCounts, buildGraph, countLines, emptyCounts, newDependencies, partLabel, partOf, type HierarchyIndex } from '@codearchy/core';
 import type { AuthorshipCounts, AuthorshipRange, BranchReport, FileAnalysis } from '@codearchy/protocol';
 import { parseIncrementalBlame } from './authorship.js';
 
@@ -103,7 +103,7 @@ export async function computeBranchReport(o: BranchReportOptions): Promise<Branc
         report.added = addCounts(report.added, counts);
         const part = partOf(o.index, path);
         if (part) {
-            const entry = byPart.get(part.key) ?? { key: part.key, name: displayName(part), added: emptyCounts() };
+            const entry = byPart.get(part.key) ?? { key: part.key, name: partLabel(part), added: emptyCounts() };
             entry.added = addCounts(entry.added, counts);
             byPart.set(part.key, entry);
         }
@@ -129,10 +129,12 @@ export async function computeBranchReport(o: BranchReportOptions): Promise<Branc
         if (a) before.set(p, a);
     }
     const sources = new Set([...changed.keys(), ...[...changed.values()].map((c) => c.old).filter((x): x is string => !!x), ...deleted]);
-    const pairs = (analyses: Iterable<FileAnalysis>) =>
+    // Before: every dependency at the merge base (a new file importing a part others already use adds nothing).
+    // After: only the changed files' dependencies can be new.
+    const pairs = (analyses: Iterable<FileAnalysis>, onlyChanged: boolean) =>
         buildGraph(analyses, new Map(o.manifests))
-            .edges.filter((e) => sources.has(e.source))
+            .edges.filter((e) => !onlyChanged || sources.has(e.source))
             .map((e): [string, string] => [e.source, e.target]);
-    report.newDependencies = newDependencies(o.index, pairs(before.values()), pairs(o.analyses.values()));
+    report.newDependencies = newDependencies(o.index, pairs(before.values(), false), pairs(o.analyses.values(), true));
     return report;
 }

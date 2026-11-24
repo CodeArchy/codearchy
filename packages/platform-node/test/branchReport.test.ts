@@ -68,4 +68,41 @@ describe('computeBranchReport', () => {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
+
+    test('a new file importing a part that others already use is no new dependency', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codearchy-report-'));
+        try {
+            git(root, 'init', '-q', '-b', 'main');
+            write(root, 'core/orders.ts', 'export function placeOrder() {\n    return 1;\n}\n');
+            write(root, 'core/money.ts', 'export const cents = (n: number) => n * 100;\n');
+            write(root, 'api/client.ts', 'import { placeOrder } from "../core/orders";\nexport const go = () => placeOrder();\n');
+            write(root, 'ui/page.ts', 'export const page = 1;\n');
+            git(root, 'add', '.');
+            git(root, 'commit', '-q', '-m', 'Start');
+            git(root, 'switch', '-q', '-c', 'feature');
+            // api already depends on core; ui doesn't yet.
+            write(root, 'api/refunds.ts', 'import { placeOrder } from "../core/orders";\nexport const refund = () => placeOrder();\n');
+            write(root, 'ui/orders.ts', 'import { placeOrder } from "../core/orders";\nexport const show = () => placeOrder();\n');
+            git(root, 'add', '.');
+            git(root, 'commit', '-q', '-m', 'Refunds and an orders page');
+
+            const { analyzer, fs: port } = await createNodeAnalyzer({ root, maxFileSize: 1_000_000 });
+            const d = await discover(root, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 });
+            const analyses = await analyzer.analyzeAll(d.sourceFiles);
+            const index = new HierarchyIndex(buildHierarchy(buildGraph(analyses.values()), { systemName: 'shop' }));
+            const report = await computeBranchReport({
+                root,
+                base: 'main',
+                index,
+                rangesFor: () => [],
+                analyses,
+                manifests: new Map(),
+                analyze: (rel, text) => analyzer.analyzeFile(rel, text),
+                read: (rel) => port.readText(rel),
+            });
+            expect(report.newDependencies.map((x) => `${x.fromName} → ${x.toName}`)).toEqual(['ui → core']);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
 });
