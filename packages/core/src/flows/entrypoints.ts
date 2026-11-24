@@ -411,29 +411,49 @@ function routeFromSegments(segments: string): string {
     return `/${parts.join('/')}`;
 }
 
+/** The folders between the last `marker` folder(s) and the file, e.g. `app/(shop)/api/orders/route.ts` → `(shop)/api/orders`. */
+function under(dirs: string[], ...marker: string[]): string | undefined {
+    for (let i = dirs.length - marker.length; i >= 0; i--) {
+        if (marker.every((m, k) => dirs[i + k] === m)) return dirs.slice(i + marker.length).join('/');
+    }
+    return undefined;
+}
+
 function fileConventions(a: FileAnalysis): EntryPoint[] {
     if (!JS.has(a.language)) return [];
     const out: EntryPoint[] = [];
+    // Plain string work on the path (no regex over it): paths can be long and repetitive.
+    const dirs = a.filePath.split('/');
+    const file = dirs.pop() ?? '';
+    const dot = file.lastIndexOf('.');
+    const stem = dot > 0 ? file.slice(0, dot) : file;
+    const ext = dot > 0 ? file.slice(dot + 1) : '';
+    const script = ext === 'ts' || ext === 'js' || ext === 'tsx' || ext === 'jsx';
+    if (!script) return out;
     const exported = a.symbols.filter((s) => s.exported && (s.kind === SymbolKind.Function || s.kind === SymbolKind.Variable));
-    const route = /(?:^|\/)app\/((?:[^/]+\/)*?)route\.[jt]sx?$/.exec(a.filePath) ?? /(?:^|\/)src\/routes\/((?:[^/]+\/)*?)\+server\.[jt]s$/.exec(a.filePath);
-    if (route) {
-        const framework = a.filePath.includes('+server.') ? 'sveltekit' : 'nextjs';
+    const main = () => exported.find((s) => s.kind === SymbolKind.Function) ?? exported[0];
+
+    const next = stem === 'route' ? under(dirs, 'app') : undefined;
+    const svelte = stem === '+server' && (ext === 'ts' || ext === 'js') ? under(dirs, 'src', 'routes') : undefined;
+    const route = next ?? svelte;
+    if (route !== undefined) {
+        const framework = next !== undefined ? 'nextjs' : 'sveltekit';
         for (const s of exported) {
-            if (HTTP_EXPORTS.has(s.name)) out.push({ kind: 'http', framework, label: `${s.name} ${routeFromSegments(route[1])}`, line: s.startLine, handler: s.name });
+            if (HTTP_EXPORTS.has(s.name)) out.push({ kind: 'http', framework, label: `${s.name} ${routeFromSegments(route)}`, line: s.startLine, handler: s.name });
         }
         return out;
     }
-    const api = /(?:^|\/)pages\/api\/(.+)\.[jt]sx?$/.exec(a.filePath);
-    if (api) {
-        const main = exported.find((s) => s.kind === SymbolKind.Function) ?? exported[0];
-        const path = routeFromSegments(`api/${api[1].replace(/(^|\/)index$/, '')}`);
-        out.push({ kind: 'http', framework: 'nextjs', label: `ANY ${path}`, line: main?.startLine ?? 0, ...(main ? { handler: main.name } : {}) });
+    const api = under(dirs, 'pages', 'api');
+    if (api !== undefined) {
+        const h = main();
+        const path = routeFromSegments(['api', api, stem === 'index' ? '' : stem].filter(Boolean).join('/'));
+        out.push({ kind: 'http', framework: 'nextjs', label: `ANY ${path}`, line: h?.startLine ?? 0, ...(h ? { handler: h.name } : {}) });
         return out;
     }
-    const page = /(?:^|\/)app\/((?:[^/]+\/)*?)page\.[jt]sx$/.exec(a.filePath);
-    if (page) {
-        const main = exported.find((s) => s.kind === SymbolKind.Function) ?? exported[0];
-        out.push({ kind: 'ui', framework: 'nextjs', label: routeFromSegments(page[1]), line: main?.startLine ?? 0, ...(main ? { handler: main.name } : {}) });
+    const page = stem === 'page' && (ext === 'tsx' || ext === 'jsx') ? under(dirs, 'app') : undefined;
+    if (page !== undefined) {
+        const h = main();
+        out.push({ kind: 'ui', framework: 'nextjs', label: routeFromSegments(page), line: h?.startLine ?? 0, ...(h ? { handler: h.name } : {}) });
     }
     return out;
 }
