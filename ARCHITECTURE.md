@@ -501,13 +501,23 @@ a walk-through. The pure part is in `tourModel.ts`.
 - **`apps/cli`** is the `codearchy` command line. `codearchy mcp` serves the
   map to the user's own AI agent over the Model Context Protocol (stdio, with
   the official TypeScript SDK). It offers `overview` plus the grounded-chat
-  tools (`search`, `get_node`, `neighbors`, `explain_edge` and, unless
-  `--no-code` is passed, `read_code`), all read-only. The agent works under
+  tools (`search`, `get_node`, `neighbors`, `explain_edge`, `find_flows` and,
+  unless `--no-code` is passed, `read_code`), all read-only. The agent works under
   its own subscription, and CodeArchy makes no model calls. The workspace is
   indexed at start-up (`git ls-files` when available). A file watcher marks
   the index stale, and the next call rebuilds it. stdout carries the
   protocol and logs go to stderr. Setup per agent:
   [docs/guides/mcp.md](docs/guides/mcp.md).
+  `codearchy serve` is the **Companion** (`src/companion.ts`). It serves the
+  same engine to the web app over a WebSocket on `127.0.0.1`, using the
+  protocol in `protocol/src/companion.ts`. The upgrade must carry an allowed
+  Origin and a local Host. The first frame pairs with a one-time token from
+  the printed link's fragment, or resumes with a session key. Requests come
+  from a fixed read-only allow-list, and only indexed source and tour files
+  can be read. Frames are size- and rate-limited, and file changes are pushed
+  as `changed` events. The page side is `CompanionEngine` in
+  `@codearchy/platform-browser/companion`, an `EngineClient` like the worker
+  one. See [docs/guides/companion.md](docs/guides/companion.md).
 
 ## Design rules
 

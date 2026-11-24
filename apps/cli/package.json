@@ -22,10 +22,13 @@
         "@codearchy/platform-node": "workspace:*",
         "@codearchy/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "1.32.2",
+        "ws": "8.23.0",
         "zod": "4.6.7"
     },
     "devDependencies": {
+        "@codearchy/platform-browser": "workspace:*",
         "@types/node": "^20.11.0",
+        "@types/ws": "8.18.2",
         "typescript": "5.9.3",
         "vitest": "5.1.0"
     },
