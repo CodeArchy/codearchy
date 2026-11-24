@@ -131,6 +131,16 @@ describe('managing tours', () => {
 describe('narration text', () => {
     test('links keep their label; code and markup marks go', () => {
         expect(speechText('It lives in [o.ts](node:mod:core/o.ts) and calls `place()` **twice**.')).toBe('It lives in o.ts and calls place() twice.');
+        expect(speechText('[a] [b](x) [c](y')).toBe('[a] b [c](y'); // only complete links change
+        expect(speechText('[[x](y)] ok')).toBe('[x] ok');
+    });
+
+    test('stays linear on crafted text (tour files come from repositories)', () => {
+        const started = performance.now();
+        speechText('['.repeat(50_000) + '\\'.repeat(50_000));
+        speechText('[\\](' + '[(]('.repeat(50_000));
+        speechText('[a]('.repeat(50_000) + ')');
+        expect(performance.now() - started).toBeLessThan(500);
     });
 });
 

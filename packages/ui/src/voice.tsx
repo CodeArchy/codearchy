@@ -9,12 +9,39 @@ import { Icon, type IconName } from './icons.js';
 
 /** Plain text for speech: links keep their label, code and markup marks go. */
 export function speechText(markdown: string): string {
-    return markdown
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    return linkLabels(markdown)
         .replace(/`([^`]*)`/g, '$1')
         .replace(/[*_#>]+/g, '')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+/**
+ * `[label](target)` → `label`, in one linear pass (tour text comes from
+ * repositories: no regular expression that backtracks on crafted input).
+ */
+function linkLabels(s: string): string {
+    const lastParen = s.lastIndexOf(')');
+    let out = '';
+    let i = 0;
+    while (i < s.length) {
+        if (s[i] !== '[') {
+            out += s[i++];
+            continue;
+        }
+        let j = i + 1;
+        while (j < s.length && s[j] !== ']' && s[j] !== '[') j++;
+        // A label, then `(` and a `)` somewhere after it: keep the label, drop the target.
+        if (j > i + 1 && s[j] === ']' && s[j + 1] === '(' && j + 2 <= lastParen) {
+            const k = s.indexOf(')', j + 2);
+            out += s.slice(i + 1, j);
+            i = k + 1;
+            continue;
+        }
+        out += s.slice(i, j);
+        i = j;
+    }
+    return out;
 }
 
 export function useVoiceState(voice: VoiceClient): VoiceState {
