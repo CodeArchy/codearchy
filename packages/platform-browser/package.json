@@ -25,6 +25,10 @@
             "types": "./dist/stores.d.ts",
             "default": "./dist/stores.js"
         },
+        "./companion": {
+            "types": "./dist/companion.d.ts",
+            "default": "./dist/companion.js"
+        },
         "./package.json": "./package.json"
     },
     "files": [

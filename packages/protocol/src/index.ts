@@ -14,6 +14,7 @@ export * from './engine.js';
 export * from './ai.js';
 export * from './flows.js';
 export * from './tours.js';
+export * from './companion.js';
 
 export interface SymbolInfo {
     name: string;

@@ -3,13 +3,16 @@
  * codearchy: the command line.
  *
  *   codearchy mcp [--root <dir>] [--no-code]   serve the map to your AI agent over MCP (stdio)
+ *   codearchy serve [--root <dir>] [--port <n>] [--allow-origin <url>]…
+ *                                              the Companion: the native engine for the web app
  *
- * stdout carries the protocol, so everything else goes to stderr.
+ * For `mcp`, stdout carries the protocol, so everything else goes to stderr.
  */
 import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
+import { startCompanion } from './companion.js';
 import { Workspace } from './workspace.js';
 
 const HELP = `codearchy: your codebase's architecture, for you and your AI agent.
@@ -18,8 +21,17 @@ Usage:
   codearchy mcp [--root <dir>] [--no-code]
       Serve the architecture map of <dir> (default: the current folder) to an
       AI agent over the Model Context Protocol, on stdin/stdout. Tools:
-      overview, search, get_node, neighbors, explain_edge and read_code.
+      overview, search, get_node, neighbors, explain_edge, find_flows and read_code.
       --no-code   don't offer read_code (names, signatures, docs and structure only)
+
+  codearchy serve [--root <dir>] [--port <n>] [--allow-origin <url>]... [--app <url>]
+      The Companion: run the engine natively for the web app (app.codearchy.com),
+      for big repositories and live updates in any browser. Prints a one-time
+      pairing link. Only pages on this machine, from the app (or the origins you
+      allow), can connect, and it never writes to your files.
+      --port <n>           listen on this port (default: a free one)
+      --allow-origin <url> also accept a self-hosted app at this origin (repeatable)
+      --app <url>          the app the pairing link opens (default https://app.codearchy.com)
 
   codearchy --version | --help
 
@@ -48,6 +60,7 @@ async function main(argv: string[]): Promise<number> {
         process.stdout.write(`${version()}\n`);
         return 0;
     }
+    if (command === 'serve') return serve(rest);
     if (command !== 'mcp') {
         process.stderr.write(`Unknown command "${command}".\n\n${HELP}`);
         return 1;
@@ -81,6 +94,59 @@ async function main(argv: string[]): Promise<number> {
     });
     workspace.close();
     await server.close();
+    return 0;
+}
+
+async function serve(args: string[]): Promise<number> {
+    let root = process.cwd();
+    let port = 0;
+    let app: string | undefined;
+    const allowOrigins: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i]!;
+        const value = () => args[++i] ?? '';
+        if (arg === '--root') root = path.resolve(value());
+        else if (arg.startsWith('--root=')) root = path.resolve(arg.slice('--root='.length));
+        else if (arg === '--port') port = Number(value());
+        else if (arg === '--allow-origin') allowOrigins.push(value());
+        else if (arg === '--app') app = value();
+        else {
+            process.stderr.write(`Unknown option "${arg}".\n\n${HELP}`);
+            return 1;
+        }
+    }
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        process.stderr.write(`--port must be a port number.\n`);
+        return 1;
+    }
+    if (app) {
+        try {
+            app = new URL(app).origin;
+            allowOrigins.push(app);
+        } catch {
+            process.stderr.write(`--app must be a URL.\n`);
+            return 1;
+        }
+    }
+
+    let notify: ((file?: string) => void) | undefined;
+    const workspace = new Workspace(root, { log, onChange: (file) => notify?.(file) });
+    workspace.watch();
+    void workspace.snapshot().catch((err: unknown) => log(`Indexing failed: ${err instanceof Error ? err.message : String(err)}`));
+    const companion = await startCompanion(workspace, { port, allowOrigins, version: version(), log, ...(app ? { appUrl: app } : {}) });
+    notify = companion.notify;
+    process.stdout.write(
+        `\nCodeArchy Companion is serving ${root}\n\n` +
+            `Open this link to connect (it works once):\n\n  ${companion.pairingUrl}\n\n` +
+            `Only pages on this machine can connect, and nothing is written to your files. Press Ctrl+C to stop.\n\n`
+    );
+
+    await new Promise<void>((resolve) => {
+        process.on('SIGINT', resolve);
+        process.on('SIGTERM', resolve);
+    });
+    await companion.close();
+    workspace.close();
     return 0;
 }
 

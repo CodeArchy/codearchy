@@ -40,8 +40,8 @@ export interface EngineClient {
 /** What opening a workspace produced. */
 export interface WorkspaceSummary {
     name: string;
-    /** Where the index lives: persistent (OPFS) or memory. */
-    storage: 'opfs' | 'memory';
+    /** Where the index lives: persistent (OPFS), memory, or a native engine (the Companion). */
+    storage: 'opfs' | 'memory' | 'native';
     files: number;
     symbols: number;
     edges: number;

@@ -7,7 +7,7 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, type Analyzer } from '@codearchy/core';
+import { buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
 import { createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
@@ -17,7 +17,15 @@ export interface Snapshot {
     cardFor: (key: string) => Promise<Card | undefined>;
     /** Entrypoints and their traces. */
     flows: FlowIndex;
+    /** Start Here and the workspace's `.codearchy/tours`. */
+    tours: TourIndex;
+    /** Authored tour files (workspace paths). */
+    tourFiles: string[];
     files: number;
+    symbols: number;
+    edges: number;
+    /** Source files per language. */
+    languageCounts: Record<string, number>;
     languages: string[];
     builtAt: number;
     buildMs: number;
@@ -28,6 +36,8 @@ export interface WorkspaceOptions {
     /** Above this many files, search covers names and paths only (cards would mean reading every file up front). */
     cardSearchLimit?: number;
     log?: (message: string) => void;
+    /** Called (with the changed path, when known) whenever a relevant file changes; the next snapshot() rebuilds. */
+    onChange?: (file: string | undefined) => void;
 }
 
 /** Changes under these never make the index stale. */
@@ -63,6 +73,7 @@ export class Workspace {
             this.watcher = fs.watch(this.root, { recursive: true }, (_event, file) => {
                 if (file && IGNORED.test(String(file))) return;
                 this.stale = true;
+                this.options.onChange?.(file ? String(file) : undefined);
             });
             this.watcher.on('error', () => this.fallbackToRebuildEachTime());
         } catch {
@@ -103,7 +114,14 @@ export class Workspace {
         const graph = buildGraph(analyses.values(), await readManifests(fsPort, discovery.manifests), {
             toHostPath: (p) => fromPosix(this.root, p),
         });
-        const index = new HierarchyIndex(buildHierarchy(graph, { systemName: path.basename(this.root) }));
+        const index = new HierarchyIndex(buildHierarchy(graph, { systemName: path.basename(this.root), packageMarkers: discovery.packageMarkers }));
+        const flows = new FlowIndex(analyses, index);
+        const languageCounts: Record<string, number> = {};
+        let symbols = 0;
+        for (const a of analyses.values()) {
+            languageCounts[a.language] = (languageCounts[a.language] ?? 0) + 1;
+            symbols += a.symbols.length;
+        }
         const summarizer = new Summarizer({ index, readFile: (p) => this.readFile(p), store: this.store });
         const cardFor = async (key: string) => (index.node(key) && index.node(key)!.kind !== 'symbol' ? summarizer.card(key) : undefined);
         const files = discovery.sourceFiles.length;
@@ -112,8 +130,13 @@ export class Workspace {
             index,
             search,
             cardFor,
-            flows: new FlowIndex(analyses, index),
+            flows,
+            tours: new TourIndex({ index, flows, files: discovery.tours, read: (p) => this.readFile(p), name: path.basename(this.root) }),
+            tourFiles: discovery.tours,
             files,
+            symbols,
+            edges: graph.edges.length,
+            languageCounts,
             languages: graph.metadata.languages,
             builtAt: Date.now(),
             buildMs: Date.now() - started,
