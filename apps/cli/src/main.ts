@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
-import { installHook, uninstallHook, writeNotes } from './authorship.js';
+import { installHook, ledgerFile, uninstallHook, writeNotes } from './authorship.js';
 import { AGENT_IDS, FileLedgerStore, companionDataDir } from '@codearchy/platform-node';
 import type { AgentId } from '@codearchy/core';
 import { startCompanion } from './companion.js';
@@ -44,6 +44,13 @@ Usage:
       Companion's record, as a git note (refs/notes/codearchy-authorship).
       Notes stay local until you push them:
         git push origin refs/notes/codearchy-authorship
+
+  codearchy authorship report [--root <dir>] [--base <ref>] [--json] [--agent-logs <list>]
+      What this branch adds since it left <ref> (default: origin's default
+      branch, then main, then master): lines by who wrote them (AI tools,
+      reviewed, people, unknown), per part, and the dependencies between parts
+      it introduces. Markdown for a PR description, or JSON. --agent-logs reads
+      those agents' session logs first (opt-in; only line ranges are kept).
 
   codearchy authorship hook install|uninstall [--root <dir>]
       Run "authorship notes" after every commit (a post-commit hook). It never
@@ -194,11 +201,25 @@ async function authorship(args: string[]): Promise<number> {
     const [sub, ...rest] = args;
     let root = process.cwd();
     let commit = 'HEAD';
+    let base: string | undefined;
+    let json = false;
+    const agentLogs: AgentId[] = [];
     let action: string | undefined;
     for (let i = 0; i < rest.length; i++) {
         const arg = rest[i]!;
         if (arg === '--root') root = path.resolve(rest[++i] ?? '.');
         else if (arg === '--commit') commit = rest[++i] ?? 'HEAD';
+        else if (arg === '--base') base = rest[++i];
+        else if (arg === '--json') json = true;
+        else if (arg === '--agent-logs') {
+            for (const a of (rest[++i] ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
+                if (!(AGENT_IDS as string[]).includes(a)) {
+                    process.stderr.write(`--agent-logs: "${a}" isn't one of ${AGENT_IDS.join(', ')}.\n`);
+                    return 1;
+                }
+                agentLogs.push(a as AgentId);
+            }
+        }
         else if (!arg.startsWith('-') && !action) action = arg;
         else {
             process.stderr.write(`Unknown option "${arg}".\n\n${HELP}`);
@@ -207,10 +228,20 @@ async function authorship(args: string[]): Promise<number> {
     }
     try {
         if (sub === 'notes') process.stdout.write(`${await writeNotes(root, commit)}\n`);
+        else if (sub === 'report') {
+            const ledger = new FileLedgerStore(ledgerFile(root)).ledger;
+            const workspace = new Workspace(root, { ledger, ...(agentLogs.length ? { agentLogs } : {}), log: (m) => process.stderr.write(`[codearchy] ${m}\n`) });
+            try {
+                const { report, markdown } = await workspace.branchReport(base);
+                process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : markdown);
+            } finally {
+                workspace.close();
+            }
+        }
         else if (sub === 'hook' && action === 'install') process.stdout.write(`${installHook(root)}\n`);
         else if (sub === 'hook' && action === 'uninstall') process.stdout.write(`${uninstallHook(root)}\n`);
         else {
-            process.stderr.write(`Usage: codearchy authorship notes | hook install | hook uninstall\n`);
+            process.stderr.write(`Usage: codearchy authorship notes | report | hook install | hook uninstall\n`);
             return 1;
         }
         return 0;

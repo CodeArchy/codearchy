@@ -98,3 +98,27 @@ export const AGENT_NAMES: Readonly<Record<string, string>> = {
 export function agentName(id: string): string {
     return AGENT_NAMES[id] ?? id;
 }
+
+/** "What this branch adds, and who wrote it": lines added since the branch left its base. */
+export interface BranchReport {
+    /** The ref compared against, and the commit where the branch left it. */
+    base: string;
+    mergeBase: string;
+    head: string;
+    /** Commits on the branch. */
+    commits: number;
+    /** Added lines (committed on the branch, or not committed yet) by origin. */
+    added: AuthorshipCounts;
+    /** Of those, not committed yet. */
+    uncommitted: number;
+    /** AI and reviewed lines per tool. */
+    byAgent: Record<string, number>;
+    /** Per part of the system (nearest component or package), most added first. */
+    byPart: Array<{ key: string; name: string; added: AuthorshipCounts }>;
+    /** Per file, most added first. */
+    files: Array<{ path: string; added: AuthorshipCounts; status: 'added' | 'modified' }>;
+    /** Dependencies between parts that the branch introduces. */
+    newDependencies: Array<{ from: string; to: string; fromName: string; toName: string; via: Array<{ from: string; to: string }> }>;
+    /** Files removed on the branch. */
+    deleted: string[];
+}

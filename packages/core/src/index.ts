@@ -40,10 +40,11 @@ export { roleOfComponent, roleOfModule, roleOfName } from './hierarchy/roles.js'
 export { ArchitectureInference, heuristicGroupForPath, tokenizeSegment } from './graph/inference.js';
 export { classifyFiles, isManifest, isPackageMarker, isTourFile, TOURS_DIR, DEFAULT_EXCLUDE_PATTERNS, MANIFEST_FILES, type DiscoveryOptions, type DiscoveryResult } from './discovery/classify.js';
 export { FlowIndex, FLOW_LIMITS, lastSegment } from './flows/trace.js';
-export { generateStartHere, START_HERE_ID, type StartHereOptions } from './tours/startHere.js';
+export { displayName, generateStartHere, START_HERE_ID, type StartHereOptions } from './tours/startHere.js';
 export { classifyCommit, subjectOf, type AuthorshipRule, type CommitAttribution, type CommitInfo } from './authorship/commits.js';
 export { AuthorshipIndex, emptyCounts, rangesFromBlame, total as authorshipTotal, weekOf, type AttributedCommit, type AuthorshipData } from './authorship/index.js';
 export { lineCount } from './flows/enrich.js';
+export { addCounts, countLines, newDependencies, partOf, renderBranchReport } from './authorship/report.js';
 export { NOTES_REF, NOTE_VERSION, parseNote, projectNotes, serializeNote, type AuthorshipNote, type BlameRun, type NoteRange } from './authorship/notes.js';
 export { matchEdits, parseAider, parseApplyPatch, parseClaudeCode, parseCodex, type AgentEdit, type AgentId, type ParseResult } from './authorship/agentLogs.js';
 export { AuthorshipLedger, markLines, overlayRanges, withLedger, LEDGER_VERSION, type LedgerFile, type LedgerRange, type LedgerSource, type LineEdit } from './authorship/ledger.js';

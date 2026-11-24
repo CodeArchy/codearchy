@@ -204,6 +204,12 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
                 return snap.authorship?.status() ?? snap.authorshipStatus;
             case 'authorship':
                 return snap.authorship?.describe(str('key'));
+            case 'authorshipReport': {
+                const base = typeof params.base === 'string' && params.base.trim() ? params.base.trim() : undefined;
+                // A ref name, not a command-line option (git would read "-…" as one).
+                if (base && (base.startsWith('-') || base.length > 200)) throw new Error('"base" must be a branch, tag or commit');
+                return workspace.branchReport(base);
+            }
             case 'authorshipMark': {
                 const as = str('as');
                 if (!['reviewed', 'ai', 'human', 'unknown'].includes(as)) throw new Error('"as" must be reviewed, ai, human or unknown');
