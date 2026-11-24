@@ -73,6 +73,11 @@
                 "command": "codearchy.authorship.correct",
                 "title": "Correct Authorship of Selection",
                 "category": "CodeArchy"
+            },
+            {
+                "command": "codearchy.authorship.writeNotes",
+                "title": "Write Authorship Notes for the Last Commit",
+                "category": "CodeArchy"
             }
         ],
         "viewsContainers": {
@@ -274,6 +279,19 @@
                         ]
                     },
                     "markdownDescription": "Read these coding agents' session logs on this machine to see exactly which lines they wrote (*verified*). Off by default: the logs contain your prompts and conversations, so only which lines each agent wrote, and when, is kept, never their text."
+                },
+                "codearchy.authorship.gitNotes": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "onCommit"
+                    ],
+                    "default": "off",
+                    "enumDescriptions": [
+                        "Write notes only when you run \"CodeArchy: Write Authorship Notes for the Last Commit\"",
+                        "After each commit, write which of its lines AI tools wrote (from CodeArchy's record) as a git note"
+                    ],
+                    "markdownDescription": "Record authorship in git notes (`refs/notes/codearchy-authorship`) so teammates can see it. Notes stay local until you push them: `git push origin refs/notes/codearchy-authorship`."
                 }
             }
         }

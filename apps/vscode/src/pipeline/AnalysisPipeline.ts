@@ -43,6 +43,8 @@ import {
     fromPosix,
     gitIgnoredPaths,
     computeGitAuthorship,
+    writeAuthorshipNote,
+    type NoteWriteResult,
     FileLedgerStore,
     AgentLogIngester,
     AGENT_IDS,
@@ -489,6 +491,19 @@ export class AnalysisPipeline {
         if (text !== undefined) this.ledger.reconcile(rel, text);
         this.ledgerChanged(0);
         return { marked };
+    }
+
+    /**
+     * Writes the ledger's ranges for a commit's changed files as its authorship
+     * note (refs/notes/codearchy-authorship). Never pushes.
+     */
+    async writeNote(commit = 'HEAD'): Promise<NoteWriteResult | undefined> {
+        const state = this.state;
+        if (!state) return undefined;
+        const result = await writeAuthorshipNote(state.root, (rel) => this.ledger.ranges(rel), (rel) => this.readWorkspaceFile(rel), commit);
+        this.log(`authorship note: ${result.files.length} file(s) written to ${result.commit.slice(0, 7)}${result.skipped.length ? `, ${result.skipped.length} skipped (changed since the commit)` : ''}`);
+        if (result.files.length) this.refreshAuthorship(500);
+        return result;
     }
 
     /** A file's attributed ranges for the editor gutter, with what the hover says about each. */

@@ -215,7 +215,30 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
         watcher.dispose();
     });
 
+    // Authorship notes: on request, or after each commit when codearchy.authorship.gitNotes is "onCommit".
+    const writeNotesCmd = vscode.commands.registerCommand('codearchy.authorship.writeNotes', async () => {
+        if (!pipeline) return;
+        try {
+            const r = await pipeline.writeNote('HEAD');
+            if (!r) return void vscode.window.showInformationMessage('Analyze the workspace first.');
+            const share = 'Share them with: git push origin refs/notes/codearchy-authorship';
+            void vscode.window.showInformationMessage(
+                r.files.length
+                    ? `Wrote authorship for ${r.files.length} file${r.files.length === 1 ? '' : 's'} to the note on ${r.commit.slice(0, 7)}${r.skipped.length ? ` (${r.skipped.length} changed since the commit, left out)` : ''}. ${share}`
+                    : `Nothing to note for ${r.commit.slice(0, 7)}: CodeArchy has no recorded authorship for the files it changed.`
+            );
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Couldn't write the authorship note: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    });
+    const notesOnCommit = watchCommits(async () => {
+        if (vscode.workspace.getConfiguration('codearchy').get<string>('authorship.gitNotes', 'off') !== 'onCommit') return;
+        await pipeline?.writeNote('HEAD').catch((err: unknown) => output.appendLine(`authorship note failed: ${err instanceof Error ? err.message : String(err)}`));
+    });
+
     context.subscriptions.push(
+        writeNotesCmd,
+        notesOnCommit,
         authorshipEditor,
         editorIntegration,
         switchUiCmd,
@@ -317,4 +340,37 @@ export function deactivate() {
     currentGraph = undefined;
     pipeline?.dispose();
     pipeline = undefined;
+}
+
+/**
+ * Calls `onCommit` when the HEAD commit of a repository changes (a commit,
+ * amend or checkout), through VS Code's built-in Git extension. Without it,
+ * nothing happens.
+ */
+function watchCommits(onCommit: () => Promise<void>): vscode.Disposable {
+    type Repo = { state: { HEAD?: { commit?: string }; onDidChange(listener: () => void): vscode.Disposable } };
+    type GitApi = { repositories: Repo[]; onDidOpenRepository(listener: (r: Repo) => void): vscode.Disposable };
+    const disposables: vscode.Disposable[] = [];
+    const watch = (repo: Repo) => {
+        let head = repo.state.HEAD?.commit;
+        disposables.push(
+            repo.state.onDidChange(() => {
+                const now = repo.state.HEAD?.commit;
+                if (now && head && now !== head) void onCommit();
+                head = now ?? head;
+            })
+        );
+    };
+    void (async () => {
+        try {
+            const ext = vscode.extensions.getExtension<{ getAPI(version: 1): GitApi }>('vscode.git');
+            const api = (ext?.isActive ? ext.exports : await ext?.activate())?.getAPI(1);
+            if (!api) return;
+            api.repositories.forEach(watch);
+            disposables.push(api.onDidOpenRepository(watch));
+        } catch {
+            // the Git extension is disabled: notes are written on request only
+        }
+    })();
+    return new vscode.Disposable(() => disposables.forEach((d) => d.dispose()));
 }

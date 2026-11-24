@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
+import { installHook, uninstallHook, writeNotes } from './authorship.js';
 import { AGENT_IDS, FileLedgerStore, companionDataDir } from '@codearchy/platform-node';
 import type { AgentId } from '@codearchy/core';
 import { startCompanion } from './companion.js';
@@ -37,6 +38,16 @@ Usage:
       --agent-logs <list>  read these agents' session logs on this machine to see exactly
                            which lines they wrote: claude-code, codex, aider (comma-separated).
                            Only line ranges are kept, never the conversations.
+
+  codearchy authorship notes [--root <dir>] [--commit <rev>]
+      Write which lines of a commit (default HEAD) AI tools wrote, from the
+      Companion's record, as a git note (refs/notes/codearchy-authorship).
+      Notes stay local until you push them:
+        git push origin refs/notes/codearchy-authorship
+
+  codearchy authorship hook install|uninstall [--root <dir>]
+      Run "authorship notes" after every commit (a post-commit hook). It never
+      replaces a hook CodeArchy didn't write.
 
   codearchy --version | --help
 
@@ -66,6 +77,7 @@ async function main(argv: string[]): Promise<number> {
         return 0;
     }
     if (command === 'serve') return serve(rest);
+    if (command === 'authorship') return authorship(rest);
     if (command !== 'mcp') {
         process.stderr.write(`Unknown command "${command}".\n\n${HELP}`);
         return 1;
@@ -176,6 +188,36 @@ async function serve(args: string[]): Promise<number> {
     workspace.close();
     ledgerStore.save();
     return 0;
+}
+
+async function authorship(args: string[]): Promise<number> {
+    const [sub, ...rest] = args;
+    let root = process.cwd();
+    let commit = 'HEAD';
+    let action: string | undefined;
+    for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i]!;
+        if (arg === '--root') root = path.resolve(rest[++i] ?? '.');
+        else if (arg === '--commit') commit = rest[++i] ?? 'HEAD';
+        else if (!arg.startsWith('-') && !action) action = arg;
+        else {
+            process.stderr.write(`Unknown option "${arg}".\n\n${HELP}`);
+            return 1;
+        }
+    }
+    try {
+        if (sub === 'notes') process.stdout.write(`${await writeNotes(root, commit)}\n`);
+        else if (sub === 'hook' && action === 'install') process.stdout.write(`${installHook(root)}\n`);
+        else if (sub === 'hook' && action === 'uninstall') process.stdout.write(`${uninstallHook(root)}\n`);
+        else {
+            process.stderr.write(`Usage: codearchy authorship notes | hook install | hook uninstall\n`);
+            return 1;
+        }
+        return 0;
+    } catch (err) {
+        process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        return 1;
+    }
 }
 
 main(process.argv.slice(2)).then(

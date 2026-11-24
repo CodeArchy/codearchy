@@ -20,7 +20,7 @@ export interface AuthorshipData {
     /** Attributed ranges per workspace file; files not listed are all `unknown`. */
     ranges: Map<string, AuthorshipRange[]>;
     commits: Map<string, AttributedCommit>;
-    stats: { commits: number; aiCommits: number; blamedFiles: number };
+    stats: { commits: number; aiCommits: number; blamedFiles: number; notedCommits?: number };
 }
 
 export const emptyCounts = (): AuthorshipCounts => ({ ai: 0, reviewed: 0, human: 0, unknown: 0 });

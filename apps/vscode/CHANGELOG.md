@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **What's kept:** only which lines, which agent and when. Nothing from your prompts or conversations.
   - **Reviewed lines:** lines you changed afterwards show as reviewed, and so does an edit you modified before accepting it.
   - **A limit:** edits an agent makes through shell commands aren't in its logs, so later changes to those lines also show as reviewed.
+- **Share authorship with git notes.** **Write Authorship Notes for the Last Commit**, or set `codearchy.authorship.gitNotes` to `onCommit`, and CodeArchy records which lines of a commit AI tools wrote as a git note (`refs/notes/codearchy-authorship`).
+  - Teammates' notes show up for you once fetched. They're mapped onto today's code through later edits and renames.
+  - Notes stay local until you push them.
+  - See the [authorship guide](https://github.com/CodeArchy/codearchy/blob/main/docs/guides/authorship.md).
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 
