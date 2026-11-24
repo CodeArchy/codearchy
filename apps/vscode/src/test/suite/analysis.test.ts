@@ -9,6 +9,7 @@ interface Api {
     locate(fsPath: string): unknown;
     ai(method: string, params: Record<string, unknown>): Promise<unknown>;
     aiAsk(question: string, selection?: string): Promise<unknown[]>;
+    workerJobs(): number;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
@@ -194,10 +195,13 @@ suite('CodeArchy — Analysis in the extension host', function () {
                 else fs.utimesSync(p, later, later);
             }
         };
+        const jobsBefore = api.workerJobs();
         touch(root);
 
         const rehashed = await analyze();
-        assert.ok((rehashed.indexStats?.workers ?? 0) > 0, 'jobs should run on the bundled worker threads');
+        // The re-hash runs on the bundled workers, either in this analysis or in the file watcher's
+        // update that the touch also triggers (whichever gets there first, so count across both).
+        await waitFor(() => api.workerJobs() > jobsBefore).catch(() => assert.fail('jobs should run on the bundled worker threads'));
         assert.strictEqual(rehashed.indexStats?.parsed, 0, 'unchanged content must not be re-parsed');
         assert.strictEqual(rehashed.indexStats?.reused, rehashed.fileCount);
 

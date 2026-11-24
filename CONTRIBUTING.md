@@ -172,6 +172,11 @@ pnpm --filter codearchy run bench -- <repo>        # timings, parser coverage, i
 
 Browser tests need Playwright's browsers once: `pnpm --filter @codearchy/platform-browser exec playwright install chromium firefox webkit`.
 
+In CI, a new push to a branch cancels that branch's running checks, so a cancelled job after a push is
+expected. A `Sandbox (macos-latest)` job cancelled with no steps run waited too long for a macOS runner;
+nothing in the change caused it. Rerun just the failed jobs from the run's page, or with
+`gh run rerun <run-id> --failed`.
+
 Bug in extraction or resolution? Add the smallest failing snippet to
 `packages/platform-node/test/extraction.test.ts` (or `test/languages/<id>.test.ts`), or files to `fixtures/polyglot/` plus an
 assertion in `packages/platform-node/test/graph.test.ts`, before fixing it.

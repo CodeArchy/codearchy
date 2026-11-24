@@ -48,6 +48,8 @@ export class NodeWorkerPool implements AnalyzeExecutor {
 
     /** Worker threads used by the most recent run (0 when it ran in-process). */
     lastRunWorkers = 0;
+    /** Jobs completed on worker threads since the pool started, across every run (full index or update). */
+    workerJobs = 0;
 
     async run(jobs: AnalyzeJob[], options: ExecutorOptions = {}): Promise<void> {
         this.lastRunWorkers = 0;
@@ -83,6 +85,7 @@ export class NodeWorkerPool implements AnalyzeExecutor {
                         };
                         const onMessage = (m: FromWorker) => {
                             if (m.type === 'results') {
+                                this.workerJobs += m.results.length;
                                 for (const r of m.results) options.onResult?.(r);
                                 send();
                             } else if (m.type === 'error') {

@@ -22,6 +22,8 @@ const CHANGE_DEBOUNCE_MS = 400;
 /** Minimal API returned from activate(); used by diagnostics and tests. */
 export interface CodeArchyApi {
     parserStatus(): Promise<{ treeSitter: boolean; grammars: string[] }>;
+    /** Jobs the bundled parse workers have completed since activation. */
+    workerJobs(): number;
     /** The latest analysed graph (kept up to date by the file watcher). */
     getGraph(): ArchitectureGraph | undefined;
     /** What the new UI asks through the panel (view, children, describe, explain, search). */
@@ -278,6 +280,7 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
 
     return {
         parserStatus: () => pipeline?.parserStatus() ?? Promise.resolve({ treeSitter: false, grammars: [] }),
+        workerJobs: () => pipeline?.workerJobs() ?? 0,
         getGraph: () => currentGraph,
         engine: (method, params) => pipeline?.engine(method as Parameters<AnalysisPipeline['engine']>[0], params),
         locate: (fsPath) => pipeline?.locate(fsPath),

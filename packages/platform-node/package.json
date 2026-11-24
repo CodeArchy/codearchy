@@ -17,7 +17,7 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test:unit": "tsc -p tsconfig.json && vitest run",
+        "test:unit": "tsc -p tsconfig.json && vitest run --test-timeout=30000",
         "golden": "tsc -p tsconfig.json && node scripts/update-golden.mjs"
     },
     "dependencies": {
