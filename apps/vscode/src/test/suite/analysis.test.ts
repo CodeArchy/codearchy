@@ -117,6 +117,15 @@ suite('CodeArchy — Analysis in the extension host', function () {
         const hits = api.engine('search', { query: 'OrderSer' }) as Array<{ key: string }>;
         assert.ok(hits.some((h) => h.key === 'mod:cs/Orders/OrderService.cs'));
 
+        // Flows and tours: the fixture's Go main, and a generated Start Here tour (async answers).
+        const flows = api.engine('flows', {}) as Array<{ id: string; label: string }>;
+        assert.ok(flows.some((f) => f.label === 'main'));
+        const tours = (await api.engine('tours', {})) as Array<{ id: string; origin: string }>;
+        assert.deepStrictEqual(tours.map((t) => `${t.id}:${t.origin}`), ['start-here:generated']);
+        const tour = (await api.engine('tour', { id: 'start-here' })) as { steps: Array<{ title: string }>; status: unknown[] };
+        assert.strictEqual(tour.steps[0]!.title, 'The big picture');
+        assert.strictEqual(tour.status.length, tour.steps.length);
+
         const file = path.join(folder!.uri.fsPath, 'web', 'src', 'index.ts');
         const here = api.locate(file) as { key: string; breadcrumb: Array<{ name: string }> };
         assert.strictEqual(here.key, 'mod:web/src/index.ts');

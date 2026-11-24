@@ -229,13 +229,15 @@ export class ArchitecturePanel {
 
       case WebviewMessageType.EngineRequest: {
         const req = message.payload as { id: number; method: string; params?: Record<string, unknown> };
-        let reply: { id: number; result?: unknown; error?: string };
-        try {
-          reply = { id: req.id, result: ArchitecturePanel.engineHost?.request(req.method, req.params ?? {}) };
-        } catch (err) {
-          reply = { id: req.id, error: err instanceof Error ? err.message : String(err) };
-        }
-        this.panel.webview.postMessage({ type: WebviewMessageType.EngineResponse, payload: reply });
+        const send = (reply: { id: number; result?: unknown; error?: string }) =>
+          void this.panel.webview.postMessage({ type: WebviewMessageType.EngineResponse, payload: reply });
+        // Some answers are async (tours read files): wait for them before replying.
+        Promise.resolve()
+          .then(() => ArchitecturePanel.engineHost?.request(req.method, req.params ?? {}))
+          .then(
+            (result) => send({ id: req.id, result }),
+            (err: unknown) => send({ id: req.id, error: err instanceof Error ? err.message : String(err) })
+          );
         break;
       }
 

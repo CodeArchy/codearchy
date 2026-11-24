@@ -13,6 +13,7 @@ export * from './view.js';
 export * from './engine.js';
 export * from './ai.js';
 export * from './flows.js';
+export * from './tours.js';
 
 export interface SymbolInfo {
     name: string;

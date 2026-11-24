@@ -43,6 +43,15 @@ export function isManifest(name: string): boolean {
     return MANIFEST_FILES.has(name) || /^(tsconfig|jsconfig)\..+\.json$/.test(name);
 }
 
+export const TOURS_DIR = '.codearchy/tours';
+
+/** `.codearchy/tours/<slug>.json` directly (no subfolders). */
+export function isTourFile(path: string): boolean {
+    if (!path.startsWith(`${TOURS_DIR}/`) || !path.endsWith('.json')) return false;
+    const name = path.slice(TOURS_DIR.length + 1);
+    return name.length > 5 && !name.includes('/');
+}
+
 export interface DiscoveryOptions {
     languages: string[];
     excludePatterns: string[];
@@ -57,6 +66,8 @@ export interface DiscoveryResult {
     manifests: string[];
     /** Files whose directory is a package root (package.json, go.mod, pom.xml, *.csproj, ...), sorted. */
     packageMarkers: string[];
+    /** Authored tours: `.codearchy/tours/*.json` at the workspace root, sorted. */
+    tours: string[];
     /** Source files found before `maxFiles` was applied. */
     discovered: number;
     truncated: boolean;
@@ -70,7 +81,12 @@ export function classifyFiles(relativePaths: Iterable<string>, options: Discover
     const sources: string[] = [];
     const manifests: string[] = [];
     const packageMarkers: string[] = [];
+    const tours: string[] = [];
     for (const p of relativePaths) {
+        if (isTourFile(p)) {
+            tours.push(p);
+            continue;
+        }
         if (isExcluded(p)) continue;
         const name = basename(p);
         if (isPackageMarker(name)) packageMarkers.push(p);
@@ -83,7 +99,8 @@ export function classifyFiles(relativePaths: Iterable<string>, options: Discover
     }
     sources.sort();
     packageMarkers.sort();
+    tours.sort();
     const discovered = sources.length;
     const truncated = options.maxFiles > 0 && discovered > options.maxFiles;
-    return { sourceFiles: truncated ? sources.slice(0, options.maxFiles) : sources, manifests, packageMarkers, discovered, truncated, method };
+    return { sourceFiles: truncated ? sources.slice(0, options.maxFiles) : sources, manifests, packageMarkers, tours, discovered, truncated, method };
 }

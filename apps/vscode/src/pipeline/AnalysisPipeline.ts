@@ -12,6 +12,8 @@ import {
     ArchitectureInference,
     HierarchyIndex,
     FlowIndex,
+    TourIndex,
+    isTourFile,
     IndexStore,
     Indexer,
     buildGraph,
@@ -40,7 +42,7 @@ import type { NodeDetails } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour';
 
 export interface EngineSearchResult {
     key: string;
@@ -75,6 +77,7 @@ export class AnalysisPipeline {
     private lastGraph: ArchitectureGraph | undefined;
     private hierarchyIndex: HierarchyIndex | undefined;
     private flowIndex: FlowIndex | undefined;
+    private tourIndex: TourIndex | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -183,6 +186,19 @@ export class AnalysisPipeline {
             return pack && languages.has(pack.id) ? 'source' : undefined;
         };
 
+        // Authored tours: keep the list current (a deleted folder takes its tours with it); content is read when asked for.
+        const tours = new Set(state.discovery.tours);
+        for (const uri of deleted) {
+            const p = rel(uri);
+            if (!p) continue;
+            for (const t of [...tours]) {
+                if (t === p || t.startsWith(`${p}/`)) {
+                    tours.delete(t);
+                    dirty = true;
+                }
+            }
+        }
+
         for (const uri of deleted) {
             const p = rel(uri);
             if (!p) continue;
@@ -216,6 +232,13 @@ export class AnalysisPipeline {
             changedSet.add(p);
         }
         const changedPaths = [...changedSet];
+        for (const p of changedPaths) {
+            if (isTourFile(p)) {
+                tours.add(p);
+                dirty = true;
+            }
+        }
+        state.discovery = { ...state.discovery, tours: [...tours].sort() };
         // Full discovery honours .gitignore; apply the same rule to files that
         // appear later (build output, generated code), or they'd leak in.
         const fresh = changedPaths.filter((p) => !state.analyses.has(p) && relevant(p) === 'source');
@@ -313,6 +336,7 @@ export class AnalysisPipeline {
         this.lastGraph = graph;
         this.hierarchyIndex = undefined;
         this.flowIndex = undefined;
+        this.tourIndex = undefined;
         return graph;
     }
 
@@ -346,6 +370,10 @@ export class AnalysisPipeline {
                 return this.flows(h).list();
             case 'flow':
                 return this.flows(h).trace(str('id'));
+            case 'tours':
+                return this.tours(h).list();
+            case 'tour':
+                return this.tours(h).get(str('id'));
             default:
                 return undefined;
         }
@@ -355,6 +383,19 @@ export class AnalysisPipeline {
     private flows(h: HierarchyIndex): FlowIndex {
         this.flowIndex ??= new FlowIndex(this.state!.analyses, h);
         return this.flowIndex;
+    }
+
+    /** The Start Here tour and the workspace's `.codearchy/tours`, rebuilt with the hierarchy. */
+    private tours(h: HierarchyIndex): TourIndex {
+        const state = this.state!;
+        this.tourIndex ??= new TourIndex({
+            index: h,
+            flows: this.flows(h),
+            files: state.discovery.tours,
+            read: (p) => this.readWorkspaceFile(p),
+            name: path.basename(state.root),
+        });
+        return this.tourIndex;
     }
 
     /** Components and packages by name, then symbols from the index (prefix match). */
