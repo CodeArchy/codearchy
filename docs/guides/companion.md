@@ -13,8 +13,15 @@ to it. With it you get:
 
 ## Start it
 
+The CLI isn't published on npm yet, so run it from a checkout of this repository (the
+same setup as [the MCP guide](mcp.md#set-it-up)):
+
 ```sh
-npx codearchy serve --root /path/to/repo
+git clone https://github.com/CodeArchy/codearchy.git
+cd codearchy
+corepack enable && pnpm install
+pnpm --filter "@codearchy/cli..." build
+node apps/cli/dist/main.js serve --root /path/to/repo
 ```
 
 It indexes the folder and prints a link:
