@@ -2,7 +2,7 @@
  * The 2.0 panel: @codearchy/ui's CodeArchyMap, talking to the engine and the
  * AI host in the extension host over postMessage. Chat, summary cards and AI
  * settings come from the shared UI (the `ai` client); local model downloads
- * and voice keep their v1 dialogs. The classic views (App.tsx) remain behind
+ * and voice keep their v1 dialogs; tours narrate through the same voice. The classic views (App.tsx) remain behind
  * the `codearchy.ui` setting during the 2.0 beta.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import './mapShell.css';
 import { postMessage } from './vscode';
 import { ModelSelector } from './components/ModelSelector';
 import { VoiceSelector } from './components/VoiceSelector';
+import { vscodeVoiceClient } from './voice/voiceClient';
 
 declare global {
     interface Window {
@@ -53,6 +54,7 @@ const client: EngineClient = {
     tour: (id: string) => request<TourDetails | undefined>('tour', { id }),
     anchorTour: (tour: Tour) => request<Tour>('anchorTour', { tour }),
     saveTour: (tour: Tour) => request<{ file: string }>('saveTour', { tour }),
+    deleteTour: (id: string) => request<void>('deleteTour', { id }),
     authorshipStatus: () => request<AuthorshipStatus>('authorshipStatus', {}),
     authorship: (key: string) => request<NodeAuthorship | undefined>('authorship', { key }),
     search: (query: string) => request('search', { query }),
@@ -144,6 +146,7 @@ export function MapShell() {
     const [dataVersion, setDataVersion] = useState(0);
     const [reveal, setReveal] = useState<{ key: string; nonce: number }>();
     const [dialog, setDialog] = useState<'model' | 'voice'>();
+    const [voice] = useState(() => vscodeVoiceClient(() => setDialog('voice')));
 
     useEffect(() => {
         let url: string | undefined;
@@ -179,9 +182,6 @@ export function MapShell() {
             <button type="button" className="ca-search-button" title="Download and manage local Ollama models" onClick={() => setDialog('model')}>
                 Local models
             </button>
-            <button type="button" className="ca-search-button" title="Voice and speech settings" onClick={() => setDialog('voice')}>
-                Voice
-            </button>
             <button type="button" className="ca-search-button" title="Switch to the classic System / Flow / Dense views (setting: codearchy.ui)" onClick={() => postMessage('setUi', { ui: 'classic' })}>
                 Classic views
             </button>
@@ -208,6 +208,7 @@ export function MapShell() {
                     revealRequest={reveal}
                     toolbarExtras={extras}
                     ai={ai}
+                    voice={voice}
                 />
             )}
             {dialog === 'model' ? <ModelSelector onClose={() => setDialog(undefined)} /> : null}

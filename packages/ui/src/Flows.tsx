@@ -5,10 +5,11 @@
  * symbol; steps matched by name only are marked, and so are shared helpers it
  * didn't follow.
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { EngineClient, EntryPointKind, Flow, FlowSummary, SinkKind } from '@codearchy/protocol';
 import { flowModules, flowRows, groupFlows, splitLabel } from './flowModel.js';
 import { Icon, type IconName } from './icons.js';
+import { Resizer, usePanelSize } from './Resizer.js';
 
 const KIND_ICON: Record<EntryPointKind, IconName> = { http: 'globe', ui: 'laptop', cli: 'terminal', event: 'bolt', job: 'clock', main: 'play' };
 const SINK_ICON: Record<SinkKind, IconName> = { database: 'database', http: 'globe', queue: 'layers', cache: 'gauge', storage: 'boxes' };
@@ -76,6 +77,7 @@ export function FlowsView(props: FlowsViewProps) {
         if (props.focusFlow) setCurrent(props.focusFlow.id);
     }, [props.focusFlow?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const listWidth = usePanelSize('flows', 280, 180, 560);
     const groups = useMemo(() => groupFlows(flows ?? [], query), [flows, query]);
     const total = flows?.length ?? 0;
 
@@ -97,7 +99,7 @@ export function FlowsView(props: FlowsViewProps) {
     }
 
     return (
-        <div className="ca-flows">
+        <div className="ca-flows" style={{ ['--ca-flows-w' as string]: `${listWidth.size}px` }}>
             <nav className="ca-flows-list" aria-label="Entrypoints">
                 <div className="ca-flows-filter">
                     <input type="search" placeholder={`Filter ${total} entrypoint${total === 1 ? '' : 's'}`} aria-label="Filter entrypoints" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -129,6 +131,7 @@ export function FlowsView(props: FlowsViewProps) {
                     </section>
                 ))}
             </nav>
+            <Resizer panel={listWidth} side="left" label="Entrypoints width" className="ca-flows-resizer" />
             <section className="ca-flow" aria-label="Flow">
                 {flow ? <FlowSequence flow={flow} {...props} /> : <div className="ca-flows-empty">Choose an entrypoint to see its flow.</div>}
             </section>
@@ -147,6 +150,12 @@ function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile, onWalk,
     const { verb, rest } = splitLabel(flow.label);
     const lanes = flow.lanes;
     const root = flow.steps[0];
+    // A tour step (or a selection elsewhere) on this flow: bring its call into view.
+    const grid = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = grid.current?.querySelector<HTMLElement>('.ca-step.ca-on');
+        el?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    }, [selected, flow.id]);
     return (
         <>
             <header className="ca-flow-head">
@@ -202,7 +211,7 @@ function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile, onWalk,
                 ) : null}
             </header>
             <div className="ca-flow-scroll">
-                <div className="ca-flow-grid" role="list" aria-label="Steps" style={{ gridTemplateColumns: `repeat(${lanes.length}, minmax(170px, 1fr))` }}>
+                <div ref={grid} className="ca-flow-grid" role="list" aria-label="Steps" style={{ gridTemplateColumns: `repeat(${lanes.length}, minmax(170px, 1fr))` }}>
                     {lanes.map((l, i) => (
                         <div key={l.key} className="ca-lane-head" style={{ gridColumn: i + 1, gridRow: 1 }} title={l.key}>
                             <Icon name={l.kind === 'package' ? 'boxes' : 'layers'} size={12} />
@@ -218,7 +227,7 @@ function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile, onWalk,
                         const s = r.step;
                         const mod = `mod:${s.file}`;
                         const indent = !cross && r.from !== undefined ? Math.min(s.depth, 5) * 14 : 0;
-                        const classes = ['ca-step', s.resolution === 'name' ? 'ca-step-guess' : '', s.crossCutting ? 'ca-step-shared' : '', s.depth === 0 ? 'ca-step-entry' : '', selected === mod ? 'ca-on' : '']
+                        const classes = ['ca-step', s.resolution === 'name' ? 'ca-step-guess' : '', s.crossCutting ? 'ca-step-shared' : '', s.depth === 0 ? 'ca-step-entry' : '', selected === s.key || selected === mod ? 'ca-on' : '']
                             .filter(Boolean)
                             .join(' ');
                         return (

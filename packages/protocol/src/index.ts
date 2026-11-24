@@ -16,6 +16,7 @@ export * from './flows.js';
 export * from './tours.js';
 export * from './companion.js';
 export * from './authorship.js';
+export * from './voice.js';
 
 export interface SymbolInfo {
     name: string;

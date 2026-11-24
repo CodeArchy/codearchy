@@ -24,6 +24,7 @@ import {
     type AuthorshipData,
     anchorTour,
     serializeTour,
+    tourSlug,
     TOURS_DIR,
     IndexStore,
     Indexer,
@@ -60,7 +61,7 @@ import type { AuthorshipOrigin, AuthorshipRange, AuthorshipStatus, NodeDetails, 
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'authorshipStatus' | 'authorship' | 'authorshipMark';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'deleteTour' | 'authorshipStatus' | 'authorship' | 'authorshipMark';
 
 export interface EngineSearchResult {
     key: string;
@@ -439,6 +440,8 @@ export class AnalysisPipeline {
                 return anchorTour(params.tour as Tour, h, (p) => this.readWorkspaceFile(p));
             case 'saveTour':
                 return this.saveTour(h, params.tour as Tour);
+            case 'deleteTour':
+                return this.deleteTour(str('id'));
             case 'authorshipStatus':
                 return this.authorship(h)?.status() ?? this.authorshipState;
             case 'authorship':
@@ -648,6 +651,16 @@ export class AnalysisPipeline {
         if (!state.discovery.tours.includes(file)) state.discovery = { ...state.discovery, tours: [...state.discovery.tours, file].sort() };
         this.tourIndex = undefined;
         return { file };
+    }
+
+    /** Removes an authored tour's file; only a file the workspace's tour list holds can be removed. */
+    private async deleteTour(id: string): Promise<void> {
+        const state = this.state!;
+        const file = state.discovery.tours.find((f) => tourSlug(f) === id);
+        if (!file) throw new Error(`There is no tour "${id}" in ${TOURS_DIR}.`);
+        await fs.promises.rm(fromPosix(state.root, file), { force: true });
+        state.discovery = { ...state.discovery, tours: state.discovery.tours.filter((f) => f !== file) };
+        this.tourIndex = undefined;
     }
 
     /** Components and packages by name, then symbols from the index (prefix match). */

@@ -22,7 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import type { AiClient, EdgeExplanation, Flow, NodeDetails, Tour, TourDetails, TourStep, View } from '@codearchy/protocol';
+import type { AiClient, AuthorshipStatus, EdgeExplanation, Flow, NodeDetails, TourDetails, TourStep, View, VoiceClient } from '@codearchy/protocol';
 import { AiSettingsPanel, ChatPanel, PreviewDialog } from './ai.js';
 import { Icon } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
@@ -32,7 +32,9 @@ import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, re
 import { Matrix } from './Matrix.js';
 import { FlowsView } from './Flows.js';
 import { AddToTourDialog, ToursList, TourPlayer } from './Tours.js';
-import { addToDraft, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type StepCapture } from './tourModel.js';
+import { addToDraft, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type DraftTour, type StepCapture } from './tourModel.js';
+import { Resizer, usePanelSize } from './Resizer.js';
+import { VoiceSettingsPanel } from './voice.js';
 import { flowRows } from './flowModel.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
@@ -43,6 +45,8 @@ export interface CodeArchyMapProps {
     layoutWorkerUrl: string;
     /** 'vscode' takes colours from the VS Code theme; 'web' follows light/dark. */
     hostKind?: 'web' | 'vscode';
+    /** Web only: force light or dark (default: follow the system). */
+    theme?: 'system' | 'light' | 'dark';
     /** Changes when a different workspace is loaded: the view resets to the top. */
     revision?: string;
     /** Changes when the same workspace's data changes (a file saved): the current view refetches in place. */
@@ -55,6 +59,8 @@ export interface CodeArchyMapProps {
     toolbarStart?: ReactNode;
     /** The host's AI side. With it, the Map gets chat, summary cards and AI settings. */
     ai?: AiClient;
+    /** The host's speech. With it, tours are narrated and the toolbar gets voice settings. */
+    voice?: VoiceClient;
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
@@ -77,7 +83,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [playing, setPlaying] = useState<{ tour: TourDetails; index: number }>();
     const [done, setDone] = useState<Set<string>>(new Set());
     const workspaceId = props.revision || 'workspace';
-    const [draft, setDraftState] = useState<Tour | undefined>(() => loadDraft(workspaceId));
+    const [draft, setDraftState] = useState<DraftTour | undefined>(() => loadDraft(workspaceId));
     const [capture, setCapture] = useState<StepCapture>();
     /** Ask Flows mode to show a flow (a tour step, or a reveal); a new `nonce` repeats it. */
     const [flowFocus, setFlowFocus] = useState<{ id: string; nonce: number }>();
@@ -90,6 +96,12 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [status, setStatus] = useState('Loading…');
     const [sideTab, setSideTab] = useState<'inspector' | 'chat'>('inspector');
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [voiceOpen, setVoiceOpen] = useState(false);
+    // Panels: drag the edges to resize (remembered), or hide them from the toolbar.
+    const navWidth = usePanelSize('navigator', 260, 160, 560);
+    const sideWidth = usePanelSize('side', 340, 240, 820);
+    const [navOpen, setNavOpen] = useState(true);
+    const [sideOpen, setSideOpen] = useState(true);
     const [chatPrompt, setChatPrompt] = useState<{ text: string; nonce: number }>();
     /** Where the viewport goes after the next transition (a node, or the whole map). */
     const [focusOn, setFocusOn] = useState<FocusRequest>({ nonce: 1 });
@@ -149,9 +161,45 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         () => (client.authorship && client.authorshipStatus ? { status: () => client.authorshipStatus!(), load: (key: string) => client.authorship!(key) } : undefined),
         [client]
     );
-    /** The Authorship lens is offered once the view carries counts. */
+    /**
+     * The Authorship lens is always listed; it's enabled once the view carries
+     * counts, and otherwise says why not (computing, no git history here…).
+     */
     const hasAuthorship = !!view?.nodes.some((n) => n.authorship);
-    const lenses = useMemo(() => LENSES.filter((l) => l.id !== 'authorship' || hasAuthorship || lens === 'authorship'), [hasAuthorship, lens]);
+    const [authorshipState, setAuthorshipState] = useState<AuthorshipStatus>();
+    useEffect(() => {
+        let live = true;
+        if (!client.authorshipStatus) return setAuthorshipState(undefined);
+        const poll = () =>
+            client.authorshipStatus!().then(
+                (st) => {
+                    if (!live) return;
+                    setAuthorshipState(st);
+                    if (st.state === 'computing') timer = setTimeout(poll, 4000);
+                },
+                () => undefined
+            );
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        void poll();
+        return () => {
+            live = false;
+            clearTimeout(timer);
+        };
+    }, [client, revision, props.dataVersion]);
+    const authorshipNote = hasAuthorship
+        ? undefined
+        : !client.authorshipStatus
+          ? 'needs git history'
+          : authorshipState?.state === 'computing'
+            ? 'reading git history…'
+            : authorshipState?.state === 'unavailable'
+              ? 'no git history here'
+              : authorshipState?.state === 'ready'
+                ? 'none in this view'
+                : 'checking…';
+    const authorshipWhy = !client.authorshipStatus
+        ? 'Authorship comes from git history. In the browser, connect the Companion (codearchy serve) on a git clone; VS Code reads it directly.'
+        : authorshipState?.reason;
 
     // Inspector data for the selection.
     useEffect(() => {
@@ -245,7 +293,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     // ── tours ───────────────────────────────────────────────────────────────
 
     const setDraft = useCallback(
-        (d: Tour | undefined) => {
+        (d: DraftTour | undefined) => {
             setDraftState(d);
             saveDraft(workspaceId, d);
         },
@@ -289,6 +337,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         },
         [workspaceId]
     );
+    /** "Walk through": the flow as a tour, in Flows, with each call highlighted in turn. */
+    const walkFlow = useCallback((f: Flow) => play(tourFromFlow(f, flowRows(f).map((r) => r.index))), [play]);
     const markDone = useCallback(
         (stepId: string, value?: boolean) => {
             if (!playing) return;
@@ -382,9 +432,12 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
 
     const selectedKey = selection?.kind === 'node' ? selection.key : undefined;
     return (
-        <div ref={root} className="ca-root" data-host={props.hostKind ?? 'web'} tabIndex={-1} onKeyDown={onKeyDown}>
+        <div ref={root} className="ca-root" data-host={props.hostKind ?? 'web'} data-theme={props.theme && props.theme !== 'system' ? props.theme : undefined} tabIndex={-1} onKeyDown={onKeyDown}>
             <header className="ca-toolbar">
                 {props.toolbarStart}
+                <button type="button" className="ca-icon-button ca-panel-toggle" aria-pressed={navOpen} title={navOpen ? 'Hide the Navigator' : 'Show the Navigator'} aria-label={navOpen ? 'Hide the Navigator' : 'Show the Navigator'} onClick={() => setNavOpen((o) => !o)}>
+                    <Icon name="panelLeft" size={15} />
+                </button>
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
                 {mode === 'flows' || mode === 'tours' ? null : flow && mode === 'map' ? (
@@ -426,12 +479,16 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </div>
                 <label className="ca-lens" hidden={mode === 'flows' || mode === 'tours'}>
                     Lens{' '}
-                    <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
-                        {lenses.map((l) => (
-                            <option key={l.id} value={l.id}>
-                                {l.label}
-                            </option>
-                        ))}
+                    <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={lens === 'authorship' || !authorshipNote ? LENSES.find((l) => l.id === lens)?.description : authorshipWhy ?? LENSES.find((l) => l.id === lens)?.description}>
+                        {LENSES.map((l) => {
+                            const off = l.id === 'authorship' && !!authorshipNote && lens !== 'authorship';
+                            return (
+                                <option key={l.id} value={l.id} disabled={off} title={off ? authorshipWhy : l.description}>
+                                    {l.label}
+                                    {off ? ` (${authorshipNote})` : ''}
+                                </option>
+                            );
+                        })}
                     </select>
                 </label>
                 {props.ai ? (
@@ -446,18 +503,56 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         </button>
                     </>
                 ) : null}
+                {props.voice ? (
+                    <button type="button" className="ca-search-button ca-with-icon" title="Voice: how tours are narrated" onClick={() => (props.voice!.openSettings ? props.voice!.openSettings() : setVoiceOpen(true))}>
+                        <Icon name="volume" size={14} />
+                        Voice
+                    </button>
+                ) : null}
                 {props.toolbarExtras}
                 {client.search ? (
                     <button type="button" className="ca-search-button" onClick={() => setSearching(true)}>
                         Search <kbd>⌘K</kbd>
                     </button>
                 ) : null}
+                <button type="button" className="ca-icon-button ca-panel-toggle" aria-pressed={sideOpen} title={sideOpen ? 'Hide the side panel' : 'Show the side panel'} aria-label={sideOpen ? 'Hide the side panel' : 'Show the side panel'} onClick={() => setSideOpen((o) => !o)}>
+                    <Icon name="panelRight" size={15} />
+                </button>
             </header>
-            <div className="ca-body">
-                <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={(k) => void reveal(k)} />
+            <div
+                className={`ca-body${navOpen ? '' : ' ca-nav-hidden'}${sideOpen ? '' : ' ca-side-hidden'}`}
+                style={{ ['--ca-nav-w' as string]: navOpen ? `${navWidth.size}px` : '0px', ['--ca-side-w' as string]: sideOpen ? `${sideWidth.size}px` : '0px' }}
+            >
+                {navOpen ? (
+                    <Navigator
+                        client={client}
+                        revision={revision}
+                        dataVersion={props.dataVersion ?? 0}
+                        path={view?.breadcrumb.map((b) => b.key) ?? []}
+                        selected={selectedKey}
+                        onReveal={(k) => {
+                            if (mode === 'tours') setMode('map');
+                            void reveal(k);
+                        }}
+                        onDrill={(k) => void reveal(k)}
+                        onHide={() => setNavOpen(false)}
+                        onSearch={client.search ? () => setSearching(true) : undefined}
+                    />
+                ) : (
+                    <span />
+                )}
                 <section className="ca-canvas" aria-label="Architecture map">
                     {mode === 'tours' ? (
-                        <ToursList client={client} workspace={workspaceId} dataVersion={props.dataVersion ?? 0} draft={draft} onPlay={play} onDraftChange={setDraft} />
+                        <ToursList
+                            client={client}
+                            workspace={workspaceId}
+                            dataVersion={props.dataVersion ?? 0}
+                            draft={draft}
+                            onPlay={play}
+                            onDraftChange={setDraft}
+                            onWalkFlow={client.flows ? walkFlow : undefined}
+                            onShowFlows={client.flows ? () => setMode('flows') : undefined}
+                        />
                     ) : mode === 'flows' ? (
                         <FlowsView
                             client={client}
@@ -471,7 +566,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             }}
                             openFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
                             focusFlow={flowFocus}
-                            onWalk={(f) => play(tourFromFlow(f, flowRows(f).map((r) => r.index)))}
+                            onWalk={walkFlow}
                             onAddToTour={captureFlow}
                         />
                     ) : mode === 'matrix' && view ? (
@@ -511,8 +606,14 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             onIndex={goToStep}
                             onClose={closeTour}
                             onToggleDone={(id) => markDone(id)}
-                            onNode={(k) => void reveal(k)}
+                            onNode={(k) => {
+                                // A link in a step shows that part on the map.
+                                if (mode !== 'map' && mode !== 'matrix') setMode('map');
+                                void reveal(k);
+                            }}
                             onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
+                            voice={props.voice}
+                            onVoiceSettings={props.voice ? () => (props.voice!.openSettings ? props.voice!.openSettings() : setVoiceOpen(true)) : undefined}
                             onAsk={
                                 props.ai
                                     ? (q) => {
@@ -534,7 +635,9 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                         />
                     ) : null}
                 </section>
-                <aside className="ca-side">
+                {navOpen ? <Resizer panel={navWidth} side="left" label="Navigator width" className="ca-nav-resizer" /> : null}
+                {sideOpen ? <Resizer panel={sideWidth} side="right" label="Side panel width" className="ca-side-resizer" /> : null}
+                <aside className="ca-side" hidden={!sideOpen}>
                     {props.ai ? (
                         <div className="ca-tabs" role="tablist" aria-label="Side panel">
                             {(['inspector', 'chat'] as const).map((t) => (
@@ -586,6 +689,13 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </div>
             ) : null}
             {props.ai ? <PreviewDialog ai={props.ai} /> : null}
+            {props.voice && voiceOpen ? (
+                <div className="ca-modal" onClick={(e) => e.target === e.currentTarget && setVoiceOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setVoiceOpen(false)}>
+                    <div className="ca-modal-body">
+                        <VoiceSettingsPanel voice={props.voice} onClose={() => setVoiceOpen(false)} />
+                    </div>
+                </div>
+            ) : null}
             {capture ? (
                 <AddToTourDialog
                     capture={capture}

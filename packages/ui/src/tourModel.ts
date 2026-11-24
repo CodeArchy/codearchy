@@ -8,7 +8,11 @@ import { TOUR_FILE_VERSION, type Flow, type Tour, type TourDetails, type TourSte
 /** Steps at most when a flow becomes a tour (beyond that it's a list, not a walk). */
 const FLOW_TOUR_STEPS = 12;
 
-/** A tour that walks a traced flow: its entrypoint, then each call in reading order. */
+/**
+ * A tour that walks a traced flow: its entrypoint, then each call in reading
+ * order. Every step stays in Flows, on the flow's sequence, with the step's
+ * call highlighted; each body links the file so "show on the map" is a click.
+ */
 export function tourFromFlow(flow: Flow, order: number[] = flow.steps.map((_, i) => i)): TourDetails {
     const lane = new Map(flow.lanes.map((l) => [l.key, l.name]));
     const steps: TourStep[] = [
@@ -29,12 +33,12 @@ export function tourFromFlow(flow: Flow, order: number[] = flow.steps.map((_, i)
         const sinks = flow.sinks.filter((k) => k.step === i).map((k) => `${k.name} (${k.kind})`);
         steps.push({
             id: `step-${i}`,
-            target: { node: s.key },
-            view: { mode: 'map', focus: s.key },
+            target: { flow: flow.id, node: s.key },
+            view: { mode: 'flows', focus: s.key },
             title: s.name,
             body: [
                 parent ? `${parent.name} calls ${s.name}${s.callSite ? ` on line ${s.callSite.line + 1} of ${s.callSite.file.split('/').pop()}` : ''}.` : `${s.name} handles ${flow.label}.`,
-                `It lives in ${s.file} (${lane.get(s.lane) ?? s.lane}).`,
+                `It lives in [${s.file.split('/').pop()}](node:mod:${s.file}) (${lane.get(s.lane) ?? s.lane}).`,
                 s.resolution === 'name' ? 'This call was matched by name only, so double-check it.' : '',
                 sinks.length ? `This file talks to ${sinks.join(', ')}.` : '',
             ]
@@ -68,9 +72,16 @@ export interface StepCapture {
     code?: TourStep['code'];
 }
 
+/**
+ * The draft: the one tour being written in this workspace. `replaces` is set
+ * when it's an edit of a tour saved in the repository (saving overwrites that
+ * file); otherwise saving creates a new one.
+ */
+export type DraftTour = Tour & { replaces?: string };
+
 /** Appends a step to the draft, creating it on first use. */
-export function addToDraft(draft: Tour | undefined, capture: StepCapture, tourTitle: string): Tour {
-    const base: Tour = draft ?? { version: TOUR_FILE_VERSION, id: 'draft', title: tourTitle.trim() || 'My tour', origin: 'authored', steps: [] };
+export function addToDraft(draft: DraftTour | undefined, capture: StepCapture, tourTitle: string): DraftTour {
+    const base: DraftTour = draft ?? { version: TOUR_FILE_VERSION, id: 'draft', title: tourTitle.trim() || 'My tour', origin: 'authored', steps: [] };
     const used = new Set(base.steps.map((s) => s.id));
     let n = base.steps.length + 1;
     while (used.has(`s${n}`)) n++;
@@ -78,9 +89,63 @@ export function addToDraft(draft: Tour | undefined, capture: StepCapture, tourTi
     return { ...base, title: draft ? base.title : tourTitle.trim() || base.title, steps: [...base.steps, step] };
 }
 
-export function removeFromDraft(draft: Tour, stepId: string): Tour | undefined {
+export function removeFromDraft(draft: DraftTour, stepId: string): DraftTour | undefined {
     const steps = draft.steps.filter((s) => s.id !== stepId);
     return steps.length ? { ...draft, steps } : undefined;
+}
+
+/**
+ * A tour as a draft to edit. `edit` keeps the repository tour's id, so saving
+ * replaces its file; otherwise it's a copy that saves as a new tour.
+ */
+export function draftFrom(tour: Tour, edit = false): DraftTour {
+    const replace = edit && tour.origin === 'authored' && tour.id !== 'draft';
+    return {
+        version: TOUR_FILE_VERSION,
+        id: 'draft',
+        title: replace ? tour.title : `${tour.title} (my copy)`,
+        origin: 'authored',
+        ...(tour.description ? { description: tour.description } : {}),
+        steps: tour.steps.map(({ id, target, view, title, body, code }) => ({ id, target, ...(view ? { view } : {}), title, body, ...(code?.length ? { code } : {}) })),
+        ...(replace ? { replaces: tour.id } : {}),
+    };
+}
+
+/** Moves a step up (-1) or down (+1); out of range leaves it where it is. */
+export function moveStep(draft: DraftTour, stepId: string, delta: number): DraftTour {
+    const i = draft.steps.findIndex((s) => s.id === stepId);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= draft.steps.length) return draft;
+    const steps = [...draft.steps];
+    [steps[i], steps[j]] = [steps[j]!, steps[i]!];
+    return { ...draft, steps };
+}
+
+export function updateStep(draft: DraftTour, stepId: string, patch: { title?: string; body?: string }): DraftTour {
+    return { ...draft, steps: draft.steps.map((s) => (s.id === stepId ? { ...s, ...patch } : s)) };
+}
+
+/** The tour to hand the engine for saving: a draft edit keeps its file's id. */
+export function tourToSave(draft: DraftTour): Tour {
+    const { replaces, ...tour } = draft;
+    return { ...tour, id: replaces ?? 'draft', title: tour.title.trim() || 'My tour' };
+}
+
+/** The `.codearchy/tours` file format (the engine validates the same shape when reading). */
+export function tourFile(t: Tour): string {
+    const { version, title, description, steps } = t;
+    return `${JSON.stringify({ version, title, ...(description ? { description } : {}), steps }, null, 2)}\n`;
+}
+
+export function slug(title: string): string {
+    return (
+        title
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+            .join('-')
+            .slice(0, 60) || 'tour'
+    );
 }
 
 /** Where a step puts the canvas: the mode, and the node to show (if any). */
@@ -117,6 +182,19 @@ const storage = {
     },
 };
 
+const narrateKey = 'codearchy.tour.narrate';
+const autoKey = 'codearchy.tour.autoplay';
+
+/** Narration is on unless the viewer turned it off. */
+export function loadNarration(): { narrate: boolean; auto: boolean } {
+    return { narrate: storage.get(narrateKey) !== 'off', auto: storage.get(autoKey) === 'on' };
+}
+
+export function saveNarration(p: { narrate: boolean; auto: boolean }): void {
+    storage.set(narrateKey, p.narrate ? undefined : 'off');
+    storage.set(autoKey, p.auto ? 'on' : undefined);
+}
+
 const progressKey = (workspace: string, tourId: string) => `codearchy.tour.progress:${workspace}:${tourId}`;
 const draftKey = (workspace: string) => `codearchy.tour.draft:${workspace}`;
 
@@ -133,15 +211,15 @@ export function saveProgress(workspace: string, tourId: string, done: ReadonlySe
     storage.set(progressKey(workspace, tourId), done.size ? JSON.stringify([...done]) : undefined);
 }
 
-export function loadDraft(workspace: string): Tour | undefined {
+export function loadDraft(workspace: string): DraftTour | undefined {
     try {
-        const raw = JSON.parse(storage.get(draftKey(workspace)) ?? 'null') as Tour | null;
+        const raw = JSON.parse(storage.get(draftKey(workspace)) ?? 'null') as DraftTour | null;
         return raw && Array.isArray(raw.steps) && raw.steps.length ? raw : undefined;
     } catch {
         return undefined;
     }
 }
 
-export function saveDraft(workspace: string, draft: Tour | undefined): void {
+export function saveDraft(workspace: string, draft: DraftTour | undefined): void {
     storage.set(draftKey(workspace), draft ? JSON.stringify(draft) : undefined);
 }

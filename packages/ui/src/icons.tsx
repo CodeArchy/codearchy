@@ -42,7 +42,19 @@ export type IconName =
     | 'globe'
     | 'play'
     | 'external'
-    | 'map';
+    | 'map'
+    | 'volume'
+    | 'mute'
+    | 'pause'
+    | 'more'
+    | 'edit'
+    | 'download'
+    | 'panelLeft'
+    | 'panelRight'
+    | 'arrowUp'
+    | 'arrowDown'
+    | 'upload'
+    | 'replay';
 
 const PATHS: Record<IconName, ReactNode> = {
     sparkles: (
@@ -150,6 +162,34 @@ const PATHS: Record<IconName, ReactNode> = {
     play: <path d="M8 5.5v13l10-6.5z" />,
     external: <path d="M13.5 4.5h6v6M19.5 4.5 11 13M17.5 14v4.5a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18.5V8.5A1.5 1.5 0 0 1 6 7h4.5" />,
     map: <path d="m3.5 6.5 5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2zM9 4.5v13M15 6.5v13" />,
+    volume: <path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />,
+    mute: <path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3zM16 9.5l5 5M21 9.5l-5 5" />,
+    pause: <path d="M8.5 5.5v13M15.5 5.5v13" />,
+    more: (
+        <>
+            <circle cx="6" cy="12" r="1.2" />
+            <circle cx="12" cy="12" r="1.2" />
+            <circle cx="18" cy="12" r="1.2" />
+        </>
+    ),
+    edit: <path d="M4.5 19.5h4l10-10-4-4-10 10zM13 7l4 4" />,
+    download: <path d="M12 4.5v11M7.5 11 12 15.5 16.5 11M5 19.5h14" />,
+    upload: <path d="M12 15.5v-11M7.5 9 12 4.5 16.5 9M5 19.5h14" />,
+    panelLeft: (
+        <>
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+            <path d="M9.5 4.5v15" />
+        </>
+    ),
+    panelRight: (
+        <>
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+            <path d="M14.5 4.5v15" />
+        </>
+    ),
+    arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
+    arrowDown: <path d="M12 5v14M6 13l6 6 6-6" />,
+    replay: <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4" />,
 };
 
 export function Icon({ name, size = 16, className }: { name: IconName; size?: number; className?: string }) {

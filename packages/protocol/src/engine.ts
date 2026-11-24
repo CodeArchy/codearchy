@@ -36,6 +36,8 @@ export interface EngineClient {
     anchorTour?(tour: Tour): Promise<Tour>;
     /** Writes `.codearchy/tours/<id>.json` (anchored) in the workspace; hosts that can't write leave it out. */
     saveTour?(tour: Tour): Promise<{ file: string }>;
+    /** Removes an authored tour's file from the workspace; hosts that can't write leave it out. */
+    deleteTour?(id: string): Promise<void>;
     /** Whether authorship is known here (it needs git history: VS Code, the Companion). */
     authorshipStatus?(): Promise<AuthorshipStatus>;
     /** A node's authorship: counts, agents, AI-heavy files, timeline and commits. */
