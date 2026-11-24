@@ -44,6 +44,8 @@ import {
     gitIgnoredPaths,
     computeGitAuthorship,
     FileLedgerStore,
+    AgentLogIngester,
+    AGENT_IDS,
     gitListFiles,
     openNodeSqlite,
     toPosix,
@@ -101,6 +103,8 @@ export class AnalysisPipeline {
     private readonly ledgerStore: FileLedgerStore | undefined;
     readonly ledger: AuthorshipLedger;
     private ledgerTimer: NodeJS.Timeout | undefined;
+    /** Agents' session logs (opt-in per agent: codearchy.authorship.agentLogs). */
+    private agentLogs: { key: string; ingester: AgentLogIngester } | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -527,6 +531,8 @@ export class AnalysisPipeline {
         }
         const run = ++this.authorshipRun;
         const started = Date.now();
+        await this.readAgentLogs(state.root);
+        if (run !== this.authorshipRun || state !== this.state) return;
         const result = await computeGitAuthorship(state.root, state.analyses.keys(), { isCancelled: () => run !== this.authorshipRun });
         if (run !== this.authorshipRun || state !== this.state) return;
         if (!result.ok) {
@@ -539,6 +545,33 @@ export class AnalysisPipeline {
         }
         this.authorshipIndex = undefined;
         this.onAuthorshipChange?.();
+    }
+
+    /**
+     * The opted-in agents' session logs → the ledger (verified ranges). Only
+     * counts are logged; nothing from the conversations is kept or shown.
+     */
+    private async readAgentLogs(root: string): Promise<void> {
+        const agents = vscode.workspace
+            .getConfiguration('codearchy')
+            .get<string[]>('authorship.agentLogs', [])
+            .filter((a): a is (typeof AGENT_IDS)[number] => (AGENT_IDS as string[]).includes(a));
+        if (!agents.length) {
+            this.agentLogs = undefined;
+            return;
+        }
+        const key = `${root}|${agents.join(',')}`;
+        if (this.agentLogs?.key !== key) this.agentLogs = { key, ingester: new AgentLogIngester(root, { agents }) };
+        try {
+            const reports = await this.agentLogs.ingester.run(this.ledger, (p) => this.readWorkspaceFile(p));
+            this.ledgerStore?.changed();
+            this.authorshipIndex = undefined;
+            for (const r of reports) {
+                this.log(`agent logs (${r.agent}): ${r.logs} log(s), ${r.edits} edit(s) to this workspace, lines placed in ${r.files} file(s)${r.skipped ? `; ${r.skipped} entries not understood (the log format may have changed)` : ''}${r.tooLarge ? `; ${r.tooLarge} log(s) too large to read` : ''}`);
+            }
+        } catch (err) {
+            this.log(`agent logs: couldn't read them (${err instanceof Error ? err.message : String(err)})`);
+        }
     }
 
     /** Writes an authored tour to `.codearchy/tours/<slug>.json` (anchored, validated) and lists it. */

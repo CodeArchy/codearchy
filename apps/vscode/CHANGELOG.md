@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Your say:** **Mark Selection as Reviewed** and **Correct Authorship of Selection**, from the editor's context menu or the hover.
   - **Where it's kept:** in this workspace's storage on this machine, never in your files.
   - **Settings:** `codearchy.authorship.capture` and `codearchy.authorship.gutter`.
+- **Agent session logs (opt-in).** Turn on `codearchy.authorship.agentLogs` for Claude Code, Codex or Aider, and CodeArchy reads their session logs on this machine to see exactly which lines they wrote (*verified*).
+  - **What's kept:** only which lines, which agent and when. Nothing from your prompts or conversations.
+  - **Reviewed lines:** lines you changed afterwards show as reviewed, and so does an edit you modified before accepting it.
+  - **A limit:** edits an agent makes through shell commands aren't in its logs, so later changes to those lines also show as reviewed.
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 

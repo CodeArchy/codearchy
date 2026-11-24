@@ -142,6 +142,19 @@ export class AuthorshipLedger {
         this.set(path, kept, text);
     }
 
+    /**
+     * What agents' session logs say about a file (ranges from `matchEdits`).
+     * Replaces earlier log ranges, so re-reading the logs is idempotent. Log
+     * evidence (verified) supersedes the editor capture (inferred) it
+     * overlaps, for good; people's reviews and corrections still win.
+     */
+    recordLog(path: string, ranges: LedgerRange[], text?: string): void {
+        const existing = this.ranges(path);
+        const capture = existing.filter((r) => r.source === 'capture');
+        const people = existing.filter((r) => r.source === 'review' || r.source === 'correction');
+        this.set(path, overlayLedger([...capture, ...ranges.map((r) => ({ ...r, source: 'log' as const }))].concat(people)), text);
+    }
+
     /** The file moved or was renamed: its ranges follow. */
     rename(from: string, to: string): void {
         const r = this.files.get(from);

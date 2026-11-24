@@ -255,6 +255,25 @@
                     "type": "boolean",
                     "default": true,
                     "markdownDescription": "Show a thin bar beside AI-written (orange) and reviewed (blue) lines. Hover it for the tool, the date and the evidence."
+                },
+                "codearchy.authorship.agentLogs": {
+                    "type": "array",
+                    "default": [],
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "claude-code",
+                            "codex",
+                            "aider"
+                        ],
+                        "enumDescriptions": [
+                            "Claude Code transcripts (~/.claude/projects)",
+                            "Codex CLI sessions (~/.codex/sessions)",
+                            "Aider's .aider.chat.history.md in this workspace"
+                        ]
+                    },
+                    "markdownDescription": "Read these coding agents' session logs on this machine to see exactly which lines they wrote (*verified*). Off by default: the logs contain your prompts and conversations, so only which lines each agent wrote, and when, is kept, never their text."
                 }
             }
         }

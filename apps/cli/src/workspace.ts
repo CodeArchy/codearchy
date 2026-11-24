@@ -7,9 +7,9 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AuthorshipIndex, markLines, withLedger, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
+import { AuthorshipIndex, markLines, withLedger, type AgentId, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
 import type { AuthorshipOrigin, AuthorshipStatus } from '@codearchy/protocol';
-import { computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
+import { AgentLogIngester, computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
 export interface Snapshot {
@@ -50,6 +50,8 @@ export interface WorkspaceOptions {
     ledger?: AuthorshipLedger;
     /** Called after the ledger changes, to persist it. */
     onLedgerChange?: () => void;
+    /** Agents whose session logs to read into the ledger (opt-in; only line ranges are kept). */
+    agentLogs?: AgentId[];
 }
 
 /** Changes under these never make the index stale. */
@@ -168,6 +170,13 @@ export class Workspace {
         if (this.current !== snap) return;
         // Files may have changed since the ledger last saw them: re-find its ranges first.
         const ledger = this.options.ledger;
+        if (ledger && this.options.agentLogs?.length) {
+            this.agentLogIngester ??= new AgentLogIngester(this.root, { agents: this.options.agentLogs });
+            for (const r of await this.agentLogIngester.run(ledger, (p) => (lines.has(p) ? this.readFile(p) : Promise.resolve(undefined)))) {
+                this.log(`Agent logs (${r.agent}): ${r.logs} log(s), ${r.edits} edit(s) here, lines placed in ${r.files} file(s)${r.skipped ? `, ${r.skipped} entries not understood` : ''}.`);
+            }
+            if (this.current !== snap) return;
+        }
         for (const p of ledger?.paths() ?? []) {
             const text = lines.has(p) ? await this.readFile(p) : undefined;
             if (text === undefined) ledger!.remove(p);
@@ -179,6 +188,8 @@ export class Workspace {
         else this.rebuildAuthorship();
         this.options.onAuthorship?.();
     }
+
+    private agentLogIngester?: AgentLogIngester;
 
     /** The current snapshot's git evidence, kept so the ledger can be laid over it again after a mark. */
     private authorshipInputs?: { snap: Snapshot; lines: Map<string, number | undefined>; data: AuthorshipData | undefined };
