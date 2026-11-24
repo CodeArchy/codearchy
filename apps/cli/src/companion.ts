@@ -176,8 +176,10 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
         switch (method) {
             case 'summary':
                 return summaryOf(workspace, snap);
-            case 'view':
-                return h.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
+            case 'view': {
+                const v = h.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
+                return snap.authorship ? snap.authorship.decorate(v) : v;
+            }
             case 'children':
                 return h.children(str('key'));
             case 'describe':
@@ -198,6 +200,10 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
                 return anchorTour(params.tour as Tour, h, (p) => readIndexed(snap, p));
             case 'readFile':
                 return readIndexed(snap, str('path'));
+            case 'authorshipStatus':
+                return snap.authorship?.status() ?? snap.authorshipStatus;
+            case 'authorship':
+                return snap.authorship?.describe(str('key'));
         }
     }
 

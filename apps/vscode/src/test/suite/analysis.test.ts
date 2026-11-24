@@ -126,6 +126,17 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.strictEqual(tour.steps[0]!.title, 'The big picture');
         assert.strictEqual(tour.status.length, tour.steps.length);
 
+        // Authorship: traced from git in the background (the fixture is in this repository's history).
+        let status = { state: 'computing' } as { state: string; counts?: { unknown: number } };
+        for (let i = 0; i < 100 && status.state === 'computing'; i++) {
+            status = (await api.engine('authorshipStatus', {})) as typeof status;
+            if (status.state === 'computing') await new Promise((r) => setTimeout(r, 200));
+        }
+        assert.strictEqual(status.state, 'ready');
+        assert.ok(status.counts!.unknown > 0);
+        const decorated = api.engine('view', { request: {} }) as { nodes: Array<{ authorship?: unknown }> };
+        assert.ok(decorated.nodes.every((n) => n.authorship), 'view nodes carry authorship counts for the lens');
+
         // Saving an authored tour writes .codearchy/tours/<slug>.json (anchored) and lists it; removed again after.
         const toursDir = path.join(folder!.uri.fsPath, '.codearchy');
         const existed = fs.existsSync(toursDir);

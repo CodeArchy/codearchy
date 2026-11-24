@@ -441,6 +441,55 @@ a flow) appends steps to a per-workspace draft. The draft is saved through
 are kept per viewer in local storage. `tourFromFlow` turns a traced flow into
 a walk-through. The pure part is in `tourModel.ts`.
 
+## Authorship
+
+Authorship answers which code an AI tool wrote, from evidence rather than
+guesses (doc 07). Every line is one of:
+- `ai`: inserted by an AI tool and unchanged since;
+- `reviewed`: AI-inserted, later changed by a human;
+- `human`: positive evidence of a person;
+- `unknown`: no evidence either way, the honest default.
+
+Only aggregates and agent names are shown; no person is ever named.
+
+- **Commit metadata** (`core/src/authorship/commits.ts`). A commit counts as
+  AI-assisted when:
+  - a `Co-authored-by:` trailer names an AI tool by its account or vendor
+    email;
+  - a coding agent's `[bot]` account authored it;
+  - a tool marker is in the message ("Generated with Claude Code", Aider's
+    `aider:` prefix).
+
+  Names that are also people's names (Claude, Devin, Jules) only count with
+  the vendor's email or a bot account, so a colleague called Claude isn't
+  mistaken for an AI. Teams can add their own rules. Commit text is parsed
+  with plain string operations, not regular expressions.
+- **Git** (`platform-node/src/authorship.ts`, read-only):
+  1. `git log` classifies the commits.
+  2. The files the AI commits touched are listed. They're followed through
+     later renames in one `git log -M --diff-filter=R` pass, and mapped to
+     the workspace when it's a subfolder of the repository.
+  3. Only those files are blamed (`git blame --incremental`), because no
+     other file can have AI lines.
+
+  Lines whose last change is an AI commit become `ai` ranges, `declared` and
+  commit-granular.
+- **`AuthorshipIndex`** (`core/src/authorship/index.ts`) sums the ranges into
+  every node with prefix sums over the hierarchy's pre-order, so each
+  container costs one subtraction. It decorates views (`ViewNode.authorship`,
+  for the lens). It describes a node: counts, lines per agent, the most
+  AI-written files, a weekly timeline of AI lines still present, and the
+  commits behind them.
+- **Hosts.** VS Code (setting `codearchy.authorship.enabled`) and the CLI
+  (the Companion) compute authorship in the background after indexing. They
+  refresh it a few seconds after changes (a newer run cancels an older one),
+  then tell the UI to refetch. Both answer `authorshipStatus()` and
+  `authorship(key)`. The browser engine has no git history, so in the web app
+  authorship comes through the Companion.
+
+Each file's line count is stored with its facts (`FileAnalysis.lines`), so
+shares are per line.
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs

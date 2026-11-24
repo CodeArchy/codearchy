@@ -12,7 +12,9 @@ import {
     type EdgeExplanation,
     type EngineClient,
     type EngineEvent,
+    type AuthorshipStatus,
     type Flow,
+    type NodeAuthorship,
     type FlowSummary,
     type NodeDetails,
     type NodeSummary,
@@ -153,6 +155,12 @@ export class CompanionEngine implements EngineClient {
     }
     anchorTour(tour: Tour): Promise<Tour> {
         return this.call('anchorTour', { tour });
+    }
+    authorshipStatus(): Promise<AuthorshipStatus> {
+        return this.call('authorshipStatus', {});
+    }
+    authorship(key: string): Promise<NodeAuthorship | undefined> {
+        return this.call('authorship', { key });
     }
     /** An indexed file's text (the code viewer). */
     readFile(path: string): Promise<string | undefined> {

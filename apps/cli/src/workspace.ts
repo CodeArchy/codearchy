@@ -7,8 +7,9 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
-import { createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
+import { AuthorshipIndex, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
+import type { AuthorshipStatus } from '@codearchy/protocol';
+import { computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
 export interface Snapshot {
@@ -26,6 +27,9 @@ export interface Snapshot {
     edges: number;
     /** Source files per language. */
     languageCounts: Record<string, number>;
+    /** Authorship from git, filled in the background after the build (see `onAuthorship`). */
+    authorship?: AuthorshipIndex;
+    authorshipStatus: AuthorshipStatus;
     languages: string[];
     builtAt: number;
     buildMs: number;
@@ -38,6 +42,10 @@ export interface WorkspaceOptions {
     log?: (message: string) => void;
     /** Called (with the changed path, when known) whenever a relevant file changes; the next snapshot() rebuilds. */
     onChange?: (file: string | undefined) => void;
+    /** Called when a snapshot's authorship is ready (computed from git after each build). */
+    onAuthorship?: () => void;
+    /** Skip authorship (no git commands at all). */
+    noAuthorship?: boolean;
 }
 
 /** Changes under these never make the index stale. */
@@ -133,6 +141,7 @@ export class Workspace {
             flows,
             tours: new TourIndex({ index, flows, files: discovery.tours, read: (p) => this.readFile(p), name: path.basename(this.root) }),
             tourFiles: discovery.tours,
+            authorshipStatus: this.options.noAuthorship ? { state: 'unavailable', reason: 'Turned off.' } : { state: 'computing' },
             files,
             symbols,
             edges: graph.edges.length,
@@ -141,7 +150,23 @@ export class Workspace {
             builtAt: Date.now(),
             buildMs: Date.now() - started,
         };
+        if (!this.options.noAuthorship) {
+            const lines = new Map([...analyses].map(([p, a]) => [p, a.lines]));
+            void this.traceAuthorship(this.current, lines).catch((err: unknown) => this.log(`Authorship failed: ${err instanceof Error ? err.message : String(err)}`));
+        }
         this.log(`Indexed ${files} files in ${this.current.buildMs} ms (${graph.metadata.languages.join(', ') || 'no supported languages'}).`);
         return this.current;
+    }
+
+    /** git log + blame for the snapshot just built; the snapshot gets it when done. */
+    private async traceAuthorship(snap: Snapshot, lines: Map<string, number | undefined>): Promise<void> {
+        const result = await computeGitAuthorship(this.root, lines.keys(), { isCancelled: () => this.current !== snap });
+        if (this.current !== snap) return;
+        if (!result.ok) snap.authorshipStatus = { state: 'unavailable', reason: result.reason };
+        else {
+            snap.authorship = new AuthorshipIndex(snap.index, (p) => lines.get(p), result.data);
+            snap.authorshipStatus = snap.authorship.status();
+        }
+        this.options.onAuthorship?.();
     }
 }

@@ -13,7 +13,9 @@ import {
     HierarchyIndex,
     FlowIndex,
     TourIndex,
+    AuthorshipIndex,
     isTourFile,
+    type AuthorshipData,
     anchorTour,
     serializeTour,
     TOURS_DIR,
@@ -36,16 +38,17 @@ import {
     createNodeParserRuntime,
     fromPosix,
     gitIgnoredPaths,
+    computeGitAuthorship,
     gitListFiles,
     openNodeSqlite,
     toPosix,
     walkFiles,
 } from '@codearchy/platform-node';
-import type { NodeDetails, Tour } from '@codearchy/protocol';
+import type { AuthorshipStatus, NodeDetails, Tour, View } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'authorshipStatus' | 'authorship';
 
 export interface EngineSearchResult {
     key: string;
@@ -81,6 +84,14 @@ export class AnalysisPipeline {
     private hierarchyIndex: HierarchyIndex | undefined;
     private flowIndex: FlowIndex | undefined;
     private tourIndex: TourIndex | undefined;
+    /** Authorship from git: computed in the background after indexing, refreshed after changes. */
+    private authorshipData: AuthorshipData | undefined;
+    private authorshipIndex: AuthorshipIndex | undefined;
+    private authorshipState: AuthorshipStatus = { state: 'computing' };
+    private authorshipRun = 0;
+    private authorshipTimer: NodeJS.Timeout | undefined;
+    /** Called when authorship (re)computes, so the panel refetches its views. */
+    onAuthorshipChange: (() => void) | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -165,6 +176,8 @@ export class AnalysisPipeline {
         onProgress({ phase: 'graphing', current: 0, total: 1, message: 'Building dependency graph...' });
         const graph = this.buildGraph();
         onProgress({ phase: 'complete', current: 1, total: 1, message: 'Analysis complete.' });
+        this.authorshipState = { state: 'computing' };
+        this.refreshAuthorship();
         return graph;
     }
 
@@ -272,10 +285,15 @@ export class AnalysisPipeline {
             dirty = true;
         }
 
-        return dirty ? this.buildGraph() : undefined;
+        if (!dirty) return undefined;
+        // Edits move lines and commits add history: re-trace once things settle.
+        this.refreshAuthorship(5000);
+        return this.buildGraph();
     }
 
     dispose(): void {
+        clearTimeout(this.authorshipTimer);
+        this.authorshipRun++; // cancels a run in flight
         this.closeWorkspace();
         this.parser?.dispose();
         this.parser = undefined;
@@ -340,6 +358,7 @@ export class AnalysisPipeline {
         this.hierarchyIndex = undefined;
         this.flowIndex = undefined;
         this.tourIndex = undefined;
+        this.authorshipIndex = undefined;
         return graph;
     }
 
@@ -359,8 +378,11 @@ export class AnalysisPipeline {
         if (!h) return undefined;
         const str = (k: string) => String(params[k] ?? '');
         switch (method) {
-            case 'view':
-                return h.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
+            case 'view': {
+                const v: View = h.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
+                const a = this.authorship(h);
+                return a ? a.decorate(v) : v;
+            }
             case 'children':
                 return h.children(str('key'));
             case 'describe':
@@ -381,6 +403,10 @@ export class AnalysisPipeline {
                 return anchorTour(params.tour as Tour, h, (p) => this.readWorkspaceFile(p));
             case 'saveTour':
                 return this.saveTour(h, params.tour as Tour);
+            case 'authorshipStatus':
+                return this.authorship(h)?.status() ?? this.authorshipState;
+            case 'authorship':
+                return this.authorship(h)?.describe(str('key'));
             default:
                 return undefined;
         }
@@ -403,6 +429,48 @@ export class AnalysisPipeline {
             name: path.basename(state.root),
         });
         return this.tourIndex;
+    }
+
+    /** The authorship index over the current hierarchy (rebuilt from the last git data). */
+    private authorship(h: HierarchyIndex): AuthorshipIndex | undefined {
+        const state = this.state;
+        if (!state || !this.authorshipData) return undefined;
+        this.authorshipIndex ??= new AuthorshipIndex(h, (p) => state.analyses.get(p)?.lines, this.authorshipData);
+        return this.authorshipIndex;
+    }
+
+    /**
+     * Recomputes authorship from git in the background (a newer run cancels an
+     * older one). `delayMs` lets a burst of file changes settle first.
+     */
+    refreshAuthorship(delayMs = 0): void {
+        clearTimeout(this.authorshipTimer);
+        this.authorshipTimer = setTimeout(() => void this.computeAuthorship(), delayMs);
+    }
+
+    private async computeAuthorship(): Promise<void> {
+        const state = this.state;
+        if (!state) return;
+        if (!vscode.workspace.getConfiguration('codearchy').get<boolean>('authorship.enabled', true)) {
+            this.authorshipData = undefined;
+            this.authorshipIndex = undefined;
+            this.authorshipState = { state: 'unavailable', reason: 'Turned off (codearchy.authorship.enabled).' };
+            return;
+        }
+        const run = ++this.authorshipRun;
+        const started = Date.now();
+        const result = await computeGitAuthorship(state.root, state.analyses.keys(), { isCancelled: () => run !== this.authorshipRun });
+        if (run !== this.authorshipRun || state !== this.state) return;
+        if (!result.ok) {
+            this.authorshipData = undefined;
+            this.authorshipState = { state: 'unavailable', reason: result.reason };
+        } else {
+            this.authorshipData = result.data;
+            const s = result.data.stats;
+            this.log(`authorship: ${s.aiCommits} of ${s.commits} commits carry AI markers; ${s.blamedFiles} files traced in ${Date.now() - started} ms${result.truncated ? ' (file limit reached)' : ''}`);
+        }
+        this.authorshipIndex = undefined;
+        this.onAuthorshipChange?.();
     }
 
     /** Writes an authored tour to `.codearchy/tours/<slug>.json` (anchored, validated) and lists it. */
