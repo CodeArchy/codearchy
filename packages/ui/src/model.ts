@@ -42,8 +42,9 @@ export interface MapModel {
 export const externalId = (key: string) => `ext:${key}`;
 export const edgeId = (source: string, target: string) => `${source}->${target}`;
 
-const LEAF = { width: 220, height: 82 };
-const MODULE = { width: 200, height: 62 };
+/** Card sizes leave room for every row (kind, name, lens badge, counts) at any lens. */
+const LEAF = { width: 220, height: 92 };
+const MODULE = { width: 210, height: 80 };
 const EXTERNAL = { width: 170, height: 40 };
 
 export function strokeWidthFor(weight: number): number {

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import type { Flow, Tour } from '@codearchy/protocol';
-import { addToDraft, firstUndone, removeFromDraft, stepView, tourFromFlow } from '../src/tourModel.js';
+import { addToDraft, draftFrom, firstUndone, moveStep, removeFromDraft, stepView, tourFile, tourFromFlow, tourToSave, updateStep } from '../src/tourModel.js';
+import { speechText } from '../src/voice.js';
+import { matrixCell } from '../src/Matrix.js';
 import { flowRows } from '../src/flowModel.js';
 
 const flow: Flow = {
@@ -31,8 +33,13 @@ const flow: Flow = {
 describe('tourFromFlow', () => {
     const tour = tourFromFlow(flow, flowRows(flow).map((r) => r.index));
 
-    test('starts at the entrypoint in Flows mode, then walks the calls in reading order, skipping shared helpers', () => {
-        expect(tour.steps.map((s) => `${s.id}:${s.title}:${s.view?.mode}`)).toEqual(['entry:POST /orders:flows', 'step-0:create:map', 'step-1:place:map', 'step-3:insert:map']);
+    test('walks the calls in reading order on the flow itself (Flows mode), skipping shared helpers', () => {
+        expect(tour.steps.map((s) => `${s.id}:${s.title}:${s.view?.mode}`)).toEqual(['entry:POST /orders:flows', 'step-0:create:flows', 'step-1:place:flows', 'step-3:insert:flows']);
+        // Each call step targets the flow and the call, so Flows highlights it.
+        expect(tour.steps[2]!.target).toEqual({ flow: flow.id, node: 'sym:core/o.ts#place' });
+        expect(tour.steps[2]!.view?.focus).toBe('sym:core/o.ts#place');
+        // …and links the file, so the map is one click away.
+        expect(tour.steps[2]!.body).toContain('[o.ts](node:mod:core/o.ts)');
         expect(tour.steps[0]!.target).toEqual({ flow: flow.id, node: 'sym:api/h.ts#create' });
         expect(tour.steps[0]!.body).toMatch(/reaches pg/);
         expect(tour.status).toHaveLength(tour.steps.length);
@@ -74,4 +81,64 @@ test('stepView: flows for flow-only steps, the focus node otherwise', () => {
     expect(stepView({ id: 'a', target: { flow: 'f' }, title: '', body: '' })).toEqual({ mode: 'flows', flow: 'f' });
     expect(stepView({ id: 'a', target: { node: 'n', flow: 'f' }, title: '', body: '' })).toEqual({ mode: 'map', node: 'n', flow: 'f' });
     expect(stepView({ id: 'a', target: { node: 'n' }, view: { mode: 'matrix', focus: 'm', lens: 'health' }, title: '', body: '' })).toEqual({ mode: 'matrix', node: 'm', lens: 'health' });
+});
+
+describe('managing tours', () => {
+    const authored: Tour = {
+        version: 1,
+        id: 'orders',
+        title: 'Orders',
+        origin: 'authored',
+        description: 'How orders flow',
+        steps: [
+            { id: 'a', target: { node: 'dir:api' }, title: 'API', body: 'one' },
+            { id: 'b', target: { node: 'dir:core' }, title: 'Core', body: 'two', anchorHash: 'h' },
+        ],
+    };
+
+    test('editing a repository tour keeps its id, so saving replaces its file', () => {
+        const d = draftFrom(authored, true);
+        expect(d).toMatchObject({ id: 'draft', title: 'Orders', replaces: 'orders', origin: 'authored' });
+        expect(tourToSave(d)).toMatchObject({ id: 'orders', title: 'Orders' });
+        expect('replaces' in tourToSave(d)).toBe(false);
+        // Anchors are re-stamped on save, not copied.
+        expect(d.steps[1]).not.toHaveProperty('anchorHash');
+    });
+
+    test('a copy (or a copy of a generated tour) saves as a new tour', () => {
+        const copy = draftFrom(authored);
+        expect(copy.title).toBe('Orders (my copy)');
+        expect(copy.replaces).toBeUndefined();
+        expect(tourToSave(copy).id).toBe('draft');
+        expect(draftFrom({ ...authored, origin: 'generated', id: 'start-here' }, true).replaces).toBeUndefined();
+    });
+
+    test('steps move, change and keep their ids', () => {
+        const d = draftFrom(authored, true);
+        expect(moveStep(d, 'b', -1).steps.map((s) => s.id)).toEqual(['b', 'a']);
+        expect(moveStep(d, 'a', -1)).toBe(d);
+        expect(moveStep(d, 'b', 1)).toBe(d);
+        expect(updateStep(d, 'a', { title: 'Edge' }).steps[0]).toMatchObject({ id: 'a', title: 'Edge', body: 'one' });
+    });
+
+    test('the file format carries only what the engine reads', () => {
+        const text = tourFile({ ...authored, status: [{}, {}], file: '.codearchy/tours/orders.json' } as Tour);
+        expect(Object.keys(JSON.parse(text))).toEqual(['version', 'title', 'description', 'steps']);
+        expect(text.endsWith('\n')).toBe(true);
+    });
+});
+
+describe('narration text', () => {
+    test('links keep their label; code and markup marks go', () => {
+        expect(speechText('It lives in [o.ts](node:mod:core/o.ts) and calls `place()` **twice**.')).toBe('It lives in o.ts and calls place() twice.');
+    });
+});
+
+describe('matrix cells', () => {
+    test('grow to fill the space, within readable bounds', () => {
+        expect(matrixCell(8, 1600, 900)).toBe(64);
+        expect(matrixCell(20, 800, 600)).toBe(30);
+        expect(matrixCell(300, 800, 600)).toBe(10);
+        expect(matrixCell(30, 0, 0)).toBe(26);
+    });
 });

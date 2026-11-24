@@ -5,11 +5,15 @@
  * (marked ⟳). A matrix stays readable at hundreds of rows, where a node-link
  * diagram turns into a hairball.
  *
+ * Cells grow to fill the canvas (small views get big, labelled cells;
+ * large ones shrink to stay scannable), and the weight is written in a cell
+ * once there's room for it.
+ *
  * Only non-empty cells are rendered (absolutely positioned over a CSS grid),
  * so a few hundred rows stay cheap. Values are in each cell's tooltip and
  * accessible label; colour is a sequential ramp by weight.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { View } from '@codearchy/protocol';
 import { heatStep, matrixOrder } from './model.js';
 
@@ -27,9 +31,21 @@ export function Matrix(props: MatrixProps) {
     const order = useMemo(() => matrixOrder(view), [view]);
     const [hover, setHover] = useState<{ row: number; col: number }>();
     const n = order.keys.length;
-    const cell = n > 80 ? 12 : n > 40 ? 18 : 26;
-    const labelWidth = 220;
-    const headerHeight = 140;
+    const wrap = useRef<HTMLDivElement>(null);
+    const [box, setBox] = useState({ width: 0, height: 0 });
+    useEffect(() => {
+        const el = wrap.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(([e]) => e && setBox({ width: e.contentRect.width, height: e.contentRect.height }));
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [n === 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    const nameOfKey = (k: string) => view.nodes.find((x) => x.key === k)?.name ?? k;
+    const longest = Math.max(4, ...order.keys.map((k) => nameOfKey(k).length));
+    const labelWidth = Math.min(280, Math.max(120, longest * 7.2 + 28));
+    const headerHeight = Math.min(180, Math.max(80, longest * 6.6 + 16));
+    const cell = matrixCell(n, box.width - labelWidth - 24, box.height - headerHeight - 72);
+    const font = Math.max(10, Math.min(13, Math.round(cell * 0.32)));
     const indexOf = useMemo(() => new Map(order.keys.map((k, i) => [k, i])), [order]);
     const nameOf = useMemo(() => new Map(view.nodes.map((x) => [x.key, x.name])), [view]);
     const max = Math.max(1, ...view.edges.map((e) => e.weight));
@@ -42,7 +58,7 @@ export function Matrix(props: MatrixProps) {
     const feedback = cells.filter((c) => c.col > c.row).length;
 
     return (
-        <div className="ca-matrix-wrap">
+        <div className="ca-matrix-wrap" ref={wrap} style={{ ['--ca-matrix-font' as string]: `${font}px` }}>
             <p className="ca-muted ca-matrix-legend">
                 Rows depend on columns. Below the diagonal: dependencies on earlier (lower-level) items. Above it: feedback, only inside a cycle
                 {feedback ? ` (⟳ ${feedback} cell${feedback === 1 ? '' : 's'})` : ' (none here)'}. Darker means more dependencies.
@@ -99,11 +115,22 @@ export function Matrix(props: MatrixProps) {
                                 data-edge={id}
                                 onMouseEnter={() => setHover({ row, col })}
                                 onClick={() => props.onSelectEdge(e.source, e.target)}
-                            />
+                            >
+                                {cell >= 30 ? <span aria-hidden="true">{e.weight}</span> : null}
+                            </button>
                         );
                     })}
                 </div>
             </div>
         </div>
     );
+}
+
+/** Cell size that fits `n` rows into the space available, within readable bounds. */
+export function matrixCell(n: number, width: number, height: number): number {
+    if (n <= 0) return 26;
+    const fallback = n > 80 ? 12 : n > 40 ? 18 : 26;
+    if (!(width > 0 && height > 0)) return fallback;
+    const fit = Math.floor(Math.min(width, Math.max(height, width * 0.6)) / n);
+    return Math.max(n > 80 ? 10 : 14, Math.min(64, fit));
 }

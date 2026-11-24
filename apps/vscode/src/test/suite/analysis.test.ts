@@ -165,6 +165,14 @@ suite('CodeArchy — Analysis in the extension host', function () {
             assert.ok(written.steps[0]!.anchorHash, 'steps are anchored on save');
             const listed = (await api.engine('tours', {})) as Array<{ id: string; origin: string; stale: number }>;
             assert.ok(listed.some((t) => t.id === 'web-entry-end-to-end' && t.origin === 'authored' && t.stale === 0));
+            // Editing keeps the file (same id); deleting removes the file and the listing.
+            const edited = (await api.engine('saveTour', { tour: { ...draft, id: 'web-entry-end-to-end', title: 'Web entry (edited)' } })) as { file: string };
+            assert.strictEqual(edited.file, saved.file);
+            await api.engine('deleteTour', { id: 'web-entry-end-to-end' });
+            assert.ok(!fs.existsSync(path.join(folder!.uri.fsPath, saved.file)), 'the tour file is removed');
+            const after = (await api.engine('tours', {})) as Array<{ id: string }>;
+            assert.ok(!after.some((t) => t.id === 'web-entry-end-to-end'));
+            await assert.rejects(Promise.resolve(api.engine('deleteTour', { id: 'nope' })) as Promise<unknown>, /no tour/);
         } finally {
             if (!existed) fs.rmSync(toursDir, { recursive: true, force: true });
         }

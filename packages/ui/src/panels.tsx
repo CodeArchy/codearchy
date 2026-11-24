@@ -1,8 +1,8 @@
 /** Navigator (hierarchy tree), Inspector (selection details), breadcrumb and search. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AiClient, EdgeExplanation, NodeDetails, NodeLink, NodeSummary } from '@codearchy/protocol';
 import { CardSection } from './ai.js';
-import { Icon } from './icons.js';
+import { Icon, type IconName } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { lensBadge, type LensId } from './model.js';
 import { AuthorshipSection, type AuthorshipSource } from './Authorship.js';
@@ -32,6 +32,14 @@ export function Breadcrumb(props: { items: Array<{ key: string; name: string }>;
 
 // ─── Navigator ──────────────────────────────────────────────────────────────
 
+/** A dot per language (colour is decoration: the file name carries the extension). */
+const LANGUAGE_DOT: Record<string, string> = {
+    typescript: '#3178c6', tsx: '#3178c6', javascript: '#e8c33a', jsx: '#e8c33a', python: '#4b8bbe', go: '#00add8', rust: '#dea584',
+    java: '#e76f00', kotlin: '#a97bff', csharp: '#68217a', 'c#': '#68217a', php: '#777bb4', ruby: '#cc342d',
+};
+
+const NAV_ICON: Record<string, IconName> = { system: 'map', package: 'boxes', component: 'layers', module: 'file', symbol: 'code' };
+
 export interface NavigatorProps {
     client: EngineClient;
     /** Changes when another workspace is loaded: the tree resets. */
@@ -43,12 +51,17 @@ export interface NavigatorProps {
     selected?: string;
     onReveal(key: string): void;
     onDrill(key: string): void;
+    /** Hide the panel (a toolbar button brings it back). */
+    onHide?(): void;
+    /** Search everything (⌘K): the filter only sees what's loaded. */
+    onSearch?(): void;
 }
 
 export function Navigator(props: NavigatorProps) {
     const { client, revision } = props;
     const [kids, setKids] = useState(new Map<string, NodeSummary[]>());
     const [open, setOpen] = useState(new Set<string>(['sys:root']));
+    const [filter, setFilter] = useState('');
 
     const load = (key: string) => {
         if (kids.has(key)) return;
@@ -67,58 +80,143 @@ export function Navigator(props: NavigatorProps) {
     useEffect(() => {
         for (const k of open) load(k);
     }, [open, kids]); // eslint-disable-line react-hooks/exhaustive-deps
+    // The selection scrolls into view (a reveal from the map, search or a tour).
+    const tree = useRef<HTMLUListElement>(null);
+    useEffect(() => {
+        if (!props.selected) return;
+        const el = tree.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(props.selected)}"]`);
+        el?.scrollIntoView({ block: 'nearest' });
+    }, [props.selected, kids]);
 
-    const row = (n: NodeSummary, depth: number): JSX.Element => {
-        const isOpen = open.has(n.key);
+    const q = filter.trim().toLowerCase();
+    /** With a filter: the loaded nodes that match, or hold a match below them. */
+    const visible = useMemo(() => {
+        if (!q) return undefined;
+        const keep = new Set<string>();
+        const walk = (key: string): boolean => {
+            let any = false;
+            for (const c of kids.get(key) ?? []) {
+                const below = walk(c.key);
+                if (below || c.name.toLowerCase().includes(q)) {
+                    keep.add(c.key);
+                    any = true;
+                }
+            }
+            return any;
+        };
+        walk('sys:root');
+        return keep;
+    }, [q, kids]);
+
+    const toggle = (key: string) =>
+        setOpen((o) => {
+            const next = new Set(o);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+
+    const row = (n: NodeSummary, depth: number): JSX.Element | null => {
+        if (visible && !visible.has(n.key)) return null;
+        const isOpen = open.has(n.key) || (!!visible && (kids.get(n.key) ?? []).some((c) => visible.has(c.key)));
         const onPath = props.path.includes(n.key);
+        const selected = props.selected === n.key;
+        const dot = n.kind === 'module' && n.language ? LANGUAGE_DOT[n.language.toLowerCase()] : undefined;
         return (
-            <li key={n.key} role="treeitem" aria-expanded={n.hasChildren ? isOpen : undefined} aria-selected={props.selected === n.key}>
+            <li key={n.key} role="treeitem" aria-expanded={n.hasChildren ? isOpen : undefined} aria-selected={selected} aria-level={depth + 1}>
                 <div
-                    className={`ca-nav-row${onPath ? ' ca-on-path' : ''}${props.selected === n.key ? ' ca-selected' : ''}`}
-                    style={{ paddingLeft: 6 + depth * 14 }}
+                    className={`ca-nav-row ca-nav-${n.kind}${onPath ? ' ca-on-path' : ''}${selected ? ' ca-selected' : ''}${n.virtual ? ' ca-nav-virtual' : ''}`}
+                    style={{ ['--depth' as string]: depth }}
                     data-key={n.key}
                     tabIndex={0}
+                    title={n.path || n.name}
                     onClick={() => props.onReveal(n.key)}
                     onDoubleClick={() => n.hasChildren && props.onDrill(n.key)}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') props.onReveal(n.key);
                         if (e.key === 'ArrowRight' && n.hasChildren) setOpen((o) => new Set(o).add(n.key));
                         if (e.key === 'ArrowLeft') setOpen((o) => (o.delete(n.key), new Set(o)));
+                        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            const rows = [...(tree.current?.querySelectorAll<HTMLElement>('.ca-nav-row') ?? [])];
+                            rows[rows.indexOf(e.currentTarget) + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+                        }
                     }}
                 >
                     <button
                         type="button"
-                        className="ca-twisty"
+                        className={`ca-twisty${isOpen ? ' ca-open' : ''}`}
                         aria-label={isOpen ? 'Collapse' : 'Expand'}
                         tabIndex={-1}
                         disabled={!n.hasChildren}
                         onClick={(e) => {
                             e.stopPropagation();
-                            setOpen((o) => {
-                                const next = new Set(o);
-                                if (next.has(n.key)) next.delete(n.key);
-                                else next.add(n.key);
-                                return next;
-                            });
+                            toggle(n.key);
                         }}
                     >
-                        {n.hasChildren ? (isOpen ? '▾' : '▸') : ''}
+                        {n.hasChildren ? <Icon name="chevron" size={12} /> : null}
                     </button>
-                    <span className="ca-nav-name">{n.name}</span>
-                    {n.role ? <span className="ca-chip">{n.role}</span> : null}
+                    <span className="ca-nav-icon" aria-hidden="true">
+                        <Icon name={n.virtual ? 'target' : NAV_ICON[n.kind] ?? 'file'} size={14} />
+                        {dot ? <span className="ca-nav-dot" style={{ background: dot }} /> : null}
+                    </span>
+                    <span className="ca-nav-name">
+                        <Highlight text={n.name} query={q} />
+                    </span>
+                    {n.role ? <span className="ca-nav-role">{n.role}</span> : null}
+                    {n.kind !== 'module' && n.kind !== 'symbol' ? <span className="ca-nav-count" title={`${n.modules} files`}>{n.modules.toLocaleString()}</span> : null}
                 </div>
                 {isOpen && n.hasChildren ? <ul role="group">{(kids.get(n.key) ?? []).map((c) => row(c, depth + 1))}</ul> : null}
             </li>
         );
     };
 
+    const top = kids.get('sys:root');
+    const shown = top?.map((n) => row(n, 0)).filter(Boolean) ?? [];
     return (
         <div className="ca-navigator">
-            <div className="ca-panel-title">Navigator</div>
-            <ul role="tree" aria-label="Architecture hierarchy">
-                {(kids.get('sys:root') ?? []).map((n) => row(n, 0))}
+            <div className="ca-nav-head">
+                <span className="ca-panel-title">Navigator</span>
+                <span className="ca-toolbar-gap" />
+                <button type="button" className="ca-icon-button" title="Collapse all" aria-label="Collapse all" onClick={() => setOpen(new Set(['sys:root', ...props.path]))}>
+                    <Icon name="arrowUp" size={13} />
+                </button>
+                {props.onHide ? (
+                    <button type="button" className="ca-icon-button" title="Hide the Navigator" aria-label="Hide the Navigator" onClick={props.onHide}>
+                        <Icon name="panelLeft" size={14} />
+                    </button>
+                ) : null}
+            </div>
+            <div className="ca-nav-filter">
+                <input type="search" value={filter} placeholder="Filter the tree" aria-label="Filter the tree" onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setFilter('')} />
+            </div>
+            <ul role="tree" aria-label="Architecture hierarchy" ref={tree}>
+                {!top ? <li className="ca-nav-empty ca-muted">Loading…</li> : null}
+                {shown}
+                {q && top && !shown.length ? (
+                    <li className="ca-nav-empty ca-muted">
+                        Nothing open matches “{filter.trim()}”.{' '}
+                        {props.onSearch ? (
+                            <button type="button" className="ca-link" onClick={props.onSearch}>
+                                Search everything
+                            </button>
+                        ) : null}
+                    </li>
+                ) : null}
             </ul>
         </div>
+    );
+}
+
+function Highlight({ text, query }: { text: string; query: string }) {
+    const i = query ? text.toLowerCase().indexOf(query) : -1;
+    if (i < 0) return <>{text}</>;
+    return (
+        <>
+            {text.slice(0, i)}
+            <mark>{text.slice(i, i + query.length)}</mark>
+            {text.slice(i + query.length)}
+        </>
     );
 }
 
@@ -145,8 +243,12 @@ export interface InspectorProps {
     dataVersion?: number;
 }
 
+type InspectorTab = 'overview' | 'uses' | 'usedBy' | 'inside';
+
 export function Inspector(props: InspectorProps) {
     const { details: d, explanation: x, host } = props;
+    // The tab stays as you move between nodes (comparing "Used by" across files is common).
+    const [tab, setTab] = useState<InspectorTab>('overview');
     if (x) {
         return (
             <div className="ca-inspector">
@@ -260,45 +362,68 @@ export function Inspector(props: InspectorProps) {
                     </button>
                 ) : null}
             </div>
-            {props.ai && d.kind !== 'symbol' ? <CardSection ai={props.ai} nodeKey={d.key} nameOf={props.nameOf} onReveal={props.onReveal} /> : null}
-            <HealthAndTests details={d} lens={props.lens} host={host} />
-            {props.authorship && d.kind !== 'symbol' ? <AuthorshipSection nodeKey={d.key} source={props.authorship} dataVersion={props.dataVersion ?? 0} lens={props.lens} onReveal={props.onReveal} /> : null}
-            {links('Depends on', d.dependsOn)}
-            {links('Used by', d.usedBy)}
-            {d.kind === 'module' ? (
-                <section>
-                    <h3>Symbols ({d.symbols.length})</h3>
-                    <ul className="ca-list">
-                        {d.symbols.map((s) => (
-                            <li key={s.key} style={{ paddingLeft: s.depth * 12 }}>
-                                <span className="ca-muted">{s.kind}</span>{' '}
-                                {host?.openFile ? (
-                                    <button type="button" className="ca-link" onClick={() => host.openFile!(d.path, s.startLine)}>
-                                        {s.name}
-                                    </button>
-                                ) : (
-                                    s.name
-                                )}
-                                {s.exported ? <span className="ca-muted"> · exported</span> : null}
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            ) : (
-                <section>
-                    <h3>Contains ({d.children.length})</h3>
-                    <ul className="ca-list">
-                        {d.children.map((c) => (
-                            <li key={c.key}>
-                                <button type="button" className="ca-link" onClick={() => props.onReveal(c.key)}>
-                                    {c.name}
-                                </button>{' '}
-                                <span className="ca-muted">{c.kind === 'module' ? 'file' : `${c.modules} files`}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            )}
+            <div className="ca-tabs ca-inspector-tabs" role="tablist" aria-label="Details">
+                {(
+                    [
+                        ['overview', 'Overview', undefined],
+                        ['uses', 'Uses', d.dependsOn.length],
+                        ['usedBy', 'Used by', d.usedBy.length],
+                        ['inside', d.kind === 'module' ? 'Symbols' : 'Contains', d.kind === 'module' ? d.symbols.length : d.children.length],
+                    ] as Array<[InspectorTab, string, number | undefined]>
+                ).map(([id, label, count]) => (
+                    <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? 'ca-on' : ''} title={id === 'uses' ? 'What this depends on' : id === 'usedBy' ? 'What depends on this' : undefined} onClick={() => setTab(id)}>
+                        {label}
+                        {count !== undefined ? <span className="ca-tab-count">{count}</span> : null}
+                    </button>
+                ))}
+            </div>
+            <div role="tabpanel" className="ca-inspector-panel">
+                {tab === 'overview' ? (
+                    <>
+                        {props.ai && d.kind !== 'symbol' ? <CardSection ai={props.ai} nodeKey={d.key} nameOf={props.nameOf} onReveal={props.onReveal} /> : null}
+                        <HealthAndTests details={d} lens={props.lens} host={host} />
+                        {props.authorship && d.kind !== 'symbol' ? <AuthorshipSection nodeKey={d.key} source={props.authorship} dataVersion={props.dataVersion ?? 0} lens={props.lens} onReveal={props.onReveal} /> : null}
+                    </>
+                ) : tab === 'uses' ? (
+                    links('Depends on', d.dependsOn)
+                ) : tab === 'usedBy' ? (
+                    links('Used by', d.usedBy)
+                ) : d.kind === 'module' ? (
+                    <section>
+                        <h3>Symbols ({d.symbols.length})</h3>
+                        {d.symbols.length === 0 ? <p className="ca-muted">none</p> : null}
+                        <ul className="ca-list">
+                            {d.symbols.map((s) => (
+                                <li key={s.key} style={{ paddingLeft: s.depth * 12 }}>
+                                    <span className="ca-muted">{s.kind}</span>{' '}
+                                    {host?.openFile ? (
+                                        <button type="button" className="ca-link" onClick={() => host.openFile!(d.path, s.startLine)}>
+                                            {s.name}
+                                        </button>
+                                    ) : (
+                                        s.name
+                                    )}
+                                    {s.exported ? <span className="ca-muted"> · exported</span> : null}
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                ) : (
+                    <section>
+                        <h3>Contains ({d.children.length})</h3>
+                        <ul className="ca-list">
+                            {d.children.map((c) => (
+                                <li key={c.key}>
+                                    <button type="button" className="ca-link" onClick={() => props.onReveal(c.key)}>
+                                        {c.name}
+                                    </button>{' '}
+                                    <span className="ca-muted">{c.kind === 'module' ? 'file' : `${c.modules} files`}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                )}
+            </div>
         </div>
     );
 }

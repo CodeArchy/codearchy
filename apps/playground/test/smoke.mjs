@@ -91,7 +91,10 @@ for (const name of wanted) {
         assert.doesNotMatch(await crumb(), /›/, 'still the system canvas');
         await mapNode('dir:web/src').locator('.ca-expand').click();
         await mapNode('mod:web/src/index.ts').click();
+        // The Inspector's lists are tabs, each with its count.
+        await page.locator('.ca-inspector-tabs').getByRole('tab', { name: /^Uses\s*4$/ }).click();
         await page.locator('.ca-inspector h3', { hasText: 'Depends on (4)' }).waitFor();
+        await page.locator('.ca-inspector-tabs').getByRole('tab', { name: 'Overview' }).click();
         // Selection traces flow: its dependencies animate in the dependency's direction; the rest fades.
         // (A new node's edges are drawn once the node has rendered, so wait for all four.)
         await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge.animated.ca-edge-out').length === 4);
@@ -146,15 +149,34 @@ for (const name of wanted) {
         await page.locator('.ca-inspector[data-key="mod:go/cmd/server/main.go"]').waitFor();
         await page.getByRole('button', { name: 'Show on map' }).click();
         await mapNode('mod:go/cmd/server/main.go').waitFor();
+        // Panels resize from their edges (keyboard too), and hide from the toolbar.
+        const navEdge = page.getByRole('separator', { name: 'Navigator width' });
+        const before = Number(await navEdge.getAttribute('aria-valuenow'));
+        await navEdge.focus();
+        await page.keyboard.press('ArrowRight');
+        assert.strictEqual(Number(await navEdge.getAttribute('aria-valuenow')), before + 16);
+        await page.keyboard.press('Enter'); // back to the default
+        await page.getByRole('button', { name: 'Hide the side panel' }).click();
+        await page.locator('.ca-side').waitFor({ state: 'hidden' });
+        await page.getByRole('button', { name: 'Show the side panel' }).click();
+        await page.locator('.ca-side').waitFor();
         // Tours: Start Here plays over the canvas and follows its steps into Flows; "Add to tour" builds a draft.
         await page.click('.ca-segmented button:has-text("Tours")');
         const startHere = page.locator('.ca-tour-card', { hasText: 'Start here' });
-        await startHere.getByRole('button', { name: /Start|Resume|Replay/ }).click();
+        await startHere.getByRole('button', { name: /^(Start|Resume|Replay)$/ }).click();
         const player = page.locator('.ca-tour-player');
         await player.locator('h3', { hasText: 'The big picture' }).waitFor();
         await player.getByRole('button', { name: 'Next' }).click();
         await player.locator('h3', { hasText: 'Where things start' }).waitFor();
         await page.locator('.ca-flow-head h2', { hasText: 'main' }).waitFor(); // the step switched the canvas to Flows
+        await player.getByRole('button', { name: 'Close the tour' }).click();
+        // Walking a flow stays on its sequence, with each call highlighted in turn.
+        await page.click('.ca-segmented button:has-text("Tours")');
+        await page.locator('.ca-tour-flow', { hasText: 'main' }).first().getByRole('button', { name: 'Walk through' }).click();
+        await player.locator('.ca-tour-player-title', { hasText: 'Walk through main' }).waitFor();
+        await page.locator('.ca-flow-head h2', { hasText: 'main' }).waitFor();
+        await player.getByRole('button', { name: 'Next' }).click();
+        await page.locator('.ca-step.ca-on').first().waitFor();
         await player.getByRole('button', { name: 'Close the tour' }).click();
         await page.click('.ca-segmented button:has-text("Map")');
         await mapNode('pkg:rust').click();
