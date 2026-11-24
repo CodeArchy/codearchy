@@ -26,10 +26,22 @@ export interface GitAuthorshipOptions {
 
 export type GitAuthorship = { ok: true; data: AuthorshipData; truncated: boolean } | { ok: false; reason: string };
 
-function git(cwd: string, args: string[], maxBuffer = 512 * 1024 * 1024): Promise<string> {
+function git(cwd: string, args: string[], maxBuffer = 512 * 1024 * 1024, env?: NodeJS.ProcessEnv): Promise<string> {
     return new Promise((resolve, reject) => {
-        execFile('git', args, { cwd, maxBuffer, windowsHide: true, encoding: 'utf8' }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+        execFile('git', args, { cwd, maxBuffer, windowsHide: true, encoding: 'utf8', ...(env ? { env } : {}) }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
     });
+}
+
+/**
+ * The environment for git commands that record a commit (a note is one, on the
+ * notes ref): the user's own identity when git has one, else a neutral one,
+ * so a machine without user.name / user.email can still write notes.
+ */
+async function committerEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
+    const known = await git(root, ['var', 'GIT_COMMITTER_IDENT']).then(() => true, () => false);
+    if (known) return undefined;
+    const id = { name: 'CodeArchy', email: 'codearchy@localhost' };
+    return { ...process.env, GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email };
 }
 
 /** Runs git with `input` on stdin (for `cat-file --batch`). */
@@ -276,7 +288,7 @@ export async function writeAuthorshipNote(
         try {
             const file = path.join(dir, 'note.json');
             fs.writeFileSync(file, serializeNote(files));
-            await git(root, ['notes', `--ref=${NOTES_REF}`, 'add', '-f', '-F', file, sha]);
+            await git(root, ['notes', `--ref=${NOTES_REF}`, 'add', '-f', '-F', file, sha], undefined, await committerEnv(root));
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
