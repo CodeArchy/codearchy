@@ -106,6 +106,15 @@ for (const name of wanted) {
         await page.click('.ca-segmented button:has-text("Matrix")');
         await page.locator('.ca-matrix-cell').first().click();
         await page.locator('.ca-inspector', { hasText: 'Dependency' }).waitFor();
+        // Flows: the entrypoints (the fixture's Go main), its trace in swimlanes, a step in the Inspector, back to the Map.
+        await page.click('.ca-segmented button:has-text("Flows")');
+        await page.locator('.ca-flow-item', { hasText: 'main' }).first().click();
+        await page.locator('.ca-flow-head h2', { hasText: 'main' }).waitFor();
+        await page.locator('.ca-lane-head').first().waitFor();
+        await page.locator('.ca-step-main', { hasText: 'main' }).first().click();
+        await page.locator('.ca-inspector[data-key="mod:go/cmd/server/main.go"]').waitFor();
+        await page.getByRole('button', { name: 'Show on map' }).click();
+        await mapNode('mod:go/cmd/server/main.go').waitFor();
         await page.click('.ca-segmented button:has-text("Map")');
         await page.selectOption('.ca-lens select', 'dependencies');
         await page.click('#tab-tree');

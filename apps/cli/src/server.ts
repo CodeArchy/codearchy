@@ -28,7 +28,8 @@ export function createServer(workspace: Workspace, options: ServerOptions): McpS
         {
             instructions:
                 "CodeArchy's architecture map of this workspace: packages, components, files and symbols, with summaries and the dependencies between them. " +
-                'Start with overview, then search and get_node; use neighbors and explain_edge to see how parts depend on each other. ' +
+                'Start with overview, then search and get_node; use neighbors and explain_edge to see how parts depend on each other, ' +
+                'and find_flows to see what happens when a request, command or job enters the system. ' +
                 'Node keys returned by one tool are the arguments for the others.',
         },
     );
@@ -41,6 +42,7 @@ export function createServer(workspace: Workspace, options: ServerOptions): McpS
                 search: snap.search,
                 readFile: (p) => workspace.readFile(p),
                 cardFor: snap.cardFor,
+                flows: snap.flows,
                 linesRead: 0, // the per-call cap applies; the agent can read files itself anyway
                 touched: new Set(),
                 actions: [],
@@ -111,6 +113,20 @@ export function createServer(workspace: Workspace, options: ServerOptions): McpS
             annotations: readOnly,
         },
         (args) => run('explain_edge', args),
+    );
+    server.registerTool(
+        'find_flows',
+        {
+            title: 'Entrypoints and flows',
+            description: TOOL_SPECS.find_flows!.description,
+            inputSchema: {
+                query: z.string().optional().describe('Words in the route, command or file, e.g. "login" or "POST orders"'),
+                kind: z.enum(['http', 'ui', 'cli', 'event', 'job', 'main']).optional(),
+                id: z.string().optional().describe('A flow id from a previous find_flows call: trace it'),
+            },
+            annotations: readOnly,
+        },
+        (args) => run('find_flows', args),
     );
     if (allowCode) {
         server.registerTool(

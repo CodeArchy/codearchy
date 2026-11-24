@@ -22,7 +22,7 @@ import { checkCitations, type Citation } from './citations.js';
 import { signature, symbolDoc } from './docs.js';
 import { ROLE_LABEL } from './facts.js';
 import { NodeSearch } from './search.js';
-import { runTool, TOOL_SPECS, ToolArgumentError, toolStatus, type CanvasAction, type ToolContext } from './tools.js';
+import { runTool, TOOL_SPECS, ToolArgumentError, toolStatus, type CanvasAction, type FlowSource, type ToolContext } from './tools.js';
 
 export interface GroundedChatOptions {
     index: HierarchyIndex;
@@ -34,6 +34,8 @@ export interface GroundedChatOptions {
     search?: NodeSearch;
     /** Tool rounds before the model must answer. Default 8. */
     maxRounds?: number;
+    /** Entrypoints and flows (core's FlowIndex): enables the find_flows tool. */
+    flows?: FlowSource;
 }
 
 export interface AskOptions {
@@ -76,6 +78,7 @@ const RULES = `Rules:
 - Lead with the answer, then the evidence. Keep it short; use a list when comparing several parts.`;
 
 const TOOLS_HELP = `Look things up with the tools before answering: start from the possibly relevant parts listed with the question (or search), then get_node, neighbors or explain_edge on their keys. Never say you can't find something until you've searched for it. Call show_in_map when a view of the map would help the user see your answer.`;
+const FLOWS_HELP = ` For "what happens when…" questions about a request, command or job, find its entrypoint with find_flows, then call it again with the id to trace it.`;
 const READ_HELP = ` read_code shows source lines when the summaries don't settle a detail; read only what you need.`;
 
 export class GroundedChat {
@@ -108,7 +111,8 @@ export class GroundedChat {
         const snapshot = registry.providers().find((p) => p.id === target.provider);
         const allowCode = !!snapshot?.onDevice || registry.policy.tier === 'excerpts';
         const mode: 'tools' | 'rag' = target.info?.supports.tools === false ? 'rag' : 'tools';
-        const tools = mode === 'tools' ? Object.values(TOOL_SPECS).filter((t) => t.name !== 'read_code' || allowCode) : undefined;
+        const flows = this.options.flows;
+        const tools = mode === 'tools' ? Object.values(TOOL_SPECS).filter((t) => (t.name !== 'read_code' || allowCode) && (t.name !== 'find_flows' || !!flows)) : undefined;
 
         const system = await this.systemPrompt(mode, allowCode);
         const messages: ChatMessage[] = [...(options.history ?? []), { role: 'user', content: await this.userTurn(question, options.selection, mode) }];
@@ -120,6 +124,7 @@ export class GroundedChat {
             linesRead: 0,
             touched: new Set(options.selection && index.node(options.selection) ? [options.selection] : []),
             actions: [],
+            ...(flows ? { flows } : {}),
         };
         const usage: Usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
         let codeRead = false;
@@ -200,7 +205,7 @@ export class GroundedChat {
             `You answer questions about the codebase "${root.name}" for an engineer, using CodeArchy's map of it: a hierarchy of system › packages › components › files › symbols, with dependencies between them.`,
             '',
             RULES,
-            ...(mode === 'tools' ? ['', TOOLS_HELP + (allowCode ? READ_HELP : ' Source code is not available to you under the current privacy settings; work from names, signatures, docs and summaries.')] : []),
+            ...(mode === 'tools' ? ['', TOOLS_HELP + (this.options.flows ? FLOWS_HELP : '') + (allowCode ? READ_HELP : ' Source code is not available to you under the current privacy settings; work from names, signatures, docs and summaries.')] : []),
             '',
             `The system (node:${root.key}): ${rootCard ? `${rootCard.title}. ${rootCard.purpose}` : `${root.modules} files.`}`,
             'Top-level parts:',

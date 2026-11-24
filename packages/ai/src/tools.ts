@@ -4,7 +4,7 @@
  * it returns, so one call can't flood the context.
  */
 import type { HierarchyIndex } from '@codearchy/core';
-import type { HierarchyKind } from '@codearchy/protocol';
+import type { EntryPointKind, Flow, FlowSummary, HierarchyKind } from '@codearchy/protocol';
 import type { ToolSpec } from '@codearchy/providers';
 import type { Card } from './card.js';
 import { signature, symbolDoc } from './docs.js';
@@ -16,6 +16,16 @@ export const READ_CODE_BUDGET = 600;
 
 export type CanvasAction = { action: 'focus' | 'highlight'; keys: string[] };
 
+/** Entrypoints and their traces (core's FlowIndex, or a host's equivalent). */
+export interface FlowSource {
+    list(): FlowSummary[];
+    trace(id: string): Flow | undefined;
+}
+
+const FLOW_KINDS: EntryPointKind[] = ['http', 'ui', 'cli', 'event', 'job', 'main'];
+const FLOW_LIST_LIMIT = 20;
+const FLOW_STEP_LIMIT = 40;
+
 export interface ToolContext {
     index: HierarchyIndex;
     search: NodeSearch;
@@ -26,6 +36,8 @@ export interface ToolContext {
     /** Node keys the answer has touched (for the audit log). */
     touched: Set<string>;
     actions: CanvasAction[];
+    /** Entrypoints and flows; without it, find_flows isn't offered. */
+    flows?: FlowSource;
 }
 
 export class ToolArgumentError extends Error {}
@@ -77,6 +89,19 @@ export const TOOL_SPECS: Record<string, ToolSpec> = {
             required: ['path', 'startLine', 'endLine'],
         },
     },
+    find_flows: {
+        name: 'find_flows',
+        description:
+            'Entrypoints (HTTP routes, CLI commands, jobs and listeners, UI routes, main) and what each does. Without id: the entrypoints matching query or kind. With id: that flow traced: the calls in order (each with the step that called it), the parts it passes through, and what it reaches (databases, HTTP APIs, queues). Use it for "what happens when…" questions.',
+        parameters: {
+            type: 'object',
+            properties: {
+                query: { type: 'string', description: 'Words in the route, command or file, e.g. "login" or "POST orders"' },
+                kind: { type: 'string', enum: FLOW_KINDS },
+                id: { type: 'string', description: 'A flow id from a previous find_flows call: trace it' },
+            },
+        },
+    },
     show_in_map: {
         name: 'show_in_map',
         description: 'Offer the user a button that shows these nodes on the map ("focus" one area, or "highlight" several).',
@@ -116,6 +141,8 @@ export function toolStatus(name: string, args: Record<string, unknown>, index: H
             return `Checking how ${nodeName(args.source)} uses ${nodeName(args.target)}…`;
         case 'read_code':
             return `Reading ${String(args.path ?? '')}:${String(args.startLine ?? '')}–${String(args.endLine ?? '')}…`;
+        case 'find_flows':
+            return typeof args.id === 'string' ? `Tracing ${args.id.split('#').pop()?.replace(/^\w+:/, '') ?? 'the flow'}…` : `Looking for entrypoints${typeof args.query === 'string' && args.query.trim() ? ` matching "${args.query.trim()}"` : ''}…`;
         case 'show_in_map':
             return 'Preparing a view of the map…';
         default:
@@ -255,6 +282,54 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
                 .map((l, i) => `${start + i}: ${l}`)
                 .join('\n');
             return JSON.stringify({ path, startLine: start, endLine: end, totalLines: lines.length, code: body });
+        }
+        case 'find_flows': {
+            const flows = ctx.flows;
+            if (!flows) throw new ToolArgumentError('Flows are not available for this workspace');
+            const id = str(args, 'id', false);
+            if (id) {
+                const f = flows.trace(id);
+                if (!f) throw new ToolArgumentError(`No flow "${id}". Call find_flows without id to list them.`);
+                const steps = f.steps.slice(0, FLOW_STEP_LIMIT);
+                for (const s of steps) {
+                    ctx.touched.add(index.node(s.key) ? s.key : `mod:${s.file}`);
+                }
+                const laneName = new Map(f.lanes.map((l) => [l.key, l.name]));
+                return JSON.stringify({
+                    id: f.id,
+                    kind: f.kind,
+                    label: f.label,
+                    framework: f.framework,
+                    declaredAt: `${f.file}:${f.line + 1}`,
+                    steps: steps.map((s, i) => ({
+                        step: i,
+                        name: s.name,
+                        key: index.node(s.key) ? s.key : `mod:${s.file}`,
+                        at: `${s.file}:${s.line + 1}`,
+                        part: laneName.get(s.lane) ?? s.lane,
+                        ...(s.parent !== undefined ? { calledBy: s.parent } : {}),
+                        ...(s.callSite ? { callLine: s.callSite.line + 1 } : {}),
+                        ...(s.resolution === 'name' ? { matchedByNameOnly: true } : {}),
+                        ...(s.crossCutting ? { sharedHelper: true } : {}),
+                    })),
+                    parts: f.lanes.map((l) => ({ key: l.key, name: l.name })),
+                    reaches: f.sinks.map((s) => ({ kind: s.kind, library: s.name, step: s.step })),
+                    ...(f.approximate ? { approximate: 'some calls were matched by name only' } : {}),
+                    ...(f.truncated || f.steps.length > steps.length ? { truncated: 'deeper calls were cut off' } : {}),
+                });
+            }
+            const kind = str(args, 'kind', false) as EntryPointKind | undefined;
+            if (kind && !FLOW_KINDS.includes(kind)) throw new ToolArgumentError(`"kind" must be one of ${FLOW_KINDS.join(', ')}`);
+            const words = (str(args, 'query', false) ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+            const all = flows.list();
+            const matching = all.filter((f) => (!kind || f.kind === kind) && words.every((w) => `${f.label} ${f.framework} ${f.file}`.toLowerCase().includes(w)));
+            return JSON.stringify({
+                total: all.length,
+                matching: matching.length,
+                results: matching.slice(0, FLOW_LIST_LIMIT).map((f) => ({ id: f.id, kind: f.kind, label: f.label, framework: f.framework, at: `${f.file}:${f.line + 1}` })),
+                ...(matching.length > FLOW_LIST_LIMIT ? { note: `Showing ${FLOW_LIST_LIMIT}; narrow the query to see others` } : {}),
+                ...(all.length === 0 ? { note: 'No entrypoints were found in this workspace' } : {}),
+            });
         }
         case 'show_in_map': {
             const raw = args.keys;

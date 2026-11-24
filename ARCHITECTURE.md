@@ -386,6 +386,13 @@ Entrypoints and calls are stored with each file's facts, so a warm start
 doesn't re-scan anything. Both hosts answer `flows()` and `flow(id)` on the
 `EngineClient`.
 
+In the UI, **Flows** mode (`packages/ui/src/Flows.tsx`) lists the entrypoints
+by kind. It draws the chosen trace as a swimlane sequence: steps in call order,
+each under its caller, with an arrow wherever a call crosses lanes. The pure
+part (grouping, row order) is `flowModel.ts`. Chat and the MCP server share one
+tool, `find_flows`: without an id it lists entrypoints, and with one it returns
+the trace. Hosts provide a `FlowSource`, which is core's `FlowIndex`.
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs

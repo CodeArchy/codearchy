@@ -11,3 +11,5 @@ export { AiSettingsPanel, Answer, CardSection, ChatPanel, PreviewDialog, type An
 export { parseAnswer, parseInline, type Block, type Inline } from './answer.js';
 export type { AiCard, AiClient, AiHostEvent, AiProviderInfo, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, SendPreview } from '@codearchy/protocol';
 export { Icon, type IconName } from './icons.js';
+export { FlowsView, type FlowsViewProps } from './Flows.js';
+export { FLOW_KINDS, flowModules, flowRows, groupFlows, splitLabel, type FlowGroup, type FlowRow } from './flowModel.js';

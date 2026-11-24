@@ -4,7 +4,8 @@
  * and asks the engine for projections through an EngineClient.
  *
  * Modes: Map (node-link) or Matrix (DSM); lenses colour both by Health or
- * Tests, always with the value as text too.
+ * Tests, always with the value as text too. Flows (when the engine has them)
+ * lists the entrypoints and traces what each one does across the parts.
  *
  * One canvas: double-click, Enter or Space expands a node in place (and
  * collapses it again); "Show only this" / Shift+Enter opens it as its own
@@ -27,6 +28,7 @@ import { LayoutEngine, type Layout } from './layout.js';
 import { MapCanvas, type FocusRequest } from './MapCanvas.js';
 import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, revealPlan, visibleEdges, type LensId } from './model.js';
 import { Matrix } from './Matrix.js';
+import { FlowsView } from './Flows.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
 export interface CodeArchyMapProps {
@@ -63,7 +65,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [selection, setSelection] = useState<Selection>();
     const [focus, setFocus] = useState(false);
     const [allEdges, setAllEdges] = useState(false);
-    const [mode, setMode] = useState<'map' | 'matrix'>('map');
+    const [mode, setMode] = useState<'map' | 'matrix' | 'flows'>('map');
     const [lens, setLens] = useState<LensId>('dependencies');
     const [view, setView] = useState<View>();
     const [layout, setLayout] = useState<Layout>();
@@ -236,6 +238,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         }
         const target = e.target as HTMLElement;
         if (target.closest('input, textarea, .ca-navigator')) return;
+        if (mode === 'flows') return e.key === 'Escape' ? setSelection(undefined) : undefined;
         const key = selection?.kind === 'node' ? selection.key : undefined;
         if (e.key === 'Backspace') return up();
         if (e.key === 'Escape') return setSelection(undefined);
@@ -265,7 +268,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 {props.toolbarStart}
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
-                {flow && mode === 'map' ? (
+                {mode === 'flows' ? null : flow && mode === 'map' ? (
                     <span className="ca-legend" aria-label="Selection flow">
                         <span className="ca-legend-out">uses {flow.out.size}</span>
                         <span className="ca-legend-in">used by {flow.in.size}</span>
@@ -285,13 +288,13 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                     </span>
                 ) : null}
                 <div className="ca-segmented" role="group" aria-label="View mode">
-                    {(['map', 'matrix'] as const).map((m) => (
+                    {(client.flows ? (['map', 'matrix', 'flows'] as const) : (['map', 'matrix'] as const)).map((m) => (
                         <button key={m} type="button" aria-pressed={mode === m} className={mode === m ? 'ca-on' : ''} onClick={() => setMode(m)}>
-                            {m === 'map' ? 'Map' : 'Matrix'}
+                            {m === 'map' ? 'Map' : m === 'matrix' ? 'Matrix' : 'Flows'}
                         </button>
                     ))}
                 </div>
-                <label className="ca-lens">
+                <label className="ca-lens" hidden={mode === 'flows'}>
                     Lens{' '}
                     <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
                         {LENSES.map((l) => (
@@ -323,7 +326,20 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             <div className="ca-body">
                 <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={(k) => void reveal(k)} />
                 <section className="ca-canvas" aria-label="Architecture map">
-                    {mode === 'matrix' && view ? (
+                    {mode === 'flows' ? (
+                        <FlowsView
+                            client={client}
+                            revision={revision}
+                            dataVersion={props.dataVersion ?? 0}
+                            selected={selectedKey}
+                            onSelect={(key) => setSelection({ kind: 'node', key })}
+                            onShowOnMap={(keys) => {
+                                setMode('map');
+                                if (keys[0]) void reveal(keys[0]);
+                            }}
+                            openFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
+                        />
+                    ) : mode === 'matrix' && view ? (
                         <Matrix
                             view={view}
                             selected={selectedKey}
@@ -350,8 +366,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             />
                         </ReactFlowProvider>
                     ) : null}
-                    {status ? <div className="ca-status">{status}</div> : null}
-                    {view && view.nodes.length === 0 ? <div className="ca-status">Nothing to show here.</div> : null}
+                    {status && mode !== 'flows' ? <div className="ca-status">{status}</div> : null}
+                    {view && view.nodes.length === 0 && mode !== 'flows' ? <div className="ca-status">Nothing to show here.</div> : null}
                 </section>
                 <aside className="ca-side">
                     {props.ai ? (

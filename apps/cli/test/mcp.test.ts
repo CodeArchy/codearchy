@@ -38,7 +38,7 @@ describe('codearchy mcp (in process, polyglot fixture)', () => {
 
     it('lists read-only tools, starting with overview', async () => {
         const { tools } = await session.client.listTools();
-        expect(tools.map((t) => t.name)).toEqual(['overview', 'search', 'get_node', 'neighbors', 'explain_edge', 'read_code']);
+        expect(tools.map((t) => t.name)).toEqual(['overview', 'search', 'get_node', 'neighbors', 'explain_edge', 'find_flows', 'read_code']);
         expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
         expect(tools.find((t) => t.name === 'search')!.inputSchema).toMatchObject({ type: 'object', required: ['query'] });
     });
@@ -79,6 +79,16 @@ describe('codearchy mcp (in process, polyglot fixture)', () => {
         expect(manifest).toMatchObject({ error: true, json: { error: expect.stringMatching(/not an indexed source file/) } });
         const escape = await session.call('read_code', { path: '../../package.json', startLine: 1, endLine: 5 });
         expect(escape.error).toBe(true);
+    });
+
+    it('lists entrypoints and traces one', async () => {
+        const list = await session.call('find_flows', { kind: 'main' });
+        expect(list.error).toBe(false);
+        expect(list.json.results).toEqual([expect.objectContaining({ kind: 'main', label: 'main', framework: 'go', at: 'go/cmd/server/main.go:8' })]);
+        const flow = await session.call('find_flows', { id: list.json.results[0].id });
+        expect(flow.json).toMatchObject({ label: 'main', declaredAt: 'go/cmd/server/main.go:8' });
+        expect(flow.json.steps[0]).toMatchObject({ step: 0, name: 'main', key: 'sym:go/cmd/server/main.go#main' });
+        expect(await session.call('find_flows', { id: 'flow:nope' })).toMatchObject({ error: true, json: { error: expect.stringMatching(/No flow/) } });
     });
 
     it('reports bad arguments as tool errors', async () => {
@@ -129,7 +139,7 @@ describe('codearchy mcp over stdio (the built CLI)', () => {
             expect(client.getServerVersion()).toMatchObject({ name: 'codearchy' });
             expect(client.getInstructions()).toMatch(/Start with overview/);
             const { tools } = await client.listTools();
-            expect(tools).toHaveLength(6);
+            expect(tools).toHaveLength(7);
             const r = (await client.callTool({ name: 'overview', arguments: {} })) as ToolResult;
             expect(JSON.parse(r.content[0]!.text).system.name).toBe('polyglot');
         } finally {
