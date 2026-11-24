@@ -12,7 +12,8 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
-import { FileLedgerStore, companionDataDir } from '@codearchy/platform-node';
+import { AGENT_IDS, FileLedgerStore, companionDataDir } from '@codearchy/platform-node';
+import type { AgentId } from '@codearchy/core';
 import { startCompanion } from './companion.js';
 import { Workspace } from './workspace.js';
 
@@ -25,7 +26,7 @@ Usage:
       overview, search, get_node, neighbors, explain_edge, find_flows and read_code.
       --no-code   don't offer read_code (names, signatures, docs and structure only)
 
-  codearchy serve [--root <dir>] [--port <n>] [--allow-origin <url>]... [--app <url>]
+  codearchy serve [--root <dir>] [--port <n>] [--allow-origin <url>]... [--app <url>] [--agent-logs <list>]
       The Companion: run the engine natively for the web app (app.codearchy.com),
       for big repositories and live updates in any browser. Prints a one-time
       pairing link. Only pages on this machine, from the app (or the origins you
@@ -33,6 +34,9 @@ Usage:
       --port <n>           listen on this port (default: a free one)
       --allow-origin <url> also accept a self-hosted app at this origin (repeatable)
       --app <url>          the app the pairing link opens (default https://app.codearchy.com)
+      --agent-logs <list>  read these agents' session logs on this machine to see exactly
+                           which lines they wrote: claude-code, codex, aider (comma-separated).
+                           Only line ranges are kept, never the conversations.
 
   codearchy --version | --help
 
@@ -103,6 +107,7 @@ async function serve(args: string[]): Promise<number> {
     let port = 0;
     let app: string | undefined;
     const allowOrigins: string[] = [];
+    const agentLogs: AgentId[] = [];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i]!;
         const value = () => args[++i] ?? '';
@@ -111,6 +116,15 @@ async function serve(args: string[]): Promise<number> {
         else if (arg === '--port') port = Number(value());
         else if (arg === '--allow-origin') allowOrigins.push(value());
         else if (arg === '--app') app = value();
+        else if (arg === '--agent-logs') {
+            for (const a of value().split(',').map((x) => x.trim()).filter(Boolean)) {
+                if (!(AGENT_IDS as string[]).includes(a)) {
+                    process.stderr.write(`--agent-logs: "${a}" isn't one of ${AGENT_IDS.join(', ')}.\n`);
+                    return 1;
+                }
+                agentLogs.push(a as AgentId);
+            }
+        }
         else {
             process.stderr.write(`Unknown option "${arg}".\n\n${HELP}`);
             return 1;
@@ -138,6 +152,7 @@ async function serve(args: string[]): Promise<number> {
         onChange: (file) => notify?.(file),
         onAuthorship: () => notify?.(),
         ledger: ledgerStore.ledger,
+        agentLogs,
         onLedgerChange: () => {
             // takeChanged() was consumed by the workspace: persist now.
             ledgerStore.save();

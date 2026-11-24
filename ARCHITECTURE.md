@@ -520,7 +520,39 @@ Code's workspace storage, the Companion's `~/.codearchy/companion/<hash>/`).
 - **The Companion** serves `authorshipMark`, its one write, which goes to its
   own ledger. The web app can therefore review and correct lines too.
   Capture itself needs editor events, so for CLI agents the stronger
-  evidence comes from their session logs (5c).
+  evidence comes from their session logs.
+
+**Agent session logs** are opt-in per agent: VS Code's
+`codearchy.authorship.agentLogs`, or `codearchy serve --agent-logs`. Only
+derived ranges are kept, never the conversations.
+
+- **Parsers** (`core/src/authorship/agentLogs.ts`, pure and tolerant):
+  - **Claude Code transcripts:** `Write`, `Edit` and `MultiEdit` tool calls.
+    Failed calls are dropped, and an edit the person modified before
+    accepting it is `reviewed`.
+  - **Codex sessions:** `apply_patch` patches, found in function calls,
+    custom tool calls or shell commands, including inside JSON-string
+    arguments.
+  - **Aider history:** SEARCH/REPLACE blocks.
+
+  Entries that look like edits but can't be read are counted, never guessed.
+- **`matchEdits`** places each inserted block in today's file. An exact run
+  is `ai`. Otherwise the longest common subsequence decides: matched lines
+  are `ai`, and changed lines inside the span are `reviewed`. Blocks too
+  small to place (one short line), too scattered or mostly rewritten are
+  left out. Later edits win.
+- **`AgentLogIngester`** (platform-node) finds the logs:
+  - Claude Code's project folders for this folder, below it, or above it;
+  - Codex sessions whose working directory is in the workspace;
+  - Aider's history in the workspace.
+
+  It keeps only edits to files in the workspace, re-parses only logs that
+  changed, and records the result with `ledger.recordLog`. That replaces
+  earlier log ranges (so it's idempotent), supersedes the inferred capture
+  it overlaps, and never overrides people's reviews or corrections.
+
+A known limit: edits an agent makes through shell commands aren't in its tool
+calls, so later changes to those lines read as a person's (`reviewed`).
 
 ## Apps
 

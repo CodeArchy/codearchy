@@ -44,6 +44,7 @@ export { generateStartHere, START_HERE_ID, type StartHereOptions } from './tours
 export { classifyCommit, subjectOf, type AuthorshipRule, type CommitAttribution, type CommitInfo } from './authorship/commits.js';
 export { AuthorshipIndex, emptyCounts, rangesFromBlame, total as authorshipTotal, weekOf, type AttributedCommit, type AuthorshipData } from './authorship/index.js';
 export { lineCount } from './flows/enrich.js';
+export { matchEdits, parseAider, parseApplyPatch, parseClaudeCode, parseCodex, type AgentEdit, type AgentId, type ParseResult } from './authorship/agentLogs.js';
 export { AuthorshipLedger, markLines, overlayRanges, withLedger, LEDGER_VERSION, type LedgerFile, type LedgerRange, type LedgerSource, type LineEdit } from './authorship/ledger.js';
 export { TourIndex, anchorFor, anchorTour, parseTour, serializeTour, slugify, tourSlug, type TourParse, type TourSources } from './tours/tours.js';
 export { detectEntryPoints, isTestPath, blockEnd } from './flows/entrypoints.js';

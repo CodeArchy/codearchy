@@ -41,6 +41,7 @@ tab. To connect from another tab or browser, restart `codearchy serve` for a new
 | `--port <n>` | A fixed port (default: a free one) |
 | `--allow-origin <url>` | Also accept a self-hosted copy of the app at this origin (repeatable) |
 | `--app <url>` | The app the link opens, for example a local dev server |
+| `--agent-logs <list>` | Read these coding agents' session logs on this machine (`claude-code`, `codex`, `aider`, comma-separated) to see exactly which lines they wrote. Off unless you pass it; only line ranges are kept, never the conversations. |
 
 ## What it allows
 

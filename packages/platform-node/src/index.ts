@@ -205,3 +205,4 @@ export { openNodeSqlite, type NodeSqliteOptions } from './storage.js';
 export { NodeWorkerPool, runParseWorker, type NodeWorkerPoolOptions, type ParseWorkerData } from './pool.js';
 export { computeGitAuthorship, parseIncrementalBlame, type GitAuthorship, type GitAuthorshipOptions } from './authorship.js';
 export { FileLedgerStore, companionDataDir } from './ledgerStore.js';
+export { AgentLogIngester, AGENT_IDS, type AgentLogOptions, type AgentLogReport } from './agentLogs.js';
