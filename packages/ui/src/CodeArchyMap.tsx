@@ -144,6 +144,14 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     }, [client, engine, scope, expanded.join('\n'), revision, allEdges, props.dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const model = useMemo(() => (view ? buildMapModel(view) : undefined), [view]);
+    /** The engine's authorship (hosts with git history), for the Inspector section. */
+    const authorshipSource = useMemo(
+        () => (client.authorship && client.authorshipStatus ? { status: () => client.authorshipStatus!(), load: (key: string) => client.authorship!(key) } : undefined),
+        [client]
+    );
+    /** The Authorship lens is offered once the view carries counts. */
+    const hasAuthorship = !!view?.nodes.some((n) => n.authorship);
+    const lenses = useMemo(() => LENSES.filter((l) => l.id !== 'authorship' || hasAuthorship || lens === 'authorship'), [hasAuthorship, lens]);
 
     // Inspector data for the selection.
     useEffect(() => {
@@ -419,7 +427,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 <label className="ca-lens" hidden={mode === 'flows' || mode === 'tours'}>
                     Lens{' '}
                     <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
-                        {LENSES.map((l) => (
+                        {lenses.map((l) => (
                             <option key={l.id} value={l.id}>
                                 {l.label}
                             </option>
@@ -564,6 +572,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             onDrill={drill}
                             onToggleExpand={toggleExpand}
                             onAddToTour={client.tours ? captureNode : undefined}
+                            authorship={authorshipSource}
+                            dataVersion={props.dataVersion ?? 0}
                         />
                     )}
                 </aside>

@@ -3,7 +3,7 @@
  * containers (expanded nodes), leaf nodes, external nodes for port stubs,
  * and edges with a visual weight. No React, no DOM: unit-tested directly.
  */
-import type { NodeMetrics, View, ViewNode } from '@codearchy/protocol';
+import type { AuthorshipCounts, AuthorshipOrigin, NodeMetrics, View, ViewNode } from '@codearchy/protocol';
 
 export type MapNodeType = 'container' | 'node' | 'external';
 
@@ -143,23 +143,93 @@ export function visibleEdges(model: MapModel, options: { all?: boolean; limit?: 
 
 // ─── lenses ─────────────────────────────────────────────────────────────────
 
-export type LensId = 'dependencies' | 'health' | 'tests';
+export type LensId = 'dependencies' | 'health' | 'tests' | 'authorship';
 
 export const LENSES: Array<{ id: LensId; label: string; description: string }> = [
     { id: 'dependencies', label: 'Dependencies', description: 'Edge thickness is the number of dependencies.' },
     { id: 'health', label: 'Health', description: 'Files in dependency cycles, hubs (very highly connected files) and orphans (no dependencies either way).' },
     { id: 'tests', label: 'Tests', description: 'Share of code files that at least one test file depends on.' },
+    { id: 'authorship', label: 'Authorship', description: 'Share of lines AI tools wrote (from Co-authored-by trailers, bot commits and tool markers in git history), and how many were since changed by people.' },
 ];
 
+/** Authorship origins in display order, with labels (colour never carries the value alone). */
+export const AUTHORSHIP_ORIGINS: Array<{ origin: AuthorshipOrigin; label: string; title: string }> = [
+    { origin: 'ai', label: 'AI', title: 'Written by an AI tool and unchanged since' },
+    { origin: 'reviewed', label: 'reviewed', title: 'Written by an AI tool, later changed by a person' },
+    { origin: 'human', label: 'human', title: 'Written by a person (positive evidence)' },
+    { origin: 'unknown', label: 'unknown', title: 'No evidence either way (most history before tracking)' },
+];
+
+const AGENT_NAMES: Record<string, string> = {
+    'claude-code': 'Claude Code',
+    copilot: 'GitHub Copilot',
+    cursor: 'Cursor',
+    codex: 'OpenAI Codex',
+    'gemini-cli': 'Gemini',
+    aider: 'Aider',
+    devin: 'Devin',
+    jules: 'Jules',
+    windsurf: 'Windsurf',
+    openhands: 'OpenHands',
+    'amazon-q': 'Amazon Q',
+    cline: 'Cline',
+};
+/** `claude-code` → `Claude Code` (unknown ids as they are). */
+export const agentName = (id: string) => AGENT_NAMES[id] ?? id;
+
+/** Whole-percent shares that add up to 100 (largest remainder), so a bar and its labels agree. */
+export function authorshipShares(c: AuthorshipCounts): Record<AuthorshipOrigin, number> {
+    const total = c.ai + c.reviewed + c.human + c.unknown;
+    const out: Record<AuthorshipOrigin, number> = { ai: 0, reviewed: 0, human: 0, unknown: 0 };
+    if (!total) return out;
+    const raw = AUTHORSHIP_ORIGINS.map(({ origin }) => ({ origin, exact: (c[origin] / total) * 100 }));
+    let left = 100;
+    for (const r of raw) {
+        out[r.origin] = Math.floor(r.exact);
+        left -= out[r.origin];
+    }
+    for (const r of [...raw].sort((a, b) => b.exact - Math.floor(b.exact) - (a.exact - Math.floor(a.exact)))) {
+        if (left <= 0) break;
+        if (r.exact > out[r.origin]) {
+            out[r.origin]++;
+            left--;
+        }
+    }
+    return out;
+}
+
 export interface LensBadge {
-    /** Tests: ordinal step 1..5. Health: a status. Undefined: nothing to colour. */
+    /** Tests, authorship: ordinal step 1..5. Health: a status. Undefined: nothing to colour. */
     level?: 1 | 2 | 3 | 4 | 5 | 'critical' | 'serious' | 'warning';
     /** Always shown: colour never carries the value alone. */
     text: string;
     title: string;
+    /** Authorship: the stacked bar (percent per origin). */
+    shares?: Record<AuthorshipOrigin, number>;
 }
 
-export function lensBadge(m: NodeMetrics, lens: LensId, kind: string): LensBadge | undefined {
+/** AI share (unchanged AI lines) → ordinal step: >0, ≥10%, ≥25%, ≥50%, ≥75%. */
+const AI_STEPS = [0, 0.1, 0.25, 0.5, 0.75];
+
+export function lensBadge(m: NodeMetrics, lens: LensId, kind: string, authorship?: AuthorshipCounts): LensBadge | undefined {
+    if (lens === 'authorship') {
+        if (!authorship) return undefined;
+        const total = authorship.ai + authorship.reviewed + authorship.human + authorship.unknown;
+        if (!total) return undefined;
+        const shares = authorshipShares(authorship);
+        const title = AUTHORSHIP_ORIGINS.map(({ origin, label }) => `${authorship[origin].toLocaleString()} ${label}`).join(', ') + ` (of ${total.toLocaleString()} lines)`;
+        if (!authorship.ai && !authorship.reviewed) return { text: 'no AI lines found', title, shares };
+        const share = authorship.ai / total;
+        let level: 1 | 2 | 3 | 4 | 5 | undefined;
+        AI_STEPS.forEach((t, i) => {
+            if (share > t) level = (i + 1) as 1 | 2 | 3 | 4 | 5;
+        });
+        // A share that rounds to 0 but isn't nothing reads "<1%", never "0%".
+        const pct = (n: number, share: number) => (n > 0 && share === 0 ? '<1%' : `${share}%`);
+        const parts = [`${pct(authorship.ai, shares.ai)} AI`];
+        if (authorship.reviewed) parts.push(`${pct(authorship.reviewed, shares.reviewed)} reviewed`);
+        return { ...(level ? { level } : {}), text: parts.join(' · '), title, shares };
+    }
     if (lens === 'tests') {
         if (m.codeModules === 0) return m.testModules > 0 ? { text: kind === 'module' ? 'test file' : 'tests only', title: `${m.testModules} test file(s)` } : undefined;
         const ratio = m.testedModules / m.codeModules;

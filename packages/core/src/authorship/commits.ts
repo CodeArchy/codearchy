@@ -112,9 +112,13 @@ export function classifyCommit(c: Pick<CommitInfo, 'authorName' | 'authorEmail' 
         const a = agentOf(author);
         if (a) return { agent: a.id, evidence: `authored by ${c.authorName.slice(0, 60)}` };
     }
-    // 3. Markers tools add to the message.
+    // 3. Markers tools add to the message: a line of its own (quoting one in prose doesn't count).
     const lower = c.message.toLowerCase();
-    if (lower.includes('generated with [claude code]') || lower.includes('generated with claude code')) return { agent: 'claude-code', evidence: '"Generated with Claude Code" in the message' };
+    for (const raw of lines) {
+        let line = raw.trim().toLowerCase();
+        if (line.startsWith('🤖')) line = line.slice('🤖'.length).trim();
+        if (line.startsWith('generated with [claude code]') || line.startsWith('generated with claude code')) return { agent: 'claude-code', evidence: '"Generated with Claude Code" line in the message' };
+    }
     if (lower.startsWith('aider: ')) return { agent: 'aider', evidence: 'Aider\'s "aider:" commit prefix' };
     for (const r of rules) {
         const needle = r.contains.toLowerCase();

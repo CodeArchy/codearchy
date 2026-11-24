@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import * as assert from 'node:assert';
 import type { View, ViewNode } from '@codearchy/protocol';
-import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, type MapModel } from '../src/index.js';
+import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, authorshipShares, agentName, type MapModel } from '../src/index.js';
 
 const METRICS = { modules: 3, symbols: 0, codeModules: 3, testModules: 0, testedModules: 0, cyclicModules: 0, orphanModules: 0, hubModules: 0, fanIn: 0, fanOut: 0 };
 
@@ -130,6 +130,33 @@ describe('Lenses', () => {
         assert.strictEqual(lensBadge(m({ hubModules: 1 }), 'health', 'component')!.level, 'serious');
         assert.deepStrictEqual(lensBadge(m({}), 'health', 'component'), { text: 'no issues', title: 'No files in cycles, no hubs, no orphans' });
         assert.strictEqual(lensBadge(m({}), 'dependencies', 'component'), undefined);
+    });
+
+    test('authorship: AI share as text and an ordinal step, with the stacked bar', () => {
+        const badge = lensBadge(m({}), 'authorship', 'component', { ai: 30, reviewed: 10, human: 0, unknown: 60 })!;
+        assert.deepStrictEqual(badge, {
+            level: 3,
+            text: '30% AI · 10% reviewed',
+            title: '30 AI, 10 reviewed, 0 human, 60 unknown (of 100 lines)',
+            shares: { ai: 30, reviewed: 10, human: 0, unknown: 60 },
+        });
+        assert.strictEqual(lensBadge(m({}), 'authorship', 'module', { ai: 1, reviewed: 0, human: 0, unknown: 99 })!.level, 1);
+        assert.strictEqual(lensBadge(m({}), 'authorship', 'module', { ai: 80, reviewed: 0, human: 0, unknown: 20 })!.level, 5);
+        const none = lensBadge(m({}), 'authorship', 'component', { ai: 0, reviewed: 0, human: 0, unknown: 50 })!;
+        assert.strictEqual(none.text, 'no AI lines found');
+        assert.strictEqual(none.level, undefined);
+        assert.strictEqual(lensBadge(m({}), 'authorship', 'component'), undefined); // no git history: nothing to show
+        assert.strictEqual(lensBadge(m({}), 'authorship', 'component', { ai: 0, reviewed: 0, human: 0, unknown: 0 }), undefined);
+    });
+
+    test('authorship shares are whole percents that add up to 100', () => {
+        const s = authorshipShares({ ai: 1, reviewed: 1, human: 1, unknown: 0 });
+        assert.strictEqual(s.ai + s.reviewed + s.human + s.unknown, 100);
+        assert.deepStrictEqual(authorshipShares({ ai: 0, reviewed: 0, human: 0, unknown: 0 }), { ai: 0, reviewed: 0, human: 0, unknown: 0 });
+        assert.deepStrictEqual(authorshipShares({ ai: 2, reviewed: 0, human: 0, unknown: 998 }), { ai: 0, reviewed: 0, human: 0, unknown: 100 });
+        assert.strictEqual(lensBadge(m({}), 'authorship', 'component', { ai: 2, reviewed: 0, human: 0, unknown: 998 })!.text, '<1% AI'); // never "0%" when there are some
+        assert.strictEqual(agentName('claude-code'), 'Claude Code');
+        assert.strictEqual(agentName('acme-bot'), 'acme-bot');
     });
 });
 

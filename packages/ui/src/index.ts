@@ -5,13 +5,14 @@
  */
 export { CodeArchyMap, type CodeArchyMapProps } from './CodeArchyMap.js';
 export type { EngineClient, HostActions, SearchResult } from './client.js';
-export { buildMapModel, neighbourhood, strokeWidthFor, visibleEdges, DEFAULT_EDGE_LIMIT, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, LENSES, type FlowRoles, type LensId, type LensBadge, type MatrixOrder, externalId, keyOfExternal, type MapModel, type MapNode, type MapEdge } from './model.js';
+export { buildMapModel, neighbourhood, strokeWidthFor, visibleEdges, DEFAULT_EDGE_LIMIT, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, LENSES, AUTHORSHIP_ORIGINS, agentName, authorshipShares, type FlowRoles, type LensId, type LensBadge, type MatrixOrder, externalId, keyOfExternal, type MapModel, type MapNode, type MapEdge } from './model.js';
 export { LayoutEngine, toElkGraph, fromElkGraph, type Layout, type Box } from './layout.js';
 export { AiSettingsPanel, Answer, CardSection, ChatPanel, PreviewDialog, type AnswerLinks, type ChatPanelProps } from './ai.js';
 export { parseAnswer, parseInline, type Block, type Inline } from './answer.js';
 export type { AiCard, AiClient, AiHostEvent, AiProviderInfo, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, SendPreview } from '@codearchy/protocol';
 export { Icon, type IconName } from './icons.js';
 export { FlowsView, type FlowsViewProps } from './Flows.js';
+export { AuthorshipSection, type AuthorshipSource } from './Authorship.js';
 export { FLOW_KINDS, flowModules, flowRows, groupFlows, splitLabel, type FlowGroup, type FlowRow } from './flowModel.js';
 export { AddToTourDialog, ToursList, TourPlayer, type AddToTourProps, type ToursListProps, type TourPlayerProps } from './Tours.js';
 export { addToDraft, firstUndone, removeFromDraft, stepView, tourFromFlow, type StepCapture } from './tourModel.js';

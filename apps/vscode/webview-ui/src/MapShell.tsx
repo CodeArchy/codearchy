@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
-import type { AiClient, AiHostEvent, ChatEvent, EdgeExplanation, Flow, FlowSummary, NodeDetails, NodeSummary, Tour, TourDetails, TourSummary, View, ViewRequest } from '@codearchy/protocol';
+import type { AiClient, AiHostEvent, ChatEvent, EdgeExplanation, Flow, FlowSummary, NodeDetails, NodeSummary, AuthorshipStatus, NodeAuthorship, Tour, TourDetails, TourSummary, View, ViewRequest } from '@codearchy/protocol';
 import '@codearchy/ui/styles.css';
 import './mapShell.css';
 import { postMessage } from './vscode';
@@ -53,6 +53,8 @@ const client: EngineClient = {
     tour: (id: string) => request<TourDetails | undefined>('tour', { id }),
     anchorTour: (tour: Tour) => request<Tour>('anchorTour', { tour }),
     saveTour: (tour: Tour) => request<{ file: string }>('saveTour', { tour }),
+    authorshipStatus: () => request<AuthorshipStatus>('authorshipStatus', {}),
+    authorship: (key: string) => request<NodeAuthorship | undefined>('authorship', { key }),
     search: (query: string) => request('search', { query }),
 };
 

@@ -5,6 +5,7 @@ import { CardSection } from './ai.js';
 import { Icon } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
 import { lensBadge, type LensId } from './model.js';
+import { AuthorshipSection, type AuthorshipSource } from './Authorship.js';
 
 const KIND_TITLE: Record<string, string> = { system: 'System', package: 'Package', component: 'Component', module: 'File', symbol: 'Symbol' };
 
@@ -138,6 +139,10 @@ export interface InspectorProps {
     onAsk?(name: string): void;
     /** "Add to tour": captures this node as a step of the draft tour. */
     onAddToTour?(details: NodeDetails): void;
+    /** With it: the Authorship section (hosts with git history). */
+    authorship?: AuthorshipSource;
+    /** Bumps when the workspace's data changes (sections refetch). */
+    dataVersion?: number;
 }
 
 export function Inspector(props: InspectorProps) {
@@ -257,6 +262,7 @@ export function Inspector(props: InspectorProps) {
             </div>
             {props.ai && d.kind !== 'symbol' ? <CardSection ai={props.ai} nodeKey={d.key} nameOf={props.nameOf} onReveal={props.onReveal} /> : null}
             <HealthAndTests details={d} lens={props.lens} host={host} />
+            {props.authorship && d.kind !== 'symbol' ? <AuthorshipSection nodeKey={d.key} source={props.authorship} dataVersion={props.dataVersion ?? 0} lens={props.lens} onReveal={props.onReveal} /> : null}
             {links('Depends on', d.dependsOn)}
             {links('Used by', d.usedBy)}
             {d.kind === 'module' ? (
