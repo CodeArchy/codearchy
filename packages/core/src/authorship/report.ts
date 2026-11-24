@@ -11,10 +11,12 @@ import { displayName } from '../tours/startHere.js';
 /**
  * A part's name in a report a reviewer reads: a package by its name, a folder
  * by its path (two "helpers" folders, or a "core" folder that isn't the core
- * package, would otherwise read the same), a cluster or a file by its name.
+ * package, would otherwise read the same), a cluster by its folder and name,
+ * a file by its name.
  */
 export function partLabel(n: HierarchyNode): string {
-    return n.kind === 'component' && !n.virtual && n.path ? n.path : displayName(n);
+    if (n.kind !== 'component' || !n.path) return displayName(n);
+    return n.virtual ? `${n.path} (${displayName(n)})` : n.path;
 }
 
 /** The part a file belongs to: its nearest component or package, or the file itself when it has none. */

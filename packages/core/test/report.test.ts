@@ -28,6 +28,9 @@ describe('branch report helpers', () => {
         assert.strictEqual(label('packages/core/test/helpers/a.spec.ts'), 'packages/core/test/helpers');
         assert.strictEqual(label('packages/common/decorators/core/x.ts'), 'packages/common/decorators/core');
         assert.strictEqual(partLabel(h.node('pkg:packages/core')!), 'core');
+        // A cluster (a wide folder split by its dependencies) says which folder it's in.
+        const cluster = { ...h.node('dir:packages/core/helpers')!, key: 'cl:x', virtual: true, name: 'a.ts & 1 more' };
+        assert.strictEqual(partLabel(cluster), 'packages/core/helpers (a.ts & 1 more)');
     });
 
     test('countLines: by the ranges covering each line, unknown otherwise; per tool', () => {

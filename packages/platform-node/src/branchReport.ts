@@ -129,10 +129,12 @@ export async function computeBranchReport(o: BranchReportOptions): Promise<Branc
         if (a) before.set(p, a);
     }
     const sources = new Set([...changed.keys(), ...[...changed.values()].map((c) => c.old).filter((x): x is string => !!x), ...deleted]);
-    const pairs = (analyses: Iterable<FileAnalysis>) =>
+    // Before: every dependency at the merge base (a new file importing a part others already use adds nothing).
+    // After: only the changed files' dependencies can be new.
+    const pairs = (analyses: Iterable<FileAnalysis>, onlyChanged: boolean) =>
         buildGraph(analyses, new Map(o.manifests))
-            .edges.filter((e) => sources.has(e.source))
+            .edges.filter((e) => !onlyChanged || sources.has(e.source))
             .map((e): [string, string] => [e.source, e.target]);
-    report.newDependencies = newDependencies(o.index, pairs(before.values()), pairs(o.analyses.values()));
+    report.newDependencies = newDependencies(o.index, pairs(before.values(), false), pairs(o.analyses.values(), true));
     return report;
 }
