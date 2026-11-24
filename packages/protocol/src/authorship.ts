@@ -71,6 +71,8 @@ export interface AuthorshipStatus {
     aiCommits?: number;
     /** Files whose lines were traced to commits (only files AI commits touched need it). */
     blamedFiles?: number;
+    /** Commits with a CodeArchy authorship note (refs/notes/codearchy-authorship). */
+    notedCommits?: number;
     /** Whole-workspace counts. */
     counts?: AuthorshipCounts;
 }

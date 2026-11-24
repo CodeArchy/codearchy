@@ -554,6 +554,29 @@ derived ranges are kept, never the conversations.
 A known limit: edits an agent makes through shell commands aren't in its tool
 calls, so later changes to those lines read as a person's (`reviewed`).
 
+**Authorship notes** (`core/src/authorship/notes.ts`) are git notes in
+`refs/notes/codearchy-authorship`. Each note is versioned JSON: for the files a
+commit changed, which lines were `ai`, `reviewed` or `human`, in that commit's
+numbering.
+
+- **Reading.** `computeGitAuthorship` reads every note with one
+  `cat-file --batch`, and adds the noted files to the blame set. Blame runs
+  carry their original line and file, so `projectNotes` maps each noted range
+  exactly onto today's lines, through later edits above it and renames. Note
+  ranges are line-level, so they overlay the whole-commit metadata ranges.
+  Note-only commits get their subject and time for the Inspector.
+- **Writing** (`writeAuthorshipNote`, platform-node) records the ledger's
+  ranges for a commit's changed files. Only files whose working copy equals
+  the committed version are written, so the line numbers match. It merges
+  with an existing note and never pushes.
+  - **VS Code** has a command, and an opt-in `onCommit` mode that watches HEAD
+    through the built-in Git extension.
+  - **The CLI** has `codearchy authorship notes`, plus
+    `codearchy authorship hook install|uninstall`. That's a post-commit hook
+    with a marker, which never replaces a hook CodeArchy didn't write.
+
+User guide: [docs/guides/authorship.md](docs/guides/authorship.md).
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs
