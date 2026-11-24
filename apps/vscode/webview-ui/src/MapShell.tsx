@@ -1,17 +1,17 @@
 /**
  * The 2.0 panel: @codearchy/ui's CodeArchyMap, talking to the engine and the
  * AI host in the extension host over postMessage. Chat, summary cards and AI
- * settings come from the shared UI (the `ai` client); local model downloads
- * and voice keep their v1 dialogs; tours narrate through the same voice. The classic views (App.tsx) remain behind
+ * settings come from the shared UI (the `ai` client), Ollama's models are
+ * managed there too (AI → Providers); voice keeps its v1 dialog, and tours
+ * narrate through the same voice (made ahead and kept). The classic views (App.tsx) remain behind
  * the `codearchy.ui` setting during the 2.0 beta.
  */
 import { useEffect, useRef, useState } from 'react';
 import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
-import type { AiClient, AiHostEvent, ChatEvent, EdgeExplanation, Flow, FlowSummary, NodeDetails, NodeSummary, AuthorshipStatus, NodeAuthorship, Tour, TourDetails, TourSummary, View, ViewRequest } from '@codearchy/protocol';
+import type { AiClient, AiHostEvent, Architecture, ChatEvent, EdgeExplanation, Flow, FlowSummary, NodeDetails, NodeSummary, AuthorshipStatus, NodeAuthorship, Tour, TourDetails, TourSummary, View, ViewRequest } from '@codearchy/protocol';
 import '@codearchy/ui/styles.css';
 import './mapShell.css';
 import { postMessage } from './vscode';
-import { ModelSelector } from './components/ModelSelector';
 import { VoiceSelector } from './components/VoiceSelector';
 import { vscodeVoiceClient } from './voice/voiceClient';
 
@@ -55,6 +55,7 @@ const client: EngineClient = {
     anchorTour: (tour: Tour) => request<Tour>('anchorTour', { tour }),
     saveTour: (tour: Tour) => request<{ file: string }>('saveTour', { tour }),
     deleteTour: (id: string) => request<void>('deleteTour', { id }),
+    architecture: () => request<Architecture | undefined>('architecture', {}),
     authorshipStatus: () => request<AuthorshipStatus>('authorshipStatus', {}),
     authorship: (key: string) => request<NodeAuthorship | undefined>('authorship', { key }),
     search: (query: string) => request('search', { query }),
@@ -125,6 +126,11 @@ const ai: AiClient = {
         return () => aiListeners.delete(listener);
     },
     audit: () => aiRequest('audit'),
+    localModels: (provider) => aiRequest('localModels', { provider }),
+    pullModel: (provider, model) => aiRequest('pullModel', { provider, model }),
+    cancelPull: (provider, model) => void aiRequest('cancelPull', { provider, model }),
+    deleteModel: (provider, model) => aiRequest('deleteModel', { provider, model }),
+    describeArchitecture: (options) => aiRequest('describeArchitecture', { generate: options?.generate === true }),
 };
 
 /** VS Code blocks `new Worker(vscode-resource:…)`: load ELK's worker as a blob: URL. */
@@ -145,7 +151,7 @@ export function MapShell() {
     const revisionRef = useRef<string>();
     const [dataVersion, setDataVersion] = useState(0);
     const [reveal, setReveal] = useState<{ key: string; nonce: number }>();
-    const [dialog, setDialog] = useState<'model' | 'voice'>();
+    const [dialog, setDialog] = useState<'voice'>();
     const [voice] = useState(() => vscodeVoiceClient(() => setDialog('voice')));
 
     useEffect(() => {
@@ -179,9 +185,6 @@ export function MapShell() {
 
     const extras = (
         <>
-            <button type="button" className="ca-search-button" title="Download and manage local Ollama models" onClick={() => setDialog('model')}>
-                Local models
-            </button>
             <button type="button" className="ca-search-button" title="Switch to the classic System / Flow / Dense views (setting: codearchy.ui)" onClick={() => postMessage('setUi', { ui: 'classic' })}>
                 Classic views
             </button>
@@ -211,7 +214,6 @@ export function MapShell() {
                     voice={voice}
                 />
             )}
-            {dialog === 'model' ? <ModelSelector onClose={() => setDialog(undefined)} /> : null}
             {dialog === 'voice' ? <VoiceSelector onClose={() => setDialog(undefined)} /> : null}
         </div>
     );

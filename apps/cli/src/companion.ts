@@ -29,7 +29,7 @@ import {
     type Tour,
     type WorkspaceSummary,
 } from '@codearchy/protocol';
-import { anchorTour } from '@codearchy/core';
+import { anchorTour, buildArchitecture } from '@codearchy/core';
 import type { Snapshot, Workspace } from './workspace.js';
 
 export const APP_ORIGIN = 'https://app.codearchy.com';
@@ -194,6 +194,8 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
                 return snap.flows.trace(str('id'));
             case 'tours':
                 return snap.tours.list();
+            case 'architecture':
+                return buildArchitecture(snap.index, snap.flows);
             case 'tour':
                 return snap.tours.get(str('id'));
             case 'anchorTour':

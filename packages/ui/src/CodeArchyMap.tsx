@@ -30,11 +30,13 @@ import { LayoutEngine, type Layout } from './layout.js';
 import { MapCanvas, type FocusRequest } from './MapCanvas.js';
 import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, revealPlan, visibleEdges, type LensId } from './model.js';
 import { Matrix } from './Matrix.js';
+import { ArchitectureView } from './Architecture.js';
 import { FlowsView } from './Flows.js';
 import { AddToTourDialog, ToursList, TourPlayer } from './Tours.js';
 import { addToDraft, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type DraftTour, type StepCapture } from './tourModel.js';
 import { Resizer, usePanelSize } from './Resizer.js';
 import { VoiceSettingsPanel } from './voice.js';
+import { Narrator } from './narration.js';
 import { flowRows } from './flowModel.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
@@ -64,8 +66,10 @@ export interface CodeArchyMapProps {
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
-type Mode = 'map' | 'matrix' | 'flows' | 'tours';
-const MODE_LABEL: Record<Mode, string> = { map: 'Map', matrix: 'Matrix', flows: 'Flows', tours: 'Tours' };
+type Mode = 'architecture' | 'map' | 'matrix' | 'flows' | 'tours';
+const MODE_LABEL: Record<Mode, string> = { architecture: 'Architecture', map: 'Map', matrix: 'Matrix', flows: 'Flows', tours: 'Tours' };
+/** Modes that aren't the node-link canvas: no lens, legend or canvas keys. */
+const PAGE_MODES = new Set<Mode>(['architecture', 'flows', 'tours']);
 
 export function CodeArchyMap(props: CodeArchyMapProps) {
     const { client, host } = props;
@@ -97,6 +101,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [sideTab, setSideTab] = useState<'inspector' | 'chat'>('inspector');
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [voiceOpen, setVoiceOpen] = useState(false);
+    /** Narration made ahead and kept (when the voice allows), shared by tours and the voice settings. */
+    const narrator = useMemo(() => (props.voice ? new Narrator(props.voice) : undefined), [props.voice]);
     // Panels: drag the edges to resize (remembered), or hide them from the toolbar.
     const navWidth = usePanelSize('navigator', 260, 160, 560);
     const sideWidth = usePanelSize('side', 340, 240, 820);
@@ -407,7 +413,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         }
         const target = e.target as HTMLElement;
         if (target.closest('input, textarea, .ca-navigator')) return;
-        if (mode === 'flows' || mode === 'tours') return e.key === 'Escape' ? setSelection(undefined) : undefined;
+        if (PAGE_MODES.has(mode)) return e.key === 'Escape' ? setSelection(undefined) : undefined;
         const key = selection?.kind === 'node' ? selection.key : undefined;
         if (e.key === 'Backspace') return up();
         if (e.key === 'Escape') return setSelection(undefined);
@@ -440,7 +446,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </button>
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
-                {mode === 'flows' || mode === 'tours' ? null : flow && mode === 'map' ? (
+                {PAGE_MODES.has(mode) ? null : flow && mode === 'map' ? (
                     <span className="ca-legend" aria-label="Selection flow">
                         <span className="ca-legend-out">uses {flow.out.size}</span>
                         <span className="ca-legend-in">used by {flow.in.size}</span>
@@ -460,8 +466,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                     </span>
                 ) : null}
                 <div className="ca-segmented" role="group" aria-label="View mode">
-                    {(['map', 'matrix', 'flows', 'tours'] as const)
-                        .filter((m) => (m === 'flows' ? !!client.flows : m === 'tours' ? !!client.tours : true))
+                    {(['map', 'architecture', 'matrix', 'flows', 'tours'] as const)
+                        .filter((m) => (m === 'architecture' ? !!client.architecture : m === 'flows' ? !!client.flows : m === 'tours' ? !!client.tours : true))
                         .map((m) => (
                             <button
                                 key={m}
@@ -477,7 +483,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             </button>
                         ))}
                 </div>
-                <label className="ca-lens" hidden={mode === 'flows' || mode === 'tours'}>
+                <label className="ca-lens" hidden={PAGE_MODES.has(mode)}>
                     Lens{' '}
                     <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={lens === 'authorship' || !authorshipNote ? LENSES.find((l) => l.id === lens)?.description : authorshipWhy ?? LENSES.find((l) => l.id === lens)?.description}>
                         {LENSES.map((l) => {
@@ -542,7 +548,20 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                     <span />
                 )}
                 <section className="ca-canvas" aria-label="Architecture map">
-                    {mode === 'tours' ? (
+                    {mode === 'architecture' ? (
+                        <ArchitectureView
+                            client={client}
+                            ai={props.ai}
+                            revision={revision}
+                            dataVersion={props.dataVersion ?? 0}
+                            selected={selectedKey}
+                            onSelect={(key) => setSelection({ kind: 'node', key })}
+                            onShowOnMap={(key) => {
+                                setMode('map');
+                                void reveal(key);
+                            }}
+                        />
+                    ) : mode === 'tours' ? (
                         <ToursList
                             client={client}
                             workspace={workspaceId}
@@ -552,6 +571,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             onDraftChange={setDraft}
                             onWalkFlow={client.flows ? walkFlow : undefined}
                             onShowFlows={client.flows ? () => setMode('flows') : undefined}
+                            narrator={narrator}
                         />
                     ) : mode === 'flows' ? (
                         <FlowsView
@@ -596,8 +616,8 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             />
                         </ReactFlowProvider>
                     ) : null}
-                    {status && mode !== 'flows' && mode !== 'tours' ? <div className="ca-status">{status}</div> : null}
-                    {view && view.nodes.length === 0 && mode !== 'flows' && mode !== 'tours' ? <div className="ca-status">Nothing to show here.</div> : null}
+                    {status && !PAGE_MODES.has(mode) ? <div className="ca-status">{status}</div> : null}
+                    {view && view.nodes.length === 0 && !PAGE_MODES.has(mode) ? <div className="ca-status">Nothing to show here.</div> : null}
                     {playing && mode !== 'tours' ? (
                         <TourPlayer
                             tour={playing.tour}
@@ -612,7 +632,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                                 void reveal(k);
                             }}
                             onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
-                            voice={props.voice}
+                            narrator={narrator}
                             onVoiceSettings={props.voice ? () => (props.voice!.openSettings ? props.voice!.openSettings() : setVoiceOpen(true)) : undefined}
                             onAsk={
                                 props.ai
@@ -692,7 +712,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             {props.voice && voiceOpen ? (
                 <div className="ca-modal" onClick={(e) => e.target === e.currentTarget && setVoiceOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setVoiceOpen(false)}>
                     <div className="ca-modal-body">
-                        <VoiceSettingsPanel voice={props.voice} onClose={() => setVoiceOpen(false)} />
+                        <VoiceSettingsPanel voice={props.voice} narrator={narrator} onClose={() => setVoiceOpen(false)} />
                     </div>
                 </div>
             ) : null}

@@ -28,6 +28,7 @@ import {
     getPackForExtension,
     isManifest,
     isPackageMarker,
+    buildArchitecture,
     posixPath,
     readManifests,
     type DiscoveryResult,
@@ -344,6 +345,8 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
                 return w.flows.trace(s('id'));
             case 'tours':
                 return w.tours.list();
+            case 'architecture':
+                return buildArchitecture(w.hierarchy, w.flows);
             case 'tour':
                 return w.tours.get(s('id'));
             case 'anchorTour':

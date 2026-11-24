@@ -54,3 +54,4 @@ export { extractCalls } from './flows/calls.js';
 export { enrich } from './flows/enrich.js';
 export { compileGlobs, globToRegExp } from './util/glob.js';
 export * as posixPath from './util/posixPath.js';
+export { architectureCandidates, buildArchitecture, type ArchitectureCandidate, type ArchitectureFlows } from './architecture.js';

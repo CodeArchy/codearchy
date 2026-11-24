@@ -17,6 +17,7 @@ export * from './tours.js';
 export * from './companion.js';
 export * from './authorship.js';
 export * from './voice.js';
+export * from './architecture.js';
 
 export interface SymbolInfo {
     name: string;

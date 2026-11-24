@@ -36,3 +36,4 @@ export { READ_CODE_BUDGET, READ_CODE_MAX_LINES, runTool, TOOL_SPECS, ToolArgumen
 
 // 3.6: the host side of the AiClient contract.
 export { AiHost, DEFAULT_AI_SETTINGS, type AiHostOptions, type ProviderFactory, type SettingsStore } from './host.js';
+export { applyDesign, ARCHITECTURE_SCHEMA, designArchitecture, designFacts, renderDesignFacts, type DesignFacts, type StoredDesign } from './architecture.js';

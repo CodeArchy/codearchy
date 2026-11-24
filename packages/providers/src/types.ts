@@ -137,6 +137,34 @@ export interface EmbedRequest {
     input: string[];
 }
 
+/** A model on this machine (local providers that manage their models). */
+export interface LocalModel {
+    id: string;
+    /** Bytes on disk. */
+    size: number;
+    family?: string;
+    /** `8B`, `4.3B`… */
+    parameterSize?: string;
+    /** `Q4_K_M`… */
+    quantization?: string;
+    modifiedAt?: string;
+}
+
+export interface PullProgress {
+    /** The provider's own words: `pulling manifest`, `downloading`, `verifying sha256 digest`… */
+    status: string;
+    /** Bytes so far and in all, once known. */
+    completed?: number;
+    total?: number;
+}
+
+/** Downloading and removing models (Ollama). */
+export interface ModelManager {
+    installed(signal?: SignalLike): Promise<LocalModel[]>;
+    pull(model: string, onProgress: (p: PullProgress) => void, signal?: SignalLike): Promise<void>;
+    remove(model: string, signal?: SignalLike): Promise<void>;
+}
+
 export interface ProviderAdapter {
     /** Stable id, e.g. 'ollama', 'anthropic', 'openai', 'openrouter'. */
     readonly id: string;
@@ -160,4 +188,6 @@ export interface ProviderAdapter {
     chat(request: ChatRequest, signal?: SignalLike): AsyncIterable<ChatEvent>;
     /** Embeddings, for adapters that offer them. Throws ProviderError. */
     embed?(request: EmbedRequest, signal?: SignalLike): Promise<number[][]>;
+    /** Local providers that can download and remove models. */
+    manage?: ModelManager;
 }

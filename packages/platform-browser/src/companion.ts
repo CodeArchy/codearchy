@@ -9,6 +9,7 @@ import {
     type CompanionClientMessage,
     type CompanionMethod,
     type CompanionServerMessage,
+    type Architecture,
     type EdgeExplanation,
     type EngineClient,
     type EngineEvent,
@@ -148,6 +149,9 @@ export class CompanionEngine implements EngineClient {
     }
     flow(id: string): Promise<Flow | undefined> {
         return this.call('flow', { id });
+    }
+    architecture(): Promise<Architecture | undefined> {
+        return this.call('architecture', {});
     }
     tours(): Promise<TourSummary[]> {
         return this.call('tours', {});
