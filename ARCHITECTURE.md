@@ -428,8 +428,18 @@ has:
   anchor hash no longer matches is `changed`. The anchor covers the step's
   code ranges, or else its node's identity.
 
-Hosts answer `tours()` and `tour(id)`. VS Code keeps the tour list current as
+Hosts answer `tours()`, `tour(id)` and `anchorTour(tour)`. VS Code also
+answers `saveTour(tour)`, which anchors the tour, validates it with
+`serializeTour` and writes the file. VS Code keeps the tour list current as
 files change. The browser engine notices tour edits in a watched folder.
+
+In the UI, **Tours** mode (`packages/ui/src/Tours.tsx`) lists the tours. The
+player docks over the canvas, and each step applies its view: the mode, the
+lens, and a reveal of its node or flow. **Add to tour** (from the Inspector or
+a flow) appends steps to a per-workspace draft. The draft is saved through
+`saveTour`, or downloaded where the host can't write. Progress and the draft
+are kept per viewer in local storage. `tourFromFlow` turns a traced flow into
+a walk-through. The pure part is in `tourModel.ts`.
 
 ## Apps
 

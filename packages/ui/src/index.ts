@@ -13,3 +13,5 @@ export type { AiCard, AiClient, AiHostEvent, AiProviderInfo, AiSettings, AiState
 export { Icon, type IconName } from './icons.js';
 export { FlowsView, type FlowsViewProps } from './Flows.js';
 export { FLOW_KINDS, flowModules, flowRows, groupFlows, splitLabel, type FlowGroup, type FlowRow } from './flowModel.js';
+export { AddToTourDialog, ToursList, TourPlayer, type AddToTourProps, type ToursListProps, type TourPlayerProps } from './Tours.js';
+export { addToDraft, firstUndone, removeFromDraft, stepView, tourFromFlow, type StepCapture } from './tourModel.js';

@@ -113,6 +113,56 @@ export async function anchorFor(step: Pick<TourStep, 'target' | 'code'>, index: 
     return contentHash(`${n.kind}\n${n.path}\n${n.kind === 'symbol' ? `${(n.endLine ?? 0) - (n.startLine ?? 0)}` : ''}`);
 }
 
+/** A file-safe slug: `Orders, end to end!` → `orders-end-to-end`. */
+export function slugify(title: string): string {
+    // One linear pass: letters and digits kept, every other run becomes a single dash.
+    let slug = '';
+    for (const ch of title.toLowerCase().normalize('NFKD')) {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) slug += ch;
+        else if (slug && !slug.endsWith('-')) slug += '-';
+        if (slug.length >= 60) break;
+    }
+    while (slug.endsWith('-')) slug = slug.slice(0, -1);
+    return slug || 'tour';
+}
+
+/** The tour with every step's anchor stamped from the current code. */
+export async function anchorTour(tour: Tour, index: HierarchyIndex, read: (path: string) => Promise<string | undefined>): Promise<Tour> {
+    const steps: TourStep[] = [];
+    for (const step of tour.steps) {
+        const anchorHash = await anchorFor(step, index, read);
+        const { anchorHash: _old, ...rest } = step;
+        steps.push(anchorHash ? { ...rest, anchorHash } : rest);
+    }
+    return { ...tour, steps };
+}
+
+/**
+ * A tour as its file: validated (the same checks as reading one back), with a
+ * stable key order and two-space indentation, so diffs stay readable.
+ */
+export function serializeTour(tour: Tour, slugOverride?: string): { ok: true; text: string; slug: string } | { ok: false; error: string } {
+    // A draft (or an unnamed tour) takes its file name from the title; a saved tour keeps its own.
+    const slug = slugOverride ?? (tour.id && tour.id !== 'draft' ? slugify(tour.id) : slugify(tour.title));
+    const file = {
+        version: TOUR_FILE_VERSION,
+        title: tour.title,
+        ...(tour.description ? { description: tour.description } : {}),
+        steps: tour.steps.map((s) => ({
+            id: s.id,
+            target: s.target,
+            ...(s.view ? { view: s.view } : {}),
+            title: s.title,
+            body: s.body,
+            ...(s.code?.length ? { code: s.code } : {}),
+            ...(s.anchorHash ? { anchorHash: s.anchorHash } : {}),
+        })),
+    };
+    const text = `${JSON.stringify(file, null, 2)}\n`;
+    const check = parseTour(text, `${TOURS_DIR}/${slug}.json`);
+    return check.ok ? { ok: true, text, slug } : { ok: false, error: check.error };
+}
+
 export class TourIndex {
     private startHere?: Tour;
     private authored?: Promise<Map<string, { file: string; parse: TourParse }>>;

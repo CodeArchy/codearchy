@@ -26,6 +26,12 @@ export interface FlowsViewProps {
     /** Leave Flows for the Map, showing these modules. */
     onShowOnMap(keys: string[]): void;
     openFile?(path: string, line?: number): void;
+    /** Show this flow (a tour step, a link); a new `nonce` repeats it. */
+    focusFlow?: { id: string; nonce: number };
+    /** "Walk through": play the flow as a tour. */
+    onWalk?(flow: Flow): void;
+    /** "Add to tour": capture the flow as a step of the draft tour. */
+    onAddToTour?(flow: Flow): void;
 }
 
 export function FlowsView(props: FlowsViewProps) {
@@ -65,6 +71,10 @@ export function FlowsView(props: FlowsViewProps) {
             live = false;
         };
     }, [client, current, props.dataVersion]);
+
+    useEffect(() => {
+        if (props.focusFlow) setCurrent(props.focusFlow.id);
+    }, [props.focusFlow?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const groups = useMemo(() => groupFlows(flows ?? [], query), [flows, query]);
     const total = flows?.length ?? 0;
@@ -132,7 +142,7 @@ function arrowStyle(from: number, to: number, row: number): CSSProperties {
     return { gridColumn: `${start + 1} / ${end + 2}`, gridRow: row, ['--span' as string]: end - start + 1 };
 }
 
-function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile }: { flow: Flow } & FlowsViewProps) {
+function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile, onWalk, onAddToTour }: { flow: Flow } & FlowsViewProps) {
     const rows = useMemo(() => flowRows(flow), [flow]);
     const { verb, rest } = splitLabel(flow.label);
     const lanes = flow.lanes;
@@ -155,6 +165,16 @@ function FlowSequence({ flow, selected, onSelect, onShowOnMap, openFile }: { flo
                     <button type="button" className="ca-button ca-button-soft" onClick={() => onShowOnMap(flowModules(flow))}>
                         <Icon name="map" size={14} /> Show on map
                     </button>
+                    {onWalk ? (
+                        <button type="button" className="ca-button ca-button-soft" onClick={() => onWalk(flow)}>
+                            <Icon name="play" size={14} /> Walk through
+                        </button>
+                    ) : null}
+                    {onAddToTour ? (
+                        <button type="button" className="ca-button" onClick={() => onAddToTour(flow)}>
+                            <Icon name="plus" size={14} /> Add to tour
+                        </button>
+                    ) : null}
                 </div>
                 <p className="ca-flow-summary ca-muted">
                     {flow.steps.length} step{flow.steps.length === 1 ? '' : 's'} across {lanes.length} part{lanes.length === 1 ? '' : 's'}

@@ -6,6 +6,8 @@
  * Modes: Map (node-link) or Matrix (DSM); lenses colour both by Health or
  * Tests, always with the value as text too. Flows (when the engine has them)
  * lists the entrypoints and traces what each one does across the parts.
+ * Tours (when the engine has them) lists guided walks; playing one docks a
+ * player over the canvas, and each step moves the canvas to what it explains.
  *
  * One canvas: double-click, Enter or Space expands a node in place (and
  * collapses it again); "Show only this" / Shift+Enter opens it as its own
@@ -20,7 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import type { AiClient, EdgeExplanation, NodeDetails, View } from '@codearchy/protocol';
+import type { AiClient, EdgeExplanation, Flow, NodeDetails, Tour, TourDetails, TourStep, View } from '@codearchy/protocol';
 import { AiSettingsPanel, ChatPanel, PreviewDialog } from './ai.js';
 import { Icon } from './icons.js';
 import type { EngineClient, HostActions, SearchResult } from './client.js';
@@ -29,6 +31,9 @@ import { MapCanvas, type FocusRequest } from './MapCanvas.js';
 import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, revealPlan, visibleEdges, type LensId } from './model.js';
 import { Matrix } from './Matrix.js';
 import { FlowsView } from './Flows.js';
+import { AddToTourDialog, ToursList, TourPlayer } from './Tours.js';
+import { addToDraft, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type StepCapture } from './tourModel.js';
+import { flowRows } from './flowModel.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
 export interface CodeArchyMapProps {
@@ -53,6 +58,8 @@ export interface CodeArchyMapProps {
 }
 
 type Selection = { kind: 'node'; key: string } | { kind: 'edge'; source: string; target: string } | undefined;
+type Mode = 'map' | 'matrix' | 'flows' | 'tours';
+const MODE_LABEL: Record<Mode, string> = { map: 'Map', matrix: 'Matrix', flows: 'Flows', tours: 'Tours' };
 
 export function CodeArchyMap(props: CodeArchyMapProps) {
     const { client, host } = props;
@@ -65,7 +72,15 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [selection, setSelection] = useState<Selection>();
     const [focus, setFocus] = useState(false);
     const [allEdges, setAllEdges] = useState(false);
-    const [mode, setMode] = useState<'map' | 'matrix' | 'flows'>('map');
+    const [mode, setMode] = useState<Mode>('map');
+    /** The tour being played, and its step. */
+    const [playing, setPlaying] = useState<{ tour: TourDetails; index: number }>();
+    const [done, setDone] = useState<Set<string>>(new Set());
+    const workspaceId = props.revision || 'workspace';
+    const [draft, setDraftState] = useState<Tour | undefined>(() => loadDraft(workspaceId));
+    const [capture, setCapture] = useState<StepCapture>();
+    /** Ask Flows mode to show a flow (a tour step, or a reveal); a new `nonce` repeats it. */
+    const [flowFocus, setFlowFocus] = useState<{ id: string; nonce: number }>();
     const [lens, setLens] = useState<LensId>('dependencies');
     const [view, setView] = useState<View>();
     const [layout, setLayout] = useState<Layout>();
@@ -219,6 +234,102 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         if (props.revealRequest) void reveal(props.revealRequest.key);
     }, [props.revealRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // ── tours ───────────────────────────────────────────────────────────────
+
+    const setDraft = useCallback(
+        (d: Tour | undefined) => {
+            setDraftState(d);
+            saveDraft(workspaceId, d);
+        },
+        [workspaceId]
+    );
+    useEffect(() => {
+        setDraftState(loadDraft(workspaceId));
+        setPlaying(undefined);
+    }, [workspaceId]);
+
+    /** Moves the canvas to what a step explains. */
+    const applyStep = useCallback(
+        (step: TourStep) => {
+            const v = stepView(step);
+            if (v.lens && LENSES.some((l) => l.id === v.lens)) setLens(v.lens as LensId);
+            if (v.mode === 'flows') {
+                setMode('flows');
+                if (v.flow) setFlowFocus({ id: v.flow, nonce: ++nonce.current });
+                if (v.node) setSelection({ kind: 'node', key: v.node });
+                return;
+            }
+            setMode(v.mode);
+            if (!v.node || v.node === 'sys:root') {
+                setScope(v.scope ?? 'sys:root');
+                setExpanded([]);
+                setSelection(v.node ? { kind: 'node', key: v.node } : undefined);
+                focusTo();
+            } else void reveal(v.node);
+        },
+        [reveal, focusTo]
+    );
+    useEffect(() => {
+        const step = playing?.tour.steps[playing.index];
+        if (step) applyStep(step);
+    }, [playing?.tour, playing?.index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const play = useCallback(
+        (tour: TourDetails, startAt = 0) => {
+            setDone(loadProgress(workspaceId, tour.id));
+            setPlaying({ tour, index: Math.min(Math.max(0, startAt), tour.steps.length - 1) });
+        },
+        [workspaceId]
+    );
+    const markDone = useCallback(
+        (stepId: string, value?: boolean) => {
+            if (!playing) return;
+            setDone((prev) => {
+                const next = new Set(prev);
+                if (value ?? !next.has(stepId)) next.add(stepId);
+                else next.delete(stepId);
+                saveProgress(workspaceId, playing.tour.id, next);
+                return next;
+            });
+        },
+        [playing, workspaceId]
+    );
+    const goToStep = useCallback(
+        (index: number) => {
+            if (!playing) return;
+            // Moving on counts the step you were on as done.
+            if (index > playing.index) markDone(playing.tour.steps[playing.index]!.id, true);
+            setPlaying({ ...playing, index });
+        },
+        [playing, markDone]
+    );
+    const closeTour = useCallback(() => {
+        if (playing && playing.index === playing.tour.steps.length - 1) markDone(playing.tour.steps[playing.index]!.id, true);
+        setPlaying(undefined);
+    }, [playing, markDone]);
+
+    const captureNode = useCallback(
+        (d: NodeDetails) =>
+            setCapture({
+                title: d.name,
+                body: '',
+                target: { node: d.key },
+                view: { mode: mode === 'matrix' ? 'matrix' : 'map', focus: d.key, ...(lens !== 'dependencies' ? { lens } : {}) },
+            }),
+        [mode, lens]
+    );
+    const captureFlow = useCallback(
+        (f: Flow) =>
+            setCapture({
+                title: f.label,
+                body: '',
+                target: { flow: f.id, ...(f.handler ? { node: f.handler } : {}) },
+                view: { mode: 'flows' },
+                code: [{ path: f.file, start: f.line + 1, end: f.line + 1 }],
+            }),
+        []
+    );
+
     const activate = useCallback(
         (id: string) => {
             const external = keyOfExternal(id);
@@ -238,7 +349,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         }
         const target = e.target as HTMLElement;
         if (target.closest('input, textarea, .ca-navigator')) return;
-        if (mode === 'flows') return e.key === 'Escape' ? setSelection(undefined) : undefined;
+        if (mode === 'flows' || mode === 'tours') return e.key === 'Escape' ? setSelection(undefined) : undefined;
         const key = selection?.kind === 'node' ? selection.key : undefined;
         if (e.key === 'Backspace') return up();
         if (e.key === 'Escape') return setSelection(undefined);
@@ -268,7 +379,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 {props.toolbarStart}
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
-                {mode === 'flows' ? null : flow && mode === 'map' ? (
+                {mode === 'flows' || mode === 'tours' ? null : flow && mode === 'map' ? (
                     <span className="ca-legend" aria-label="Selection flow">
                         <span className="ca-legend-out">uses {flow.out.size}</span>
                         <span className="ca-legend-in">used by {flow.in.size}</span>
@@ -288,13 +399,24 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                     </span>
                 ) : null}
                 <div className="ca-segmented" role="group" aria-label="View mode">
-                    {(client.flows ? (['map', 'matrix', 'flows'] as const) : (['map', 'matrix'] as const)).map((m) => (
-                        <button key={m} type="button" aria-pressed={mode === m} className={mode === m ? 'ca-on' : ''} onClick={() => setMode(m)}>
-                            {m === 'map' ? 'Map' : m === 'matrix' ? 'Matrix' : 'Flows'}
-                        </button>
-                    ))}
+                    {(['map', 'matrix', 'flows', 'tours'] as const)
+                        .filter((m) => (m === 'flows' ? !!client.flows : m === 'tours' ? !!client.tours : true))
+                        .map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                aria-pressed={mode === m}
+                                className={mode === m ? 'ca-on' : ''}
+                                onClick={() => {
+                                    if (m === 'tours') setPlaying(undefined);
+                                    setMode(m);
+                                }}
+                            >
+                                {MODE_LABEL[m]}
+                            </button>
+                        ))}
                 </div>
-                <label className="ca-lens" hidden={mode === 'flows'}>
+                <label className="ca-lens" hidden={mode === 'flows' || mode === 'tours'}>
                     Lens{' '}
                     <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
                         {LENSES.map((l) => (
@@ -326,7 +448,9 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             <div className="ca-body">
                 <Navigator client={client} revision={revision} dataVersion={props.dataVersion ?? 0} path={view?.breadcrumb.map((b) => b.key) ?? []} selected={selectedKey} onReveal={(k) => void reveal(k)} onDrill={(k) => void reveal(k)} />
                 <section className="ca-canvas" aria-label="Architecture map">
-                    {mode === 'flows' ? (
+                    {mode === 'tours' ? (
+                        <ToursList client={client} workspace={workspaceId} dataVersion={props.dataVersion ?? 0} draft={draft} onPlay={play} onDraftChange={setDraft} />
+                    ) : mode === 'flows' ? (
                         <FlowsView
                             client={client}
                             revision={revision}
@@ -338,6 +462,9 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                                 if (keys[0]) void reveal(keys[0]);
                             }}
                             openFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
+                            focusFlow={flowFocus}
+                            onWalk={(f) => play(tourFromFlow(f, flowRows(f).map((r) => r.index)))}
+                            onAddToTour={captureFlow}
                         />
                     ) : mode === 'matrix' && view ? (
                         <Matrix
@@ -366,8 +493,38 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             />
                         </ReactFlowProvider>
                     ) : null}
-                    {status && mode !== 'flows' ? <div className="ca-status">{status}</div> : null}
-                    {view && view.nodes.length === 0 && mode !== 'flows' ? <div className="ca-status">Nothing to show here.</div> : null}
+                    {status && mode !== 'flows' && mode !== 'tours' ? <div className="ca-status">{status}</div> : null}
+                    {view && view.nodes.length === 0 && mode !== 'flows' && mode !== 'tours' ? <div className="ca-status">Nothing to show here.</div> : null}
+                    {playing && mode !== 'tours' ? (
+                        <TourPlayer
+                            tour={playing.tour}
+                            index={playing.index}
+                            done={done}
+                            onIndex={goToStep}
+                            onClose={closeTour}
+                            onToggleDone={(id) => markDone(id)}
+                            onNode={(k) => void reveal(k)}
+                            onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
+                            onAsk={
+                                props.ai
+                                    ? (q) => {
+                                          setChatPrompt({ text: q, nonce: Date.now() });
+                                          setSideTab('chat');
+                                      }
+                                    : undefined
+                            }
+                            onRemove={
+                                playing.tour.id === 'draft' && draft
+                                    ? (stepId) => {
+                                          const next = removeFromDraft(draft, stepId);
+                                          setDraft(next);
+                                          if (!next) return setPlaying(undefined);
+                                          setPlaying({ tour: { ...next, status: next.steps.map(() => ({})) }, index: Math.min(playing.index, next.steps.length - 1) });
+                                      }
+                                    : undefined
+                            }
+                        />
+                    ) : null}
                 </section>
                 <aside className="ca-side">
                     {props.ai ? (
@@ -406,6 +563,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             onReveal={(k) => void reveal(k)}
                             onDrill={drill}
                             onToggleExpand={toggleExpand}
+                            onAddToTour={client.tours ? captureNode : undefined}
                         />
                     )}
                 </aside>
@@ -418,6 +576,17 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </div>
             ) : null}
             {props.ai ? <PreviewDialog ai={props.ai} /> : null}
+            {capture ? (
+                <AddToTourDialog
+                    capture={capture}
+                    draftTitle={draft?.title}
+                    onClose={() => setCapture(undefined)}
+                    onAdd={(c, title) => {
+                        setDraft(addToDraft(draft, c, title));
+                        setCapture(undefined);
+                    }}
+                />
+            ) : null}
             {searching && client.search ? <SearchBox client={client} onPick={pick} onClose={() => setSearching(false)} /> : null}
         </div>
     );

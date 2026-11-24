@@ -21,6 +21,7 @@ import {
     FlowIndex,
     TourIndex,
     isTourFile,
+    anchorTour,
     buildGraph,
     buildHierarchy,
     classifyFiles,
@@ -33,7 +34,7 @@ import {
     type FileSystemPort,
     type IndexStats,
 } from '@codearchy/core';
-import type { ArchitectureGraph, EngineEvent, FileAnalysis, SearchResult, WorkspaceSummary } from '@codearchy/protocol';
+import type { ArchitectureGraph, EngineEvent, FileAnalysis, SearchResult, Tour, WorkspaceSummary } from '@codearchy/protocol';
 import { unzipSync } from 'fflate';
 import { HandleFileSystem, MemoryFileSystem, listHandleFiles, type MemoryEntry } from '../fs.js';
 import { BrowserWorkerPool, type WorkspaceSource } from '../pool.js';
@@ -345,6 +346,14 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
                 return w.tours.list();
             case 'tour':
                 return w.tours.get(s('id'));
+            case 'anchorTour':
+                return anchorTour(params.tour as Tour, w.hierarchy, async (p) => {
+                    try {
+                        return await w.fs.readText(p);
+                    } catch {
+                        return undefined;
+                    }
+                });
             case 'readFile':
                 return w.fs.readText(s('path'));
             default: {
