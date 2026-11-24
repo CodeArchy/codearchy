@@ -391,6 +391,12 @@ export class AnalysisPipeline {
         return this.hierarchy();
     }
 
+    /** Entrypoints and flows for the current index. */
+    currentFlows(): FlowIndex | undefined {
+        const h = this.hierarchy();
+        return h ? this.flows(h) : undefined;
+    }
+
     /** Reads a workspace file by its POSIX path; never anything outside the workspace. */
     async readWorkspaceFile(rel: string): Promise<string | undefined> {
         const state = this.state;

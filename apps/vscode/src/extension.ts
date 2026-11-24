@@ -48,7 +48,7 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     // AI (chat, summary cards, providers): runs here, beside the index; the panel talks to it over postMessage.
     ArchitecturePanel.aiHost = createVscodeAiHost(
         context,
-        { index: () => pipeline?.currentIndex(), readFile: async (rel) => pipeline?.readWorkspaceFile(rel) },
+        { index: () => pipeline?.currentIndex(), flows: () => pipeline?.currentFlows(), readFile: async (rel) => pipeline?.readWorkspaceFile(rel) },
         (event) => ArchitecturePanel.postAiEvent(event),
     );
     editorIntegration = new EditorIntegration({

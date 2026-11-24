@@ -24,6 +24,7 @@ import {
 } from '@codearchy/providers';
 import type { Card } from './card.js';
 import { GroundedChat } from './chat.js';
+import type { FlowSource } from './tools.js';
 import { NodeSearch } from './search.js';
 import { MemoryCardStore, Summarizer, type CardStore } from './summarizer.js';
 
@@ -58,6 +59,8 @@ export interface AiHostOptions {
     summarizeCallLimit?: number;
     /** Above this many files, chat search covers names and paths only. Default 3000. */
     cardSearchLimit?: number;
+    /** Entrypoints and flows for the current index (enables chat's find_flows). */
+    flows?(): FlowSource | undefined;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = { tier: 'local-only', askBeforeSend: false, roles: {}, defaults: {}, budgets: {} };
@@ -277,11 +280,13 @@ export class AiHost {
         const deterministic = new Summarizer({ index, readFile });
         const cardFor = async (k: string): Promise<Card | undefined> => (await summarizer.latest(k)) ?? (await deterministic.card(k));
         const modules = index.hierarchy.nodes.filter((n) => n.kind === 'module').length;
+        const flows = this.options.flows?.();
         const chat = new GroundedChat({
             index,
             readFile,
             registry: this.registry,
             cards: cardFor,
+            ...(flows ? { flows } : {}),
             // Card text helps search; above the limit, names and paths keep it fast to build.
             ...(modules <= (this.options.cardSearchLimit ?? 3000) ? {} : { search: new NodeSearch(index) }),
         });

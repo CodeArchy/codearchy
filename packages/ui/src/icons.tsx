@@ -33,7 +33,16 @@ export type IconName =
     | 'file'
     | 'boxes'
     | 'trash'
-    | 'retry';
+    | 'retry'
+    | 'flow'
+    | 'terminal'
+    | 'clock'
+    | 'bolt'
+    | 'database'
+    | 'globe'
+    | 'play'
+    | 'external'
+    | 'map';
 
 const PATHS: Record<IconName, ReactNode> = {
     sparkles: (
@@ -106,6 +115,41 @@ const PATHS: Record<IconName, ReactNode> = {
     boxes: <path d="m12 3.5 8 4.5v8L12 20.5 4 16V8zM4 8l8 4.5L20 8M12 12.5v8" />,
     trash: <path d="M5 7h14M9.5 7V5h5v2M7 7l.8 12.5h8.4L17 7" />,
     retry: <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4.5V9h4.5" />,
+    flow: (
+        <>
+            <circle cx="6" cy="6" r="2.5" />
+            <circle cx="18" cy="18" r="2.5" />
+            <path d="M8.5 6H14a3.5 3.5 0 0 1 0 7h-4a3.5 3.5 0 0 0 0 7h5.5" />
+        </>
+    ),
+    terminal: (
+        <>
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+            <path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4" />
+        </>
+    ),
+    clock: (
+        <>
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M12 7.5V12l3 2" />
+        </>
+    ),
+    bolt: <path d="M13 3.5 5.5 13.5H12l-1 7 7.5-10H12z" />,
+    database: (
+        <>
+            <ellipse cx="12" cy="6" rx="7" ry="2.5" />
+            <path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
+        </>
+    ),
+    globe: (
+        <>
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5S9.7 5.9 12 3.5z" />
+        </>
+    ),
+    play: <path d="M8 5.5v13l10-6.5z" />,
+    external: <path d="M13.5 4.5h6v6M19.5 4.5 11 13M17.5 14v4.5a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18.5V8.5A1.5 1.5 0 0 1 6 7h4.5" />,
+    map: <path d="m3.5 6.5 5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2zM9 4.5v13M15 6.5v13" />,
 };
 
 export function Icon({ name, size = 16, className }: { name: IconName; size?: number; className?: string }) {

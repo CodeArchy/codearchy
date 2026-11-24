@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryAuditLog, ProviderRegistry, type ChatEvent, type ChatRequest, type ProviderAdapter, type ToolCall } from '@codearchy/providers';
-import { checkCitations, GroundedChat, NodeSearch, stem, tokens, type ChatStreamEvent } from '../src/index.js';
+import type { Flow } from '@codearchy/protocol';
+import { checkCitations, GroundedChat, NodeSearch, stem, tokens, type ChatStreamEvent, type FlowSource } from '../src/index.js';
 import { FILES, index, reader } from './fixture.js';
 
 type Step = { text?: string; calls?: Array<Omit<ToolCall, 'id'>> };
@@ -198,6 +199,50 @@ describe('GroundedChat', () => {
         await run(chat.ask('q'));
         const result = JSON.parse((fake.requests[1]!.messages.find((m) => m.role === 'tool') as { content: string }).content);
         expect(result).toMatchObject({ total: 1, dependencies: [{ from: 'src/billing/charge.ts', to: 'src/auth/session.ts', weight: 1, sites: ['src/auth/session.ts (line 1)'] }] });
+    });
+
+    it('offers find_flows when the host has flows: lists entrypoints, then traces one', async () => {
+        const flow: Flow = {
+            id: 'flow:src/auth/session.ts#http:POST /login',
+            kind: 'http',
+            label: 'POST /login',
+            framework: 'express',
+            file: 'src/auth/session.ts',
+            line: 1,
+            steps: [
+                { key: 'sym:src/auth/session.ts#login', name: 'login', file: 'src/auth/session.ts', line: 1, lane: 'dir:src/auth', depth: 0, resolution: 'entry' },
+                { key: 'sym:src/auth/tokens.ts#sign', name: 'sign', file: 'src/auth/tokens.ts', line: 1, lane: 'dir:src/auth', depth: 1, parent: 0, callSite: { file: 'src/auth/session.ts', line: 2 }, resolution: 'name' },
+            ],
+            lanes: [{ key: 'dir:src/auth', name: 'auth', kind: 'component' }],
+            sinks: [{ kind: 'database', name: 'pg', step: 1 }],
+            approximate: true,
+            truncated: false,
+        };
+        const { steps: _s, lanes: _l, sinks: _k, approximate: _a, truncated: _t, ...summary } = flow;
+        const flows: FlowSource = { list: () => [summary], trace: (id) => (id === flow.id ? flow : undefined) };
+
+        const without = model([{ text: 'ok' }]);
+        await run((await chatWith(without.adapter)).chat.ask('q'));
+        expect(without.requests[0]!.tools!.map((t) => t.name)).not.toContain('find_flows');
+
+        const fake = model([{ calls: [{ name: 'find_flows', args: { query: 'login' } }, { name: 'find_flows', args: { id: flow.id } }, { name: 'find_flows', args: { kind: 'nope' } }] }, { text: 'ok' }]);
+        const registry = new ProviderRegistry([fake.adapter], { policy: { tier: 'structure' } }, { resilience: false });
+        await registry.refresh();
+        await run(new GroundedChat({ index: index(), readFile: reader(FILES), registry, flows }).ask('What happens when someone logs in?'));
+        expect(fake.requests[0]!.tools!.map((t) => t.name)).toContain('find_flows');
+        expect(fake.requests[0]!.system).toMatch(/find_flows/);
+        const [listed, traced, bad] = fake.requests[1]!.messages.filter((m) => m.role === 'tool') as Array<{ content: string; isError?: boolean }>;
+        expect(JSON.parse(listed!.content)).toEqual({ total: 1, matching: 1, results: [{ id: flow.id, kind: 'http', label: 'POST /login', framework: 'express', at: 'src/auth/session.ts:2' }] });
+        expect(JSON.parse(traced!.content)).toMatchObject({
+            label: 'POST /login',
+            steps: [
+                { step: 0, name: 'login', key: 'sym:src/auth/session.ts#login', at: 'src/auth/session.ts:2', part: 'auth' },
+                { step: 1, name: 'sign', calledBy: 0, callLine: 3, matchedByNameOnly: true },
+            ],
+            reaches: [{ kind: 'database', library: 'pg', step: 1 }],
+            approximate: expect.any(String),
+        });
+        expect(bad).toMatchObject({ isError: true });
     });
 
     it('stops looking after maxRounds and makes the model answer', async () => {

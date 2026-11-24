@@ -7,7 +7,7 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, HierarchyIndex, readManifests, type Analyzer } from '@codearchy/core';
+import { buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, type Analyzer } from '@codearchy/core';
 import { createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
@@ -15,6 +15,8 @@ export interface Snapshot {
     index: HierarchyIndex;
     search: NodeSearch;
     cardFor: (key: string) => Promise<Card | undefined>;
+    /** Entrypoints and their traces. */
+    flows: FlowIndex;
     files: number;
     languages: string[];
     builtAt: number;
@@ -110,6 +112,7 @@ export class Workspace {
             index,
             search,
             cardFor,
+            flows: new FlowIndex(analyses, index),
             files,
             languages: graph.metadata.languages,
             builtAt: Date.now(),

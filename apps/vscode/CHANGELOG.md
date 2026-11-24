@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Structure + code excerpts.**
 
   Secrets are removed from anything sent to a cloud model. You can turn on **Ask before sending** to review each request first, and set daily token budgets per provider.
+- **Flows.** A new **Flows** mode, next to Map and Matrix, lists where things enter your code:
+  - HTTP routes (Express, NestJS, FastAPI, Flask, Django, Spring, ASP.NET, gin, Laravel, Rails and more);
+  - CLI commands;
+  - jobs and listeners;
+  - UI routes, VS Code commands and `main`.
+
+  Choose one to see what it does: each call in order, laid out across the parts of the system it passes through. It also shows the databases, HTTP APIs and queues the flow reaches. Click a step to inspect its file, or open it in the editor. **Show on map** takes you back to the Map. Calls matched by name alone, without an import, are dashed.
+- **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 
 ### Changed
