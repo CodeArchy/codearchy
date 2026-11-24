@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import * as assert from 'node:assert';
 import { EdgeType, NodeType, type ArchitectureGraph, type BranchReport } from '@codearchy/protocol';
-import { buildHierarchy, countLines, HierarchyIndex, newDependencies, partOf, renderBranchReport } from '../src/index.js';
+import { buildHierarchy, countLines, HierarchyIndex, newDependencies, partLabel, partOf, renderBranchReport } from '../src/index.js';
 
 const files = ['api/routes.ts', 'api/handlers.ts', 'core/orders.ts', 'core/money.ts', 'db/users.ts', 'api/test/routes.test.ts'];
 const graph: ArchitectureGraph = {
@@ -17,6 +17,17 @@ describe('branch report helpers', () => {
         assert.strictEqual(partOf(index, 'core/orders.ts')!.key, 'dir:core');
         assert.strictEqual(partOf(index, 'db/users.ts')!.key, 'mod:db/users.ts'); // no component above it
         assert.strictEqual(partOf(index, 'nope.ts'), undefined);
+    });
+
+    test('partLabel: folders by path, so two "helpers" (or a "core" folder and the core package) read differently', () => {
+        const pkgFiles = ['packages/core/helpers/a.ts', 'packages/core/helpers/b.ts', 'packages/core/test/helpers/a.spec.ts', 'packages/core/test/helpers/b.spec.ts', 'packages/common/decorators/core/x.ts', 'packages/common/decorators/core/y.ts', 'packages/common/decorators/other.ts'];
+        const g: ArchitectureGraph = { ...graph, nodes: pkgFiles.map((id) => ({ id, label: id, filePath: id, type: NodeType.File, symbols: [], metadata: {} })), edges: [] };
+        const h = new HierarchyIndex(buildHierarchy(g, { systemName: 'nest', packageMarkers: ['packages/core/package.json', 'packages/common/package.json'] }));
+        const label = (file: string) => partLabel(partOf(h, file)!);
+        assert.strictEqual(label('packages/core/helpers/a.ts'), 'packages/core/helpers');
+        assert.strictEqual(label('packages/core/test/helpers/a.spec.ts'), 'packages/core/test/helpers');
+        assert.strictEqual(label('packages/common/decorators/core/x.ts'), 'packages/common/decorators/core');
+        assert.strictEqual(partLabel(h.node('pkg:packages/core')!), 'core');
     });
 
     test('countLines: by the ranges covering each line, unknown otherwise; per tool', () => {

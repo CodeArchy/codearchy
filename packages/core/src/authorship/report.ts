@@ -8,6 +8,15 @@ import type { HierarchyIndex } from '../hierarchy/project.js';
 import { emptyCounts } from './index.js';
 import { displayName } from '../tours/startHere.js';
 
+/**
+ * A part's name in a report a reviewer reads: a package by its name, a folder
+ * by its path (two "helpers" folders, or a "core" folder that isn't the core
+ * package, would otherwise read the same), a cluster or a file by its name.
+ */
+export function partLabel(n: HierarchyNode): string {
+    return n.kind === 'component' && !n.virtual && n.path ? n.path : displayName(n);
+}
+
 /** The part a file belongs to: its nearest component or package, or the file itself when it has none. */
 export function partOf(index: HierarchyIndex, path: string): HierarchyNode | undefined {
     const mod = index.indexOf(`mod:${path}`);
@@ -62,7 +71,7 @@ export function newDependencies(index: HierarchyIndex, before: Iterable<[string,
     const old = lift(before);
     return [...lift(after)]
         .filter(([id]) => !old.has(id))
-        .map(([, e]) => ({ from: e.from.key, to: e.to.key, fromName: displayName(e.from), toName: displayName(e.to), via: e.via }))
+        .map(([, e]) => ({ from: e.from.key, to: e.to.key, fromName: partLabel(e.from), toName: partLabel(e.to), via: e.via }))
         .sort((a, b) => (a.fromName + a.toName < b.fromName + b.toName ? -1 : 1));
 }
 

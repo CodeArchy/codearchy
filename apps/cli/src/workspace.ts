@@ -57,6 +57,8 @@ export interface WorkspaceOptions {
     agentLogs?: AgentId[];
 }
 
+const AUTHORSHIP_PENDING = "Authorship is still being traced from git (this takes longer in a partial or very large clone). Try again in a minute.";
+
 /** Changes under these never make the index stale. */
 const IGNORED = /(^|[\\/])(\.git|node_modules|dist|out|build|target|\.next|coverage|__pycache__|\.venv|venv)([\\/]|$)/;
 
@@ -222,6 +224,8 @@ export class Workspace {
     /** What the current branch adds since `base`, by who wrote it (see computeBranchReport). */
     async branchReport(base?: string): Promise<{ report: BranchReport; markdown: string }> {
         const snap = await this.authorshipReady();
+        // Never a report that calls every line "unknown" because the evidence isn't in yet.
+        if (snap.authorshipStatus.state === 'computing') throw new Error(AUTHORSHIP_PENDING);
         const { analyzer } = await this.engine!;
         const report = await computeBranchReport({
             root: this.root,

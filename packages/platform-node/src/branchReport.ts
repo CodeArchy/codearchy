@@ -5,7 +5,7 @@
  * Read-only git: merge-base, rev-list, diff, blame, show.
  */
 import { execFile } from 'node:child_process';
-import { addCounts, buildGraph, countLines, displayName, emptyCounts, newDependencies, partOf, type HierarchyIndex } from '@codearchy/core';
+import { addCounts, buildGraph, countLines, emptyCounts, newDependencies, partLabel, partOf, type HierarchyIndex } from '@codearchy/core';
 import type { AuthorshipCounts, AuthorshipRange, BranchReport, FileAnalysis } from '@codearchy/protocol';
 import { parseIncrementalBlame } from './authorship.js';
 
@@ -103,7 +103,7 @@ export async function computeBranchReport(o: BranchReportOptions): Promise<Branc
         report.added = addCounts(report.added, counts);
         const part = partOf(o.index, path);
         if (part) {
-            const entry = byPart.get(part.key) ?? { key: part.key, name: displayName(part), added: emptyCounts() };
+            const entry = byPart.get(part.key) ?? { key: part.key, name: partLabel(part), added: emptyCounts() };
             entry.added = addCounts(entry.added, counts);
             byPart.set(part.key, entry);
         }

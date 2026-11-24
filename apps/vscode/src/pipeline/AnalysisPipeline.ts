@@ -520,6 +520,12 @@ export class AnalysisPipeline {
         const parser = await this.getParser();
         if (this.reportAnalyzer?.fs !== state.fs) this.reportAnalyzer = { fs: state.fs, analyzer: new Analyzer({ fs: state.fs, parser, maxFileSize: getConfig().maxFileSize }) };
         const analyzer = this.reportAnalyzer.analyzer;
+        // Never a report that calls every line "unknown" because the evidence isn't in yet.
+        const until = Date.now() + 120_000;
+        while (this.authorshipState.state === 'computing' && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+        if (this.authorshipState.state === 'computing') {
+            throw new Error('authorship is still being traced from git (this takes longer in a partial or very large clone). Try again in a minute.');
+        }
         const report = await computeBranchReport({
             root: state.root,
             ...(base ? { base } : {}),
