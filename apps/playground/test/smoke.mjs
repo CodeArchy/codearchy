@@ -115,6 +115,32 @@ for (const name of wanted) {
         await page.locator('.ca-inspector[data-key="mod:go/cmd/server/main.go"]').waitFor();
         await page.getByRole('button', { name: 'Show on map' }).click();
         await mapNode('mod:go/cmd/server/main.go').waitFor();
+        // Tours: Start Here plays over the canvas and follows its steps into Flows; "Add to tour" builds a draft.
+        await page.click('.ca-segmented button:has-text("Tours")');
+        const startHere = page.locator('.ca-tour-card', { hasText: 'Start here' });
+        await startHere.getByRole('button', { name: /Start|Resume|Replay/ }).click();
+        const player = page.locator('.ca-tour-player');
+        await player.locator('h3', { hasText: 'The big picture' }).waitFor();
+        await player.getByRole('button', { name: 'Next' }).click();
+        await player.locator('h3', { hasText: 'Where things start' }).waitFor();
+        await page.locator('.ca-flow-head h2', { hasText: 'main' }).waitFor(); // the step switched the canvas to Flows
+        await player.getByRole('button', { name: 'Close the tour' }).click();
+        await page.click('.ca-segmented button:has-text("Map")');
+        await mapNode('pkg:rust').click();
+        await page.locator('.ca-inspector[data-key="pkg:rust"]').getByRole('button', { name: 'Add to tour' }).click();
+        const add = page.getByRole('dialog', { name: 'Add to tour' });
+        await add.getByLabel('Tour title').fill('Rust core');
+        await add.getByLabel(/What should a newcomer notice/).fill('The Rust package holds the engine.');
+        await add.getByRole('button', { name: 'Add step' }).click();
+        await page.click('.ca-segmented button:has-text("Tours")');
+        const draftCard = page.locator('.ca-tour-card', { hasText: 'Rust core' });
+        await draftCard.getByRole('button', { name: 'Play' }).click();
+        await player.locator('h3', { hasText: 'rusty-core' }).waitFor();
+        await page.locator('.ca-inspector[data-key="pkg:rust"]').waitFor();
+        await player.getByRole('button', { name: 'Close the tour' }).click();
+        await page.click('.ca-segmented button:has-text("Tours")');
+        await draftCard.getByRole('button', { name: 'Discard' }).click();
+        await draftCard.waitFor({ state: 'detached' });
         await page.click('.ca-segmented button:has-text("Map")');
         await page.selectOption('.ca-lens select', 'dependencies');
         await page.click('#tab-tree');

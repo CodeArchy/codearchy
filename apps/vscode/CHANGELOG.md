@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - UI routes, VS Code commands and `main`.
 
   Choose one to see what it does: each call in order, laid out across the parts of the system it passes through. It also shows the databases, HTTP APIs and queues the flow reaches. Click a step to inspect its file, or open it in the editor. **Show on map** takes you back to the Map. Calls matched by name alone, without an import, are dashed.
+- **Tours.** A new **Tours** mode offers guided walks through the code.
+  - **Start Here** is built for every workspace, with no AI needed. It covers the big picture, where things start (one flow, followed end to end), the core parts, the data layer, the services it talks to, shared foundations, and a good first change.
+  - **The player:** it sits over the canvas, and each step moves the Map (or Flows) to what it explains. It lists the lines worth reading, links to the parts it mentions, and has **Ask about this step**. Steps you've finished are remembered, so you can resume later.
+  - **Your own tours:** use **Add to tour** in the Inspector, or on a flow, to build a tour. Then **Save to .codearchy/tours** writes it into the repository, so it's reviewed and shared like code. Steps whose code has changed since they were written are flagged.
+  - **Walk through** plays any flow as a tour.
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 

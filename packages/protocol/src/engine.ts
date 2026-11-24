@@ -5,7 +5,7 @@
  */
 import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from './view.js';
 import type { Flow, FlowSummary } from './flows.js';
-import type { TourDetails, TourSummary } from './tours.js';
+import type { Tour, TourDetails, TourSummary } from './tours.js';
 
 export interface SearchResult {
     /** A hierarchy key (`mod:src/a.ts`, `dir:src/auth`, ...) to reveal. */
@@ -31,6 +31,10 @@ export interface EngineClient {
     tours?(): Promise<TourSummary[]>;
     /** One tour, with each step checked for staleness. */
     tour?(id: string): Promise<TourDetails | undefined>;
+    /** The tour with each step's anchor stamped from the current code (for saving or downloading). */
+    anchorTour?(tour: Tour): Promise<Tour>;
+    /** Writes `.codearchy/tours/<id>.json` (anchored) in the workspace; hosts that can't write leave it out. */
+    saveTour?(tour: Tour): Promise<{ file: string }>;
 }
 
 /** What opening a workspace produced. */

@@ -126,6 +126,21 @@ suite('CodeArchy — Analysis in the extension host', function () {
         assert.strictEqual(tour.steps[0]!.title, 'The big picture');
         assert.strictEqual(tour.status.length, tour.steps.length);
 
+        // Saving an authored tour writes .codearchy/tours/<slug>.json (anchored) and lists it; removed again after.
+        const toursDir = path.join(folder!.uri.fsPath, '.codearchy');
+        const existed = fs.existsSync(toursDir);
+        try {
+            const draft = { version: 1, id: 'draft', title: 'Web entry, end to end', origin: 'authored', steps: [{ id: 's1', target: { node: 'mod:web/src/index.ts' }, title: 'The entry', body: 'Start here.', code: [{ path: 'web/src/index.ts', start: 1, end: 2 }] }] };
+            const saved = (await api.engine('saveTour', { tour: draft })) as { file: string };
+            assert.strictEqual(saved.file, '.codearchy/tours/web-entry-end-to-end.json');
+            const written = JSON.parse(fs.readFileSync(path.join(folder!.uri.fsPath, saved.file), 'utf8')) as { steps: Array<{ anchorHash?: string }> };
+            assert.ok(written.steps[0]!.anchorHash, 'steps are anchored on save');
+            const listed = (await api.engine('tours', {})) as Array<{ id: string; origin: string; stale: number }>;
+            assert.ok(listed.some((t) => t.id === 'web-entry-end-to-end' && t.origin === 'authored' && t.stale === 0));
+        } finally {
+            if (!existed) fs.rmSync(toursDir, { recursive: true, force: true });
+        }
+
         const file = path.join(folder!.uri.fsPath, 'web', 'src', 'index.ts');
         const here = api.locate(file) as { key: string; breadcrumb: Array<{ name: string }> };
         assert.strictEqual(here.key, 'mod:web/src/index.ts');

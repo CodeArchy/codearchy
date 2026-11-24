@@ -14,6 +14,9 @@ import {
     FlowIndex,
     TourIndex,
     isTourFile,
+    anchorTour,
+    serializeTour,
+    TOURS_DIR,
     IndexStore,
     Indexer,
     buildGraph,
@@ -38,11 +41,11 @@ import {
     toPosix,
     walkFiles,
 } from '@codearchy/platform-node';
-import type { NodeDetails } from '@codearchy/protocol';
+import type { NodeDetails, Tour } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour';
 
 export interface EngineSearchResult {
     key: string;
@@ -374,6 +377,10 @@ export class AnalysisPipeline {
                 return this.tours(h).list();
             case 'tour':
                 return this.tours(h).get(str('id'));
+            case 'anchorTour':
+                return anchorTour(params.tour as Tour, h, (p) => this.readWorkspaceFile(p));
+            case 'saveTour':
+                return this.saveTour(h, params.tour as Tour);
             default:
                 return undefined;
         }
@@ -396,6 +403,29 @@ export class AnalysisPipeline {
             name: path.basename(state.root),
         });
         return this.tourIndex;
+    }
+
+    /** Writes an authored tour to `.codearchy/tours/<slug>.json` (anchored, validated) and lists it. */
+    private async saveTour(h: HierarchyIndex, tour: Tour): Promise<{ file: string }> {
+        const state = this.state!;
+        const anchored = await anchorTour({ ...tour, origin: 'authored' }, h, (p) => this.readWorkspaceFile(p));
+        let out = serializeTour(anchored);
+        if (!out.ok) throw new Error(`The tour isn't valid: ${out.error}`);
+        // A new tour never overwrites another one that happens to share its name.
+        if (tour.id === 'draft') {
+            const base = out.slug;
+            for (let n = 2; fs.existsSync(fromPosix(state.root, `${TOURS_DIR}/${out.slug}.json`)); n++) {
+                out = serializeTour(anchored, `${base}-${n}`);
+                if (!out.ok) throw new Error(`The tour isn't valid: ${out.error}`);
+            }
+        }
+        const file = `${TOURS_DIR}/${out.slug}.json`;
+        const abs = fromPosix(state.root, file);
+        await fs.promises.mkdir(path.dirname(abs), { recursive: true });
+        await fs.promises.writeFile(abs, out.text, 'utf8');
+        if (!state.discovery.tours.includes(file)) state.discovery = { ...state.discovery, tours: [...state.discovery.tours, file].sort() };
+        this.tourIndex = undefined;
+        return { file };
     }
 
     /** Components and packages by name, then symbols from the index (prefix match). */

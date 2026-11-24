@@ -41,7 +41,7 @@ export { ArchitectureInference, heuristicGroupForPath, tokenizeSegment } from '.
 export { classifyFiles, isManifest, isPackageMarker, isTourFile, TOURS_DIR, DEFAULT_EXCLUDE_PATTERNS, MANIFEST_FILES, type DiscoveryOptions, type DiscoveryResult } from './discovery/classify.js';
 export { FlowIndex, FLOW_LIMITS, lastSegment } from './flows/trace.js';
 export { generateStartHere, START_HERE_ID, type StartHereOptions } from './tours/startHere.js';
-export { TourIndex, anchorFor, parseTour, tourSlug, type TourParse, type TourSources } from './tours/tours.js';
+export { TourIndex, anchorFor, anchorTour, parseTour, serializeTour, slugify, tourSlug, type TourParse, type TourSources } from './tours/tours.js';
 export { detectEntryPoints, isTestPath, blockEnd } from './flows/entrypoints.js';
 export { extractCalls } from './flows/calls.js';
 export { enrich } from './flows/enrich.js';

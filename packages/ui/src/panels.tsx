@@ -136,6 +136,8 @@ export interface InspectorProps {
     /** With it: the node's summary card and "Ask about this". */
     ai?: AiClient;
     onAsk?(name: string): void;
+    /** "Add to tour": captures this node as a step of the draft tour. */
+    onAddToTour?(details: NodeDetails): void;
 }
 
 export function Inspector(props: InspectorProps) {
@@ -238,6 +240,12 @@ export function Inspector(props: InspectorProps) {
                 {d.kind === 'module' && host?.openFile ? (
                     <button type="button" onClick={() => host.openFile!(d.path)}>
                         Open file
+                    </button>
+                ) : null}
+                {props.onAddToTour ? (
+                    <button type="button" className="ca-with-icon" onClick={() => props.onAddToTour!(d)}>
+                        <Icon name="plus" size={13} />
+                        Add to tour
                     </button>
                 ) : null}
                 {props.ai && props.onAsk && d.kind !== 'symbol' ? (
