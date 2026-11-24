@@ -21,6 +21,8 @@ describe('classifyCommit', () => {
         assert.strictEqual(commit('feat\n\nCo-authored-by: Jules Verne <jules@acme.com>'), undefined);
         assert.strictEqual(commit('feat: talk to the Claude API', 'Claude Martin', 'claude.martin@acme.com'), undefined);
         assert.strictEqual(commit('docs: compare Copilot and Cursor'), undefined); // a mention isn't a marker
+        // Quoting a tool's marker in prose (a changelog, this feature's own PR) isn't the marker.
+        assert.strictEqual(commit('feat: authorship\n\n| Tool markers | "🤖 Generated with [Claude Code]", Aider\'s `aider:` prefix |'), undefined);
     });
 
     test('coding-agent bot authors and tool markers in the message', () => {

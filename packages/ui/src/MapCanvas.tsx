@@ -11,7 +11,8 @@
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
-import { flowRoles, lensBadge, type FlowRoles, type LensId, type MapEdge, type MapModel, type MapNode } from './model.js';
+import { AUTHORSHIP_ORIGINS, flowRoles, lensBadge, type FlowRoles, type LensId, type MapEdge, type MapModel, type MapNode } from './model.js';
+import type { AuthorshipOrigin } from '@codearchy/protocol';
 import type { Box, Layout } from './layout.js';
 
 interface NodeData extends Record<string, unknown> {
@@ -59,9 +60,18 @@ function KindIcon({ kind, virtual }: { kind: string; virtual?: boolean }) {
     );
 }
 
+/** Lines by authorship origin as one thin stacked bar (the badge's text carries the numbers). */
+export function AuthorshipBar({ shares }: { shares: Record<AuthorshipOrigin, number> }) {
+    return (
+        <div className="ca-authorship-bar" aria-hidden="true">
+            {AUTHORSHIP_ORIGINS.map(({ origin }) => (shares[origin] ? <span key={origin} className={`ca-auth-${origin}`} style={{ width: `${shares[origin]}%` }} /> : null))}
+        </div>
+    );
+}
+
 const NodeCard = memo(function NodeCard({ data, selected }: NodeProps<CardNode>) {
     const v = data.node.view!;
-    const badge = lensBadge(v.metrics, data.lens, v.kind);
+    const badge = lensBadge(v.metrics, data.lens, v.kind, v.authorship);
     const classes = [
         'ca-node',
         `ca-kind-${v.kind}`,
@@ -84,8 +94,10 @@ const NodeCard = memo(function NodeCard({ data, selected }: NodeProps<CardNode>)
             </div>
             <div className="ca-node-name">{v.name}</div>
             {badge ? (
-                <div className="ca-lens-badge" title={badge.title}>
-                    {badge.text}
+                <div className={`ca-lens-badge${badge.shares ? ' ca-lens-badge-bar' : ''}`} title={badge.title}>
+                    <span>{badge.text}</span>
+                    {/* On the badge's own row, so the card keeps the height the layout gave it. */}
+                    {badge.shares ? <AuthorshipBar shares={badge.shares} /> : null}
                 </div>
             ) : null}
             <div className="ca-node-meta">

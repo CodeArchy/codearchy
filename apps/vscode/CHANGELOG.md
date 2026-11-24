@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The player:** it sits over the canvas, and each step moves the Map (or Flows) to what it explains. It lists the lines worth reading, links to the parts it mentions, and has **Ask about this step**. Steps you've finished are remembered, so you can resume later.
   - **Your own tours:** use **Add to tour** in the Inspector, or on a flow, to build a tour. Then **Save to .codearchy/tours** writes it into the repository, so it's reviewed and shared like code. Steps whose code has changed since they were written are flagged.
   - **Walk through** plays any flow as a tour.
+- **Authorship.** See which code AI tools wrote, from the evidence they leave in git history.
+  - **What counts:** `Co-authored-by` lines naming an AI tool, coding-agent bot commits, and tool markers such as "Generated with Claude Code". These are traced to today's lines with git blame.
+  - **The Authorship lens** shows each part's share of AI-written and reviewed lines, as text with a small bar.
+  - **The Inspector** shows the breakdown by tool, the most AI-written files, a weekly timeline and the commits behind it.
+  - **Your privacy:** lines without evidence are "unknown"; nothing is guessed. Results are totals and tool names only, never people. It runs only `git log` and `git blame` on this machine.
+  - **Turn it off** with `codearchy.authorship.enabled`.
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 
