@@ -18,6 +18,7 @@ import {
     ImportResolver,
     IndexStore,
     Indexer,
+    FlowIndex,
     buildGraph,
     buildHierarchy,
     classifyFiles,
@@ -72,6 +73,8 @@ export interface EngineWorkspace {
     discovery: DiscoveryResult;
     graph: ArchitectureGraph;
     hierarchy: HierarchyIndex;
+    /** Entrypoints and their traces (Flows), built with the hierarchy. */
+    flows: FlowIndex;
     resolver: ImportResolver;
     stats: IndexStats;
     workers: number;
@@ -140,10 +143,14 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             indexer,
             pool,
             live,
-            lazy: {} as { hierarchy?: HierarchyIndex; resolver?: ImportResolver },
+            lazy: {} as { hierarchy?: HierarchyIndex; flows?: FlowIndex; resolver?: ImportResolver },
             get hierarchy(): HierarchyIndex {
                 this.lazy.hierarchy ??= new HierarchyIndex(buildHierarchy(this.graph, { systemName: name, packageMarkers: this.discovery.packageMarkers, manifests: this.manifests }));
                 return this.lazy.hierarchy;
+            },
+            get flows(): FlowIndex {
+                this.lazy.flows ??= new FlowIndex(this.analyses, this.hierarchy);
+                return this.lazy.flows;
             },
             get resolver(): ImportResolver {
                 this.lazy.resolver ??= new ImportResolver(this.analyses.values(), this.manifests);
@@ -314,6 +321,10 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
                 return w.hierarchy.explainEdge(s('source'), s('target'));
             case 'search':
                 return search(w, s('query'));
+            case 'flows':
+                return w.flows.list();
+            case 'flow':
+                return w.flows.trace(s('id'));
             case 'readFile':
                 return w.fs.readText(s('path'));
             default: {

@@ -6,7 +6,7 @@
  *
  * Imports no engine code, so it adds next to nothing to a UI bundle.
  */
-import type { EdgeExplanation, EngineClient, EngineEvent, NodeDetails, NodeSummary, SearchResult, View, ViewRequest, WorkspaceSummary } from '@codearchy/protocol';
+import type { EdgeExplanation, EngineClient, EngineEvent, Flow, FlowSummary, NodeDetails, NodeSummary, SearchResult, View, ViewRequest, WorkspaceSummary } from '@codearchy/protocol';
 import type { EngineReply, EngineRequest, EngineSource } from './engine/messages.js';
 
 export type { EngineSource } from './engine/messages.js';
@@ -80,6 +80,12 @@ export class WorkerEngine implements EngineClient {
     }
     search(query: string): Promise<SearchResult[]> {
         return this.call('search', { query });
+    }
+    flows(): Promise<FlowSummary[]> {
+        return this.call('flows', {});
+    }
+    flow(id: string): Promise<Flow | undefined> {
+        return this.call('flow', { id });
     }
     /** A workspace file's text (the code viewer). */
     readFile(path: string): Promise<string | undefined> {

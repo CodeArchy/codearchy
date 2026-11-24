@@ -5,6 +5,7 @@
 import type { FileAnalysis } from '@codearchy/protocol';
 import { analyzeWithRegex } from './extract/regex.js';
 import { TreeSitterExtractor } from './extract/treeSitter.js';
+import { enrich } from './flows/enrich.js';
 import { getPackForExtension } from './languages/index.js';
 import type { FileSystemPort, Logger, ParserRuntime } from './ports.js';
 import { contentHash } from './util/hash.js';
@@ -88,12 +89,13 @@ export class Analyzer {
         if (this.extractor) {
             try {
                 const result = await this.extractor.analyze(source, path, pack);
-                if (result) return result;
+                if (result) return enrich(result, source);
             } catch (err) {
                 this.options.log?.(`tree-sitter failed on ${path}: ${(err as Error).message}`);
             }
         }
-        return analyzeWithRegex(source, path, pack.id);
+        const fallback = analyzeWithRegex(source, path, pack.id);
+        return fallback && enrich(fallback, source);
     }
 
     /** Reads, hashes and (if changed) analyses one file. */

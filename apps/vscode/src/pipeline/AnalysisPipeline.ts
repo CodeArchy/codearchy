@@ -11,6 +11,7 @@ import {
     AnalysisCancelledError,
     ArchitectureInference,
     HierarchyIndex,
+    FlowIndex,
     IndexStore,
     Indexer,
     buildGraph,
@@ -39,7 +40,7 @@ import type { NodeDetails } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow';
 
 export interface EngineSearchResult {
     key: string;
@@ -73,6 +74,7 @@ export class AnalysisPipeline {
     /** The last graph built, and its hierarchy (built on first use, dropped when the graph changes). */
     private lastGraph: ArchitectureGraph | undefined;
     private hierarchyIndex: HierarchyIndex | undefined;
+    private flowIndex: FlowIndex | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -310,6 +312,7 @@ export class AnalysisPipeline {
         if (stats) stats.skipped = Math.max(0, state.discovery.sourceFiles.length - state.analyses.size);
         this.lastGraph = graph;
         this.hierarchyIndex = undefined;
+        this.flowIndex = undefined;
         return graph;
     }
 
@@ -339,9 +342,19 @@ export class AnalysisPipeline {
                 return h.explainEdge(str('source'), str('target'));
             case 'search':
                 return this.search(h, str('query'));
+            case 'flows':
+                return this.flows(h).list();
+            case 'flow':
+                return this.flows(h).trace(str('id'));
             default:
                 return undefined;
         }
+    }
+
+    /** Entrypoints and their traces (Flows mode), rebuilt with the hierarchy. */
+    private flows(h: HierarchyIndex): FlowIndex {
+        this.flowIndex ??= new FlowIndex(this.state!.analyses, h);
+        return this.flowIndex;
     }
 
     /** Components and packages by name, then symbols from the index (prefix match). */

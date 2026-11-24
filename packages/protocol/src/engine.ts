@@ -4,6 +4,7 @@
  * Companion). Types only.
  */
 import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from './view.js';
+import type { Flow, FlowSummary } from './flows.js';
 
 export interface SearchResult {
     /** A hierarchy key (`mod:src/a.ts`, `dir:src/auth`, ...) to reveal. */
@@ -21,6 +22,10 @@ export interface EngineClient {
     describe(key: string): Promise<NodeDetails | undefined>;
     explain(source: string, target: string): Promise<EdgeExplanation | undefined>;
     search?(query: string): Promise<SearchResult[]>;
+    /** Entrypoints found in the workspace (Flows). */
+    flows?(): Promise<FlowSummary[]>;
+    /** One traced flow. */
+    flow?(id: string): Promise<Flow | undefined>;
 }
 
 /** What opening a workspace produced. */

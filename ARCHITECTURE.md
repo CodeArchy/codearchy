@@ -156,7 +156,7 @@ browser. It holds:
 
 | Table | Holds |
 |---|---|
-| `file` | Path, language, content hash, size, mtime, namespace |
+| `file` | Path, language, content hash, size, mtime, namespace, and the file's flow facts (entrypoints and call sites, as compact JSON) |
 | `symbol` | Symbols |
 | `import` | Imports |
 | `manifest` | Manifests |
@@ -339,6 +339,53 @@ from the index, with citations.
 `scripts/ask.mjs` indexes a folder and asks a question with a model taken from
 the environment.
 
+## Flows
+
+A flow is what happens when a request, command or job enters the system. The
+engine finds them in three steps, all deterministic and all in `core`
+([`packages/core/src/flows`](packages/core/src/flows)).
+
+1. **Entrypoints** (`entrypoints.ts`). A table of per-line rules for each
+   language finds:
+   - HTTP routes: Express, Koa, Hono, Fastify, NestJS, FastAPI, Flask, Django,
+     Spring, ASP.NET, net/http, gin, echo, chi, Actix, Axum, Laravel, Symfony,
+     Rails and Sinatra.
+   - CLI commands: commander, yargs, click, typer, argparse, cobra, picocli,
+     Laravel, Symfony and Thor. VS Code commands count here too.
+   - Jobs and listeners: Celery, Sidekiq, BullMQ, Spring `@Scheduled` and the
+     Kafka/Rabbit listeners, Nest events, Azure Functions and hosted services.
+     MCP tools count here too.
+   - UI routes, and `main`.
+
+   File conventions add Next.js and SvelteKit routes. A rule either names the
+   handler, binds the function it decorates, or marks an inline handler whose
+   body ends at `endLine`. Comment lines and test files are skipped. Every
+   pattern uses bounded repetition, and long lines are skipped, so a scan is
+   linear in the file's size.
+2. **Call sites** (`calls.ts`). One linear character pass records every
+   `name(` outside strings and comments. Calls inside template interpolations
+   are kept. Each call records the function it's in and how it was made: a bare
+   call, on `this`/`self`, or on another object.
+3. **The trace** (`trace.ts`, `FlowIndex`). From the handler, calls are matched
+   to symbols. There are no types, so the rules are strict:
+   - **Bare calls:** the same file, then the files it imports (the hierarchy's
+     module edges), then a unique-enough name in the same package and language
+     family.
+   - **`this`/`self` calls:** the caller's own class.
+   - **Other member calls:** methods in the same file, anything in imported
+     files, or a method whose name is unique in the workspace.
+
+   Builtins and common verbs are never matched by name alone. The trace is
+   breadth-first, with limits on depth (6), fan-out (8) and size (60 steps).
+   Helpers with many callers are shown but not followed (`crossCutting`). Steps
+   are placed in swimlanes: the nearest component or package. Imports of
+   database, HTTP, queue, cache and storage libraries mark the flow's sinks. A
+   flow that took any name-only hop is marked `approximate`.
+
+Entrypoints and calls are stored with each file's facts, so a warm start
+doesn't re-scan anything. Both hosts answer `flows()` and `flow(id)` on the
+`EngineClient`.
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs
@@ -430,6 +477,7 @@ the environment.
 | Extraction | [`packages/core/src/extract/treeSitter.ts`](packages/core/src/extract/treeSitter.ts) |
 | Incremental indexing | [`packages/core/src/index/indexer.ts`](packages/core/src/index/indexer.ts) and [`store.ts`](packages/core/src/index/store.ts) |
 | Import resolution | [`packages/core/src/resolve/resolver.ts`](packages/core/src/resolve/resolver.ts) |
+| Flows | [`packages/core/src/flows/trace.ts`](packages/core/src/flows/trace.ts), and the types in [`packages/protocol/src/flows.ts`](packages/protocol/src/flows.ts) |
 | The hierarchy and views | [`packages/core/src/hierarchy/build.ts`](packages/core/src/hierarchy/build.ts), [`project.ts`](packages/core/src/hierarchy/project.ts), and the types in [`packages/protocol/src/hierarchy.ts`](packages/protocol/src/hierarchy.ts) / [`view.ts`](packages/protocol/src/view.ts) |
 | The UI | [`packages/ui/src/CodeArchyMap.tsx`](packages/ui/src/CodeArchyMap.tsx), and [`client.ts`](packages/ui/src/client.ts) for what a host provides |
 | A full host wiring | [`apps/playground/src/engine.worker.ts`](apps/playground/src/engine.worker.ts) (browser), [`apps/vscode/src/pipeline/AnalysisPipeline.ts`](apps/vscode/src/pipeline/AnalysisPipeline.ts) (VS Code) |
