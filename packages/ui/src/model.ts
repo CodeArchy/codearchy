@@ -160,22 +160,8 @@ export const AUTHORSHIP_ORIGINS: Array<{ origin: AuthorshipOrigin; label: string
     { origin: 'unknown', label: 'unknown', title: 'No evidence either way (most history before tracking)' },
 ];
 
-const AGENT_NAMES: Record<string, string> = {
-    'claude-code': 'Claude Code',
-    copilot: 'GitHub Copilot',
-    cursor: 'Cursor',
-    codex: 'OpenAI Codex',
-    'gemini-cli': 'Gemini',
-    aider: 'Aider',
-    devin: 'Devin',
-    jules: 'Jules',
-    windsurf: 'Windsurf',
-    openhands: 'OpenHands',
-    'amazon-q': 'Amazon Q',
-    cline: 'Cline',
-};
 /** `claude-code` → `Claude Code` (unknown ids as they are). */
-export const agentName = (id: string) => AGENT_NAMES[id] ?? id;
+export { agentName } from '@codearchy/protocol';
 
 /** Whole-percent shares that add up to 100 (largest remainder), so a bar and its labels agree. */
 export function authorshipShares(c: AuthorshipCounts): Record<AuthorshipOrigin, number> {

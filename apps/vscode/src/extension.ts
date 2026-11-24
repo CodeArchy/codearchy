@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { createVscodeAiHost } from './ai/vscodeAi';
 import { ArchitecturePanel, configuredUi } from './webview/ArchitecturePanel';
+import { AuthorshipEditor } from './authorship/AuthorshipEditor';
 import { EditorIntegration } from './editor/EditorIntegration';
 import { AnalysisPipeline } from './pipeline/AnalysisPipeline';
 import { ModulesTreeProvider } from './views/ModulesTreeProvider';
@@ -8,6 +9,7 @@ import { CommandsTreeProvider } from './views/CommandsTreeProvider';
 import { ArchitectureGraph } from './types';
 
 let currentGraph: ArchitectureGraph | undefined;
+let authorshipEditor: AuthorshipEditor | undefined;
 let pipeline: AnalysisPipeline | undefined;
 let modulesTreeProvider: ModulesTreeProvider;
 let commandsTreeProvider: CommandsTreeProvider;
@@ -38,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     // Authorship arrives after indexing (git log + blame in the background): refresh the panel then.
     pipeline.onAuthorshipChange = () => {
         if (currentGraph) ArchitecturePanel.update(currentGraph);
+        authorshipEditor?.refresh();
     };
     pipeline.initParser().catch((err) => {
         output.appendLine(`Parser init failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -55,6 +58,14 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
         { index: () => pipeline?.currentIndex(), flows: () => pipeline?.currentFlows(), readFile: async (rel) => pipeline?.readWorkspaceFile(rel) },
         (event) => ArchitecturePanel.postAiEvent(event),
     );
+    // Authorship in the editor: capture into the ledger, the gutter, Mark as reviewed / Correct.
+    authorshipEditor = new AuthorshipEditor({
+        relative: (fsPath) => pipeline?.relativePath(fsPath),
+        recordEdit: (rel, edit) => pipeline?.recordEdit(rel, edit),
+        reconcile: (rel, text) => pipeline?.reconcile(rel, text),
+        mark: async (rel, start, end, as) => (await pipeline?.mark(rel, start, end, as)) ?? { marked: 0 },
+        ranges: (rel) => pipeline?.fileAuthorship(rel) ?? [],
+    });
     editorIntegration = new EditorIntegration({
         locate: (fsPath) => pipeline?.locate(fsPath),
         reveal: async (key) => {
@@ -205,6 +216,7 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     });
 
     context.subscriptions.push(
+        authorshipEditor,
         editorIntegration,
         switchUiCmd,
         uiConfigListener,

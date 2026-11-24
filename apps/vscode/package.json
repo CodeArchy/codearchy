@@ -63,6 +63,16 @@
             {
                 "command": "codearchy.switchUi",
                 "title": "CodeArchy: Switch between the Map and the classic views"
+            },
+            {
+                "command": "codearchy.authorship.markReviewed",
+                "title": "Mark Selection as Reviewed",
+                "category": "CodeArchy"
+            },
+            {
+                "command": "codearchy.authorship.correct",
+                "title": "Correct Authorship of Selection",
+                "category": "CodeArchy"
             }
         ],
         "viewsContainers": {
@@ -99,6 +109,16 @@
                 {
                     "command": "codearchy.revealInMap",
                     "group": "navigation@90"
+                },
+                {
+                    "command": "codearchy.authorship.markReviewed",
+                    "when": "editorHasSelection && config.codearchy.authorship.enabled",
+                    "group": "codearchy@91"
+                },
+                {
+                    "command": "codearchy.authorship.correct",
+                    "when": "editorHasSelection && config.codearchy.authorship.enabled",
+                    "group": "codearchy@92"
                 }
             ],
             "explorer/context": [
@@ -225,6 +245,16 @@
                     "type": "boolean",
                     "default": true,
                     "markdownDescription": "Show which code AI tools wrote (the Authorship lens), from the evidence AI tools leave in git history: `Co-authored-by` trailers, coding-agent bot commits and tool markers. Read-only (`git log`, `git blame`); nothing leaves this machine, and no person is named."
+                },
+                "codearchy.authorship.capture": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Record AI insertions as they happen in this editor (large insertions that aren't pastes, labelled *inferred*), and treat your edits to AI-written lines as reviewing them. Kept in this workspace's storage on this machine, never in your files."
+                },
+                "codearchy.authorship.gutter": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show a thin bar beside AI-written (orange) and reviewed (blue) lines. Hover it for the tool, the date and the evidence."
                 }
             }
         }

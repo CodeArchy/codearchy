@@ -490,6 +490,38 @@ Only aggregates and agent names are shown; no person is ever named.
 Each file's line count is stored with its facts (`FileAnalysis.lines`), so
 shares are per line.
 
+**The ledger** (`core/src/authorship/ledger.ts`) records attribution going
+forward, along with people's say on it. It's pure and host-agnostic.
+- **Edits** shift ranges, and a person's edit inside an `ai` range turns it
+  `reviewed`.
+- **"Mark as reviewed"** splits the selection out as `reviewed`.
+- **"Correct attribution"** sets lines to what the person says, and records
+  it as declared by them.
+- **Anchors:** each range keeps a hash of its text. After changes the ledger
+  didn't see, it re-finds moved text or drops rewritten text. Split pieces
+  get new anchors, and adjacent ranges that say the same thing merge.
+- **Overlay:** `withLedger` lays the ledger over git's evidence. The ledger
+  wins where they overlap, except that an inferred capture never replaces a
+  commit's declared `ai`. Without git, the ledger stands alone.
+
+The ledger is kept per host, outside the workspace (`FileLedgerStore`: VS
+Code's workspace storage, the Companion's `~/.codearchy/companion/<hash>/`).
+
+- **VS Code** (`apps/vscode/src/authorship`) captures editor changes as line
+  edits:
+  - **unknown:** undo/redo, changes outside the focused editor (reloads,
+    background tools), and bursts of more than 3 changes (formatters).
+  - **human:** typing and pastes (matched against the clipboard).
+  - **ai, inferred:** larger insertions. The tool is guessed from the editor
+    and the active extensions.
+
+  It draws the gutter (AI orange, reviewed blue, with a hover giving the
+  tool, date and evidence) and adds the two commands.
+- **The Companion** serves `authorshipMark`, its one write, which goes to its
+  own ledger. The web app can therefore review and correct lines too.
+  Capture itself needs editor events, so for CLI agents the stronger
+  evidence comes from their session logs (5c).
+
 ## Apps
 
 - **`apps/vscode`** is the VS Code extension. The extension host runs

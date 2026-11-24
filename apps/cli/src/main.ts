@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
+import { FileLedgerStore, companionDataDir } from '@codearchy/platform-node';
 import { startCompanion } from './companion.js';
 import { Workspace } from './workspace.js';
 
@@ -130,7 +131,18 @@ async function serve(args: string[]): Promise<number> {
     }
 
     let notify: ((file?: string) => void) | undefined;
-    const workspace = new Workspace(root, { log, onChange: (file) => notify?.(file), onAuthorship: () => notify?.() });
+    // Review marks from the web app: kept in the Companion's own data folder, never in the workspace.
+    const ledgerStore = new FileLedgerStore(path.join(companionDataDir(root), 'authorship-ledger.json'));
+    const workspace = new Workspace(root, {
+        log,
+        onChange: (file) => notify?.(file),
+        onAuthorship: () => notify?.(),
+        ledger: ledgerStore.ledger,
+        onLedgerChange: () => {
+            // takeChanged() was consumed by the workspace: persist now.
+            ledgerStore.save();
+        },
+    });
     workspace.watch();
     void workspace.snapshot().catch((err: unknown) => log(`Indexing failed: ${err instanceof Error ? err.message : String(err)}`));
     const companion = await startCompanion(workspace, { port, allowOrigins, version: version(), log, ...(app ? { appUrl: app } : {}) });
@@ -147,6 +159,7 @@ async function serve(args: string[]): Promise<number> {
     });
     await companion.close();
     workspace.close();
+    ledgerStore.save();
     return 0;
 }
 

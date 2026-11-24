@@ -74,3 +74,25 @@ export interface AuthorshipStatus {
     /** Whole-workspace counts. */
     counts?: AuthorshipCounts;
 }
+
+/** Display names for the tool ids authorship records. */
+export const AGENT_NAMES: Readonly<Record<string, string>> = {
+    'claude-code': 'Claude Code',
+    copilot: 'GitHub Copilot',
+    cursor: 'Cursor',
+    codex: 'OpenAI Codex',
+    'gemini-cli': 'Gemini',
+    aider: 'Aider',
+    devin: 'Devin',
+    jules: 'Jules',
+    windsurf: 'Windsurf',
+    openhands: 'OpenHands',
+    'amazon-q': 'Amazon Q',
+    cline: 'Cline',
+    'unknown-ai': 'an AI tool',
+};
+
+/** `claude-code` → `Claude Code` (unknown ids as they are). */
+export function agentName(id: string): string {
+    return AGENT_NAMES[id] ?? id;
+}

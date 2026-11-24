@@ -14,6 +14,10 @@ import {
     FlowIndex,
     TourIndex,
     AuthorshipIndex,
+    AuthorshipLedger,
+    withLedger,
+    markLines,
+    type LineEdit,
     isTourFile,
     type AuthorshipData,
     anchorTour,
@@ -39,16 +43,17 @@ import {
     fromPosix,
     gitIgnoredPaths,
     computeGitAuthorship,
+    FileLedgerStore,
     gitListFiles,
     openNodeSqlite,
     toPosix,
     walkFiles,
 } from '@codearchy/platform-node';
-import type { AuthorshipStatus, NodeDetails, Tour, View } from '@codearchy/protocol';
+import type { AuthorshipOrigin, AuthorshipRange, AuthorshipStatus, NodeDetails, Tour, View } from '@codearchy/protocol';
 import { AnalysisProgress, ArchitectureGraph, ExtensionConfig, FileAnalysis, getConfig } from '../types';
 
 /** Requests the new UI (@codearchy/ui) sends through the webview. */
-export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'authorshipStatus' | 'authorship';
+export type EngineMethod = 'view' | 'children' | 'describe' | 'explain' | 'search' | 'flows' | 'flow' | 'tours' | 'tour' | 'anchorTour' | 'saveTour' | 'authorshipStatus' | 'authorship' | 'authorshipMark';
 
 export interface EngineSearchResult {
     key: string;
@@ -90,8 +95,12 @@ export class AnalysisPipeline {
     private authorshipState: AuthorshipStatus = { state: 'computing' };
     private authorshipRun = 0;
     private authorshipTimer: NodeJS.Timeout | undefined;
-    /** Called when authorship (re)computes, so the panel refetches its views. */
+    /** Called when authorship (re)computes or the ledger changes, so views and the gutter refresh. */
     onAuthorshipChange: (() => void) | undefined;
+    /** Ranges captured in the editor, plus people's review marks and corrections (kept in workspace storage). */
+    private readonly ledgerStore: FileLedgerStore | undefined;
+    readonly ledger: AuthorshipLedger;
+    private ledgerTimer: NodeJS.Timeout | undefined;
 
     /**
      * @param storageDir per-workspace storage (context.storageUri) for the persistent index;
@@ -104,6 +113,8 @@ export class AnalysisPipeline {
     ) {
         this.parsersDir = path.join(extensionPath, 'parsers');
         this.workerScript = path.join(extensionPath, 'dist', 'parseWorker.js');
+        this.ledgerStore = storageDir ? new FileLedgerStore(path.join(storageDir, 'authorship-ledger.json')) : undefined;
+        this.ledger = this.ledgerStore?.ledger ?? new AuthorshipLedger();
     }
 
     async initParser(): Promise<void> {
@@ -218,6 +229,7 @@ export class AnalysisPipeline {
         for (const uri of deleted) {
             const p = rel(uri);
             if (!p) continue;
+            for (const k of this.ledger.paths()) if (k === p || k.startsWith(`${p}/`)) this.ledger.remove(k);
             if (state.manifests.delete(p)) {
                 state.store?.removeManifest(p);
                 dirty = true;
@@ -285,6 +297,12 @@ export class AnalysisPipeline {
             dirty = true;
         }
 
+        // Files changed outside the editor: re-find the ledger's ranges in their new text.
+        for (const p of changedPaths) {
+            if (!this.ledger.ranges(p).length) continue;
+            const text = await this.readWorkspaceFile(p);
+            if (text !== undefined) this.reconcile(p, text);
+        }
         if (!dirty) return undefined;
         // Edits move lines and commits add history: re-trace once things settle.
         this.refreshAuthorship(5000);
@@ -293,6 +311,8 @@ export class AnalysisPipeline {
 
     dispose(): void {
         clearTimeout(this.authorshipTimer);
+        clearTimeout(this.ledgerTimer);
+        this.ledgerStore?.flush();
         this.authorshipRun++; // cancels a run in flight
         this.closeWorkspace();
         this.parser?.dispose();
@@ -407,6 +427,8 @@ export class AnalysisPipeline {
                 return this.authorship(h)?.status() ?? this.authorshipState;
             case 'authorship':
                 return this.authorship(h)?.describe(str('key'));
+            case 'authorshipMark':
+                return this.mark(str('path'), Number(params.start), Number(params.end), str('as') as 'reviewed' | AuthorshipOrigin);
             default:
                 return undefined;
         }
@@ -434,9 +456,55 @@ export class AnalysisPipeline {
     /** The authorship index over the current hierarchy (rebuilt from the last git data). */
     private authorship(h: HierarchyIndex): AuthorshipIndex | undefined {
         const state = this.state;
-        if (!state || !this.authorshipData) return undefined;
-        this.authorshipIndex ??= new AuthorshipIndex(h, (p) => state.analyses.get(p)?.lines, this.authorshipData);
+        if (!state || (!this.authorshipData && this.ledger.paths().length === 0)) return undefined;
+        // The ledger (editor capture, reviews, corrections) over git's evidence, or alone without git.
+        this.authorshipIndex ??= new AuthorshipIndex(h, (p) => state.analyses.get(p)?.lines, withLedger(this.authorshipData, this.ledger));
         return this.authorshipIndex;
+    }
+
+    // ── the ledger ───────────────────────────────────────────────────────────
+
+    /** An edit captured in the editor (see authorship/capture.ts). */
+    recordEdit(rel: string, edit: LineEdit): void {
+        this.ledger.applyEdit(rel, edit);
+        this.ledgerChanged();
+    }
+
+    /** The file's text as saved: refresh the ranges' anchors (and re-find any that moved). */
+    reconcile(rel: string, text: string): void {
+        if (!this.ledger.ranges(rel).length) return;
+        this.ledger.reconcile(rel, text);
+        this.ledgerChanged();
+    }
+
+    /** "Mark as reviewed" / "Correct attribution" for lines of a file. */
+    async mark(rel: string, start: number, end: number, as: 'reviewed' | AuthorshipOrigin): Promise<{ marked: number }> {
+        const h = this.hierarchy();
+        const marked = markLines(this.ledger, (h && this.authorship(h)?.describe(`mod:${rel}`)?.ranges) ?? undefined, rel, start, end, as);
+        const text = await this.readWorkspaceFile(rel);
+        if (text !== undefined) this.ledger.reconcile(rel, text);
+        this.ledgerChanged(0);
+        return { marked };
+    }
+
+    /** A file's attributed ranges for the editor gutter, with what the hover says about each. */
+    fileAuthorship(rel: string): Array<AuthorshipRange & { time?: number; subject?: string }> {
+        const h = this.hierarchy();
+        const ranges = (h && this.authorship(h)?.describe(`mod:${rel}`)?.ranges) ?? [];
+        const commits = this.authorshipData?.commits;
+        const ledger = this.ledger.ranges(rel);
+        return ranges.map((r) => {
+            const c = r.commit ? commits?.get(r.commit) : undefined;
+            const l = ledger.find((x) => x.start <= r.start && x.end >= r.end && x.origin === r.origin);
+            return { ...r, ...(c ? { time: c.time, subject: c.subject } : l ? { time: l.time } : {}) };
+        });
+    }
+
+    private ledgerChanged(delayMs = 400): void {
+        this.ledgerStore?.changed();
+        this.authorshipIndex = undefined;
+        clearTimeout(this.ledgerTimer);
+        this.ledgerTimer = setTimeout(() => this.onAuthorshipChange?.(), delayMs);
     }
 
     /**
@@ -521,6 +589,14 @@ export class AnalysisPipeline {
     }
 
     /** Absolute path of a workspace-relative POSIX path. */
+    /** A file's workspace-relative POSIX path (any file in the workspace), or undefined outside it. */
+    relativePath(fsPath: string): string | undefined {
+        const state = this.state;
+        if (!state) return undefined;
+        const rel = toPosix(state.root, fsPath);
+        return rel && !rel.startsWith('..') ? rel : undefined;
+    }
+
     toAbsolute(rel: string): string | undefined {
         return this.state ? fromPosix(this.state.root, rel) : undefined;
     }

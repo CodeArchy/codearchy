@@ -137,6 +137,22 @@ suite('CodeArchy — Analysis in the extension host', function () {
         const decorated = api.engine('view', { request: {} }) as { nodes: Array<{ authorship?: unknown }> };
         assert.ok(decorated.nodes.every((n) => n.authorship), 'view nodes carry authorship counts for the lens');
 
+        // The ledger: a correction, then "Mark as reviewed" (engine and command), then back to unknown.
+        type Ranges = { ranges?: Array<{ start: number; end: number; origin: string }> };
+        const rangesOf = () => ((api.engine('authorship', { key: 'mod:web/src/index.ts' }) as Ranges).ranges ?? []).map((r) => `${r.start}-${r.end}:${r.origin}`);
+        try {
+            await api.engine('authorshipMark', { path: 'web/src/index.ts', start: 1, end: 2, as: 'ai' });
+            assert.deepStrictEqual(rangesOf(), ['1-2:ai']);
+            await vscode.commands.executeCommand('codearchy.authorship.markReviewed', 'web/src/index.ts', 2, 2);
+            assert.deepStrictEqual(rangesOf(), ['1-1:ai', '2-2:reviewed']);
+            const marked = (await api.engine('authorshipMark', { path: 'web/src/index.ts', start: 1, end: 2, as: 'reviewed' })) as { marked: number };
+            assert.strictEqual(marked.marked, 1);
+            assert.deepStrictEqual(rangesOf(), ['1-2:reviewed']);
+        } finally {
+            await api.engine('authorshipMark', { path: 'web/src/index.ts', start: 1, end: 2, as: 'unknown' });
+        }
+        assert.deepStrictEqual(rangesOf(), []);
+
         // Saving an authored tour writes .codearchy/tours/<slug>.json (anchored) and lists it; removed again after.
         const toursDir = path.join(folder!.uri.fsPath, '.codearchy');
         const existed = fs.existsSync(toursDir);

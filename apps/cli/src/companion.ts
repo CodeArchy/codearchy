@@ -204,6 +204,11 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
                 return snap.authorship?.status() ?? snap.authorshipStatus;
             case 'authorship':
                 return snap.authorship?.describe(str('key'));
+            case 'authorshipMark': {
+                const as = str('as');
+                if (!['reviewed', 'ai', 'human', 'unknown'].includes(as)) throw new Error('"as" must be reviewed, ai, human or unknown');
+                return workspace.markAuthorship(str('path'), Number(params.start), Number(params.end), as as 'reviewed' | 'ai' | 'human' | 'unknown');
+            }
         }
     }
 

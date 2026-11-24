@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import { COMPANION_PROTOCOL, type CompanionServerMessage } from '@codearchy/protocol';
 import { originAllowed, startCompanion, type Companion } from '../src/companion.js';
 import { Workspace } from '../src/workspace.js';
+import { AuthorshipLedger } from '@codearchy/core';
 
 const POLYGLOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/polyglot');
 const APP = 'https://app.codearchy.com';
@@ -125,6 +126,14 @@ describe('the Companion (codearchy serve)', () => {
         c.ws.close();
     });
 
+    it('without a ledger, marks are refused', async () => {
+        const c = await connect(companion.port, { origin: APP });
+        c.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));
+        await c.next();
+        expect((await request(c, 'authorshipMark', { path: 'rb/lib/billing.rb', start: 1, end: 1, as: 'reviewed' })).error).toMatch(/not kept here/);
+        c.ws.close();
+    });
+
     it('the token works once; the session key resumes', async () => {
         const again = await connect(companion.port, { origin: APP });
         again.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: 'one-time-token' }));
@@ -153,5 +162,39 @@ describe('the Companion (codearchy serve)', () => {
         await flood.next();
         for (let i = 0; i < 400; i++) flood.ws.send(JSON.stringify({ type: 'request', id: 10_000 + i, method: 'summary' }));
         expect((await flood.closed).code).toBe(4429);
+    });
+});
+
+describe('the Companion keeps review marks in its ledger', () => {
+    it('corrects and reviews lines, validates input, and shows them in authorship', async () => {
+        const ledger = new AuthorshipLedger();
+        let saved = 0;
+        const workspace = new Workspace(POLYGLOT, { ledger, onLedgerChange: () => saved++ });
+        const companion = await startCompanion(workspace, { version: 'test', token: 'ledger-token-0123456789' });
+        try {
+            const c = await connect(companion.port, { origin: APP });
+            c.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: 'ledger-token-0123456789' }));
+            await c.next();
+            let n = 0;
+            const call = async (method: string, params: Record<string, unknown> = {}) => {
+                c.ws.send(JSON.stringify({ type: 'request', id: ++n, method, params }));
+                return (await c.next()) as Extract<CompanionServerMessage, { type: 'response' }>;
+            };
+            for (let i = 0; i < 50 && ((await call('authorshipStatus')).result as { state: string }).state === 'computing'; i++) await new Promise((r) => setTimeout(r, 200));
+
+            expect((await call('authorshipMark', { path: 'rb/lib/billing.rb', start: 1, end: 3, as: 'ai' })).result).toEqual({ marked: 3 });
+            expect((await call('authorshipMark', { path: 'rb/lib/billing.rb', start: 2, end: 9, as: 'reviewed' })).result).toEqual({ marked: 2 });
+            const d = (await call('authorship', { key: 'mod:rb/lib/billing.rb' })).result as { ranges: Array<{ start: number; end: number; origin: string }>; counts: { ai: number; reviewed: number } };
+            expect(d.ranges.map((r) => `${r.start}-${r.end}:${r.origin}`)).toEqual(['1-1:ai', '2-3:reviewed']);
+            expect(d.counts).toMatchObject({ ai: 1, reviewed: 2 });
+            expect(saved).toBeGreaterThan(0);
+
+            expect((await call('authorshipMark', { path: '.env', start: 1, end: 1, as: 'human' })).error).toMatch(/not an indexed source file/);
+            expect((await call('authorshipMark', { path: 'rb/lib/billing.rb', start: 0, end: 1, as: 'human' })).error).toMatch(/line numbers/);
+            expect((await call('authorshipMark', { path: 'rb/lib/billing.rb', start: 1, end: 1, as: 'everything' })).error).toMatch(/must be reviewed/);
+            c.ws.close();
+        } finally {
+            await companion.close();
+        }
     });
 });
