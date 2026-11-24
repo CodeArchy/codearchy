@@ -6,7 +6,7 @@
 import type { EdgeExplanation, NodeDetails, NodeSummary, View, ViewRequest } from './view.js';
 import type { Flow, FlowSummary } from './flows.js';
 import type { Tour, TourDetails, TourSummary } from './tours.js';
-import type { AuthorshipStatus, NodeAuthorship } from './authorship.js';
+import type { AuthorshipOrigin, AuthorshipStatus, NodeAuthorship } from './authorship.js';
 
 export interface SearchResult {
     /** A hierarchy key (`mod:src/a.ts`, `dir:src/auth`, ...) to reveal. */
@@ -40,6 +40,12 @@ export interface EngineClient {
     authorshipStatus?(): Promise<AuthorshipStatus>;
     /** A node's authorship: counts, agents, AI-heavy files, timeline and commits. */
     authorship?(key: string): Promise<NodeAuthorship | undefined>;
+    /**
+     * A person's say on lines of a file (1-based, inclusive): `reviewed` marks
+     * AI-written lines as reviewed; an origin corrects the attribution. Kept in
+     * the host's ledger, never in the workspace's files.
+     */
+    authorshipMark?(path: string, start: number, end: number, as: 'reviewed' | AuthorshipOrigin): Promise<{ marked: number }>;
 }
 
 /** What opening a workspace produced. */

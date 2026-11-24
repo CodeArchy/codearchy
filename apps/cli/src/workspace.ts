@@ -7,8 +7,8 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AuthorshipIndex, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
-import type { AuthorshipStatus } from '@codearchy/protocol';
+import { AuthorshipIndex, markLines, withLedger, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
+import type { AuthorshipOrigin, AuthorshipStatus } from '@codearchy/protocol';
 import { computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
 import { MemoryCardStore, NodeSearch, Summarizer, type Card } from '@codearchy/ai';
 
@@ -46,6 +46,10 @@ export interface WorkspaceOptions {
     onAuthorship?: () => void;
     /** Skip authorship (no git commands at all). */
     noAuthorship?: boolean;
+    /** People's review marks and corrections (the Companion keeps it in its data folder); laid over git's evidence. */
+    ledger?: AuthorshipLedger;
+    /** Called after the ledger changes, to persist it. */
+    onLedgerChange?: () => void;
 }
 
 /** Changes under these never make the index stale. */
@@ -162,11 +166,44 @@ export class Workspace {
     private async traceAuthorship(snap: Snapshot, lines: Map<string, number | undefined>): Promise<void> {
         const result = await computeGitAuthorship(this.root, lines.keys(), { isCancelled: () => this.current !== snap });
         if (this.current !== snap) return;
-        if (!result.ok) snap.authorshipStatus = { state: 'unavailable', reason: result.reason };
-        else {
-            snap.authorship = new AuthorshipIndex(snap.index, (p) => lines.get(p), result.data);
-            snap.authorshipStatus = snap.authorship.status();
+        // Files may have changed since the ledger last saw them: re-find its ranges first.
+        const ledger = this.options.ledger;
+        for (const p of ledger?.paths() ?? []) {
+            const text = lines.has(p) ? await this.readFile(p) : undefined;
+            if (text === undefined) ledger!.remove(p);
+            else ledger!.reconcile(p, text);
         }
+        if (ledger?.takeChanged()) this.options.onLedgerChange?.();
+        this.authorshipInputs = { snap, lines, data: result.ok ? result.data : undefined };
+        if (!result.ok && !ledger?.paths().length) snap.authorshipStatus = { state: 'unavailable', reason: result.reason };
+        else this.rebuildAuthorship();
         this.options.onAuthorship?.();
+    }
+
+    /** The current snapshot's git evidence, kept so the ledger can be laid over it again after a mark. */
+    private authorshipInputs?: { snap: Snapshot; lines: Map<string, number | undefined>; data: AuthorshipData | undefined };
+
+    private rebuildAuthorship(): void {
+        const inputs = this.authorshipInputs;
+        if (!inputs || inputs.snap !== this.current) return;
+        const data = this.options.ledger ? withLedger(inputs.data, this.options.ledger) : inputs.data!;
+        inputs.snap.authorship = new AuthorshipIndex(inputs.snap.index, (p) => inputs.lines.get(p), data);
+        inputs.snap.authorshipStatus = inputs.snap.authorship.status();
+    }
+
+    /** "Mark as reviewed" / "Correct attribution" from the web app (through the Companion). */
+    async markAuthorship(path: string, start: number, end: number, as: 'reviewed' | AuthorshipOrigin): Promise<{ marked: number }> {
+        const ledger = this.options.ledger;
+        const snap = await this.snapshot();
+        if (!ledger) throw new Error('Authorship marks are not kept here');
+        if (!snap.index.node(`mod:${path}`)) throw new Error(`"${path}" is not an indexed source file`);
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) throw new Error('start and end must be line numbers');
+        const marked = markLines(ledger, snap.authorship?.describe(`mod:${path}`)?.ranges, path, start, end, as);
+        const text = await this.readFile(path);
+        if (text !== undefined) ledger.reconcile(path, text);
+        this.rebuildAuthorship();
+        if (ledger.takeChanged()) this.options.onLedgerChange?.();
+        this.options.onAuthorship?.();
+        return { marked };
     }
 }

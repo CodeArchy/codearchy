@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The Inspector** shows the breakdown by tool, the most AI-written files, a weekly timeline and the commits behind it.
   - **Your privacy:** lines without evidence are "unknown"; nothing is guessed. Results are totals and tool names only, never people. It runs only `git log` and `git blame` on this machine.
   - **Turn it off** with `codearchy.authorship.enabled`.
+- **Authorship as you work.**
+  - **Live capture:** CodeArchy records AI insertions as they happen in this editor: large insertions that aren't pastes, labelled *inferred*, because VS Code doesn't say which extension made an edit. When you change AI-written lines, they count as reviewed.
+  - **The gutter:** a thin bar marks AI-written lines in orange and reviewed lines in blue. Hover it for the tool, the date and the evidence.
+  - **Your say:** **Mark Selection as Reviewed** and **Correct Authorship of Selection**, from the editor's context menu or the hover.
+  - **Where it's kept:** in this workspace's storage on this machine, never in your files.
+  - **Settings:** `codearchy.authorship.capture` and `codearchy.authorship.gutter`.
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
 
