@@ -88,6 +88,31 @@ describe('Start Here', () => {
         for (const a of featured) for (const b of featured) if (a !== b) assert.ok(!index.contains(a.tin, b.tin), `${a.key} contains ${b.key}`);
     });
 
+    test('is about the product: samples, benchmarks and scripts are left out, and the core comes from where the code is', () => {
+        // A framework repo: the code is in packages/, with samples that have routes and a database, and repo scripts.
+        const files: Record<string, string> = {
+            'packages/core/router.ts': "import { guard } from '../common/guard';\nimport { inject } from './injector';\nexport function route() { guard(); inject(); }",
+            'packages/core/injector.ts': "import { meta } from '../common/meta';\nexport function inject() { meta(); }",
+            'packages/common/guard.ts': "import { meta } from './meta';\nexport function guard() { meta(); }",
+            'packages/common/meta.ts': 'export function meta() {}',
+            'packages/http/adapter.ts': "import { route } from '../core/router';\nexport function listen() { route(); }",
+            'sample/cats/src/routes.ts': "import express from 'express';\nimport { list } from './cats';\nconst r = express.Router();\nr.get('/cats', list);",
+            'sample/cats/src/cats.ts': "import { route } from '../../../packages/core/router';\nimport { Pool } from 'pg';\nexport function list() { route(); return new Pool().query('x'); }",
+            'sample/dogs/src/db/dogs.ts': "import { route } from '../../../../packages/core/router';\nexport function find() { route(); }",
+            'scripts/release/run.ts': "import { tag } from './tag';\nexport function run() { tag(); }",
+            'scripts/release/tag.ts': 'export function tag() {}',
+        };
+        const { index, flows } = workspace(files);
+        const tour = generateStartHere(index, flows);
+        const targets = tour.steps.map((s) => s.target.node ?? '');
+        for (const t of targets) assert.doesNotMatch(t, /sample|scripts/, `${t} is outside the product`);
+        assert.ok(!tour.steps.some((s) => s.title === 'Where things start'), 'the only routes are in samples');
+        assert.ok(!tour.steps.some((s) => s.title === 'The data layer'), "a sample's database isn't the product's data layer");
+        assert.match(tour.steps[0].body, /Most of the code is in \[packages\]/);
+        const core = tour.steps.filter((s) => s.title.startsWith('The core')).map((s) => s.target.node);
+        assert.ok(core.length > 0 && core.every((k) => k?.startsWith('dir:packages/')), core.join(', '));
+    });
+
     test('without flows or tests it still has the big picture', () => {
         const { index } = workspace({ 'a.ts': 'export function a() {}', 'b.ts': "import { a } from './a';\nexport function b() { a(); }" });
         const tour = generateStartHere(index);

@@ -201,6 +201,8 @@ export function buildHierarchy(graph: ArchitectureGraph, options: HierarchyOptio
 /**
  * Monorepos: packages sharing a parent folder (packages/*, apps/*, sample/*)
  * become one group component (`grp:<folder>`), the grouping the authors chose.
+ * A group (or a lone package) inside another group's folder goes in that group
+ * (sample/31-federation/{gateway,users} under sample/), not beside it.
  */
 function groupPackagesByFolder(packages: Draft[], shape: (items: Draft[], parentKey: string) => Draft[]): Draft[] {
     const byFolder = new Map<string, Draft[]>();
@@ -210,14 +212,28 @@ function groupPackagesByFolder(packages: Draft[], shape: (items: Draft[], parent
         list.push(p);
         byFolder.set(folder, list);
     }
+    const groupFolders = new Set([...byFolder].filter(([folder, members]) => folder !== '' && members.length >= 2).map(([folder]) => folder));
+    /** The nearest group folder strictly above this path, if any. */
+    const enclosing = (path: string): string | undefined => {
+        for (let f = dirname(path); f && f !== '.'; f = dirname(f)) if (groupFolders.has(f)) return f;
+        return undefined;
+    };
+    const members = new Map<string, Draft[]>([...groupFolders].map((f) => [f, []]));
     const out: Draft[] = [];
-    for (const [folder, members] of byFolder) {
-        if (folder === '' || members.length < 2) {
-            out.push(...members);
-            continue;
-        }
+    const place = (d: Draft) => {
+        const into = d.path ? enclosing(d.path) : undefined;
+        if (into) members.get(into)!.push(d);
+        else out.push(d);
+    };
+    for (const [folder, list] of byFolder) {
+        if (groupFolders.has(folder)) members.get(folder)!.push(...list);
+        else list.forEach(place);
+    }
+    // Deepest first, so a nested group is complete before its enclosing group is shaped.
+    const deepestFirst = [...groupFolders].sort((a, b) => b.split('/').length - a.split('/').length || (a < b ? -1 : 1));
+    for (const folder of deepestFirst) {
         const key = `grp:${folder}`;
-        out.push({ key, kind: 'component', name: folder, path: folder, children: shape(members, key) });
+        place({ key, kind: 'component', name: folder, path: folder, children: shape(members.get(folder)!, key) });
     }
     return out;
 }
