@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest';
-import { SpeechEngine, type SpeechMark } from '../src/speech/engine.js';
+import { describe, expect, test, vi } from 'vitest';
+import { SpeechEngine, WebAudioSink, type SpeechMark } from '../src/speech/engine.js';
 import { FakeSink, fakeVoice, memoryStore, settle } from './speechFakes.js';
 
 const STEP = 'Where things start. The system is entered through [routes.ts](node:mod:routes) and 1 command, which runs the nightly import.';
@@ -170,5 +170,32 @@ describe('speech engine', () => {
         expect(spoken.join(' ')).toBe('Where things start. The system is entered through routes.ts and 1 command, which runs the nightly import.');
         expect(marks.flat()).toEqual(['mod:routes']);
         expect(ended).toBe(true);
+    });
+
+    test('a resume of the audio device that fails is never left unhandled (no audio device; Firefox rejects it when the page navigates away)', async () => {
+        let resumes = 0;
+        class NoDevice {
+            state = 'suspended';
+            currentTime = 0;
+            resume(): Promise<void> {
+                resumes++;
+                return Promise.reject(new DOMException('Navigated away from page', 'InvalidStateError'));
+            }
+        }
+        const unhandled: unknown[] = [];
+        const record = (e: unknown) => unhandled.push(e);
+        process.on('unhandledRejection', record);
+        vi.stubGlobal('AudioContext', NoDevice);
+        try {
+            const sink = new WebAudioSink();
+            sink.now();
+            sink.now();
+            await new Promise((r) => setTimeout(r, 20));
+            expect(resumes).toBe(2); // still asked each time it's suspended (a later gesture may allow it)
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off('unhandledRejection', record);
+            vi.unstubAllGlobals();
+        }
     });
 });

@@ -104,7 +104,9 @@ export class WebAudioSink implements AudioSink {
 
     private context(): AudioContext {
         this.ctx ??= new AudioContext({ latencyHint: 'interactive' });
-        if (this.ctx.state === 'suspended') void this.ctx.resume();
+        // Asked each time it's suspended (a later gesture may allow it), and never left unhandled: without an audio
+        // device it never settles, and Firefox rejects a pending one when the page navigates away.
+        if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
         return this.ctx;
     }
 
