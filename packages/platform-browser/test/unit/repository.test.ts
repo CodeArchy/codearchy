@@ -40,7 +40,8 @@ function fakeGitHub(opts: { status?: number; rateLimited?: boolean } = {}) {
         if (opts.status) return new Response('{}', { status: opts.status });
         if (url === 'https://api.github.com/repos/acme/shop') return Response.json({ default_branch: 'main' });
         if (url === 'https://api.github.com/repos/acme/shop/git/trees/main?recursive=1') return Response.json({ tree, truncated: false });
-        if (url.startsWith('https://raw.githubusercontent.com/acme/shop/main/')) return new Response(`// ${url.slice(49)}`);
+        const u = new URL(url);
+        if (u.host === 'raw.githubusercontent.com' && u.pathname.startsWith('/acme/shop/main/')) return new Response(`// ${u.pathname.slice('/acme/shop/main/'.length)}`);
         return new Response('', { status: 404 });
     }) as unknown as typeof globalThis.fetch;
     return { fetch, asked };
@@ -53,7 +54,7 @@ describe('downloadRepository (GitHub)', () => {
         const repo = await downloadRepository('https://github.com/acme/shop', { maxFileSize: 1_000_000, fetch, onProgress: (c, t) => progress.push(`${c}/${t}`) });
         expect(repo.name).toBe('acme/shop');
         expect(repo.entries.map(([p]) => p)).toEqual(['package.json', 'src/index.ts', 'src/util.ts']);
-        expect(asked.filter((u) => u.startsWith('https://api.github.com'))).toHaveLength(2);
+        expect(asked.filter((u) => new URL(u).host === 'api.github.com')).toHaveLength(2);
         // Never fetched: too big, not code, excluded folders.
         expect(asked.some((u) => /big\.ts|logo\.png|node_modules|dist\//.test(u))).toBe(false);
         expect(progress[0]).toBe('0/3');
