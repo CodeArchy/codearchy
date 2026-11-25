@@ -65,8 +65,8 @@ export interface Utterance {
 
 /** Where audio plays: scheduled back to back, on one clock. */
 export interface AudioSink {
-    /** Plays `audio` after everything already scheduled; when it starts and ends (sink time, seconds). */
-    schedule(audio: VoiceAudio): { start: number; end: number };
+    /** Plays `audio` after everything already scheduled; when it starts and ends (sink time, seconds), and how to silence just it. */
+    schedule(audio: VoiceAudio): { start: number; end: number; cancel(): void };
     now(): number;
     /** Runs `fn` at sink time `t` (now if it's past). */
     at(t: number, fn: () => void): void;
@@ -83,7 +83,8 @@ export interface AudioSink {
  */
 export class WebAudioSink implements AudioSink {
     private ctx?: AudioContext;
-    private readonly sources = new Set<AudioBufferSourceNode>();
+    /** Scheduled sources, with when each ends. */
+    private readonly sources = new Map<AudioBufferSourceNode, number>();
     private readonly timers = new Set<ReturnType<typeof setTimeout>>();
     tail = 0;
 
@@ -114,7 +115,7 @@ export class WebAudioSink implements AudioSink {
         return this.context().currentTime;
     }
 
-    schedule(audio: VoiceAudio): { start: number; end: number } {
+    schedule(audio: VoiceAudio): { start: number; end: number; cancel(): void } {
         const c = this.context();
         const buf = c.createBuffer(1, audio.pcm.length, audio.sampleRate);
         buf.copyToChannel(audio.pcm as Float32Array<ArrayBuffer>, 0);
@@ -124,9 +125,19 @@ export class WebAudioSink implements AudioSink {
         const start = Math.max(c.currentTime + 0.02, this.tail);
         src.start(start);
         this.tail = start + buf.duration;
-        this.sources.add(src);
+        this.sources.set(src, this.tail);
         src.onended = () => this.sources.delete(src);
-        return { start, end: this.tail };
+        return { start, end: this.tail, cancel: () => this.silence(src) };
+    }
+
+    private silence(src: AudioBufferSourceNode): void {
+        if (!this.sources.delete(src)) return;
+        try {
+            src.stop();
+        } catch {
+            // not started yet
+        }
+        this.tail = Math.max(0, ...this.sources.values());
     }
 
     at(t: number, fn: () => void): void {
@@ -141,7 +152,7 @@ export class WebAudioSink implements AudioSink {
     }
 
     stop(): void {
-        for (const s of this.sources) {
+        for (const s of this.sources.keys()) {
             try {
                 s.stop();
             } catch {
@@ -201,6 +212,10 @@ class Run implements Utterance {
     private markDone!: () => void;
     /** Phrases are made by the host and kept (false: spoken by the system voice). */
     private readonly kept: boolean;
+    /** Its audio in the sink (silenced when it's cancelled). */
+    private readonly slots: Array<{ cancel(): void }> = [];
+    /** The system voice is saying one of its phrases. */
+    private speaking = false;
 
     constructor(
         private readonly engine: SpeechEngine,
@@ -226,9 +241,18 @@ class Run implements Utterance {
         this.wake?.();
     }
 
+    /**
+     * Silent at once (its scheduled audio stops, and the system voice if it's saying this), but what it asked for
+     * is still made and kept, in the background: said again, it plays at once.
+     */
     cancel(): void {
         if (this.cancelled) return;
         this.cancelled = true;
+        for (const slot of this.slots) slot.cancel();
+        this.slots.length = 0;
+        if (this.speaking) this.engine.voice.stop();
+        // Asked for in the background before its own (urgent) interest goes, so nothing is dropped in between.
+        if (this.kept) for (const item of this.items) void this.engine.request(item.chunk.text, 'later');
         this.abort.abort();
         this.wake?.();
         this.markScheduled();
@@ -268,6 +292,7 @@ class Run implements Utterance {
                 if (this.cancelled) return;
                 if (audio) {
                     const slot = sink.schedule(audio);
+                    this.slots.push(slot);
                     end = slot.end;
                     sink.at(slot.start, () => this.mark(item));
                     continue;
@@ -277,6 +302,7 @@ class Run implements Utterance {
             if (sink.tail > 0 && sink.tail > sink.now()) await new Promise<void>((r) => sink.at(sink.tail, r));
             if (this.cancelled) return;
             this.mark(item);
+            this.speaking = true;
             await new Promise<void>((resolve) =>
                 this.engine.voice.speak(item.chunk.text, {
                     onEnd: resolve,
@@ -286,6 +312,7 @@ class Run implements Utterance {
                     },
                 })
             );
+            this.speaking = false;
             if (this.cancelled) return;
         }
         this.markScheduled();

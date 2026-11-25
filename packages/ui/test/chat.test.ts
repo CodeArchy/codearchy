@@ -27,6 +27,27 @@ function scriptedAi() {
 }
 
 describe('narrated answers', () => {
+    test('narration stopped part way: silent at once, but the whole answer is still made and kept, so its replay is instant', async () => {
+        const { voice, asked: made } = fakeVoice();
+        const sink = new FakeSink();
+        const speech = new SpeechEngine(voice, { store: memoryStore(), sink });
+        const { ai } = scriptedAi();
+        const session = new ChatSession({ ai, workspace: 'shop', speech, storage: memoryKeyValue() });
+        await settle();
+        session.ask('Where does a request enter?');
+        await new Promise((r) => setTimeout(r, 0));
+        session.stop(); // the narration is closed while the answer is still being written
+        expect(session.snapshot().playing).toBeUndefined();
+        expect(sink.played.every((p) => p.silenced)).toBe(true);
+        for (let i = 0; i < 10; i++) await settle(); // the answer finishes; its walkthrough is made in the background
+        expect(session.snapshot().turns[0]!.done).toBe(true);
+        const before = made.length;
+        session.play(session.snapshot().turns[0]!.id);
+        await settle();
+        expect(made.length).toBe(before); // nothing left to make
+        expect(made.map((m) => m.text)).toContain('Orders then go to the order service, which writes them to the database.');
+    });
+
     test('an acknowledgement at once, the answer spoken as it is written, the canvas following each part it cites', async () => {
         const { voice, asked: made } = fakeVoice();
         const sink = new FakeSink();
@@ -40,7 +61,7 @@ describe('narrated answers', () => {
         await settle();
         expect(ACKNOWLEDGEMENTS.some((a) => a.startsWith(made[0]!.text))).toBe(true); // the first thing made is the acknowledgement
         // The answer's first phrase was asked for while the answer was still arriving (before `done`).
-        expect(made.map((m) => m.text)).toContain('Requests enter through routes.ts,');
+        expect(made.map((m) => m.text)).toContain('Requests enter through routes.ts, which hands each one to a handler.');
         expect(session.snapshot().playing?.turn).toBe(session.snapshot().turns[0]!.id);
         // Play it out: the canvas follows the voice, in order.
         for (let i = 0; i < 20; i++) {

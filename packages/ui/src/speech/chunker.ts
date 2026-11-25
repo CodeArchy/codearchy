@@ -1,11 +1,11 @@
 /**
- * Text to speech chunks: what the voice says, a phrase at a time.
+ * Text to speech chunks: what the voice says, a sentence at a time.
  *
- * Kokoro makes audio at roughly 1.5x real time on a laptop (GPU or native
- * CPU alike), and the time to make a phrase grows with its length. So speech
- * starts with a short phrase (fast first sound) and each later chunk is
- * allowed to grow by less than that margin, which keeps synthesis ahead of
- * playback: once the voice starts, it doesn't stop to wait.
+ * Read like a person reads: a chunk is a whole sentence (a list item or a
+ * paragraph's last line counts as one). Kokoro gives each chunk its own
+ * intonation, so a sentence is never cut at a comma: that would end every
+ * clause like a full stop. Only a sentence too long for the model (~300
+ * characters) is split, at its strongest break (; : — before a comma).
  *
  * Input is the markdown the UI shows (answers, tour steps): links keep their
  * label and record their node key (a "mark", so the canvas can follow the
@@ -23,25 +23,11 @@ export interface SpeechChunk {
     keys: string[];
 }
 
-/**
- * Chunk limits. The first chunk is short: it decides how soon the voice
- * starts. Synthesis is serial and ~1.5x faster than speech, so chunk k is
- * ready in time if it's at most about `first + 0.5 × everything before it`;
- * 0.42 keeps a margin (per-call overhead, a slower machine).
- */
-const FIRST_MAX = 32;
-const AHEAD = 0.42;
-const MAX = 240;
+/** Longer than this, a sentence is split (Kokoro reads up to ~510 phonemes at a time). */
+const LONG = 300;
 /** A sentence may end a chunk once it has this many characters. */
 const SENTENCE_MIN = 4;
 const ABBREVIATIONS = new Set(['e.g', 'i.e', 'etc', 'vs', 'mr', 'mrs', 'ms', 'dr', 'fig', 'approx', 'cf', 'no']);
-
-/** Where a chunk may end: a clause from `clauseMin` characters on, a space beyond `hardMax`, a sentence end within `slack` after it. */
-function limits(said: { first: number; total: number } | undefined): { clauseMin: number; hardMax: number; slack: number } {
-    if (!said) return { clauseMin: 10, hardMax: FIRST_MAX, slack: 14 };
-    const hardMax = Math.min(MAX, Math.max(28, Math.round(said.first + AHEAD * said.total)));
-    return { clauseMin: Math.max(12, Math.round(hardMax * 0.5)), hardMax, slack: Math.min(24, Math.round(hardMax / 3)) };
-}
 
 interface Label {
     start: number;
@@ -56,8 +42,6 @@ export class SpeechChunker {
     private plain = '';
     /** Link labels in `plain` (keys for marks; cuts never fall inside one). */
     private labels: Label[] = [];
-    /** What has been chunked so far: the first chunk's length and the total (the next may grow from them). */
-    private said: { first: number; total: number } | undefined;
     private lineStart = true;
     private inFence = false;
 
@@ -199,40 +183,24 @@ export class SpeechChunker {
         const out: SpeechChunk[] = [];
         for (;;) {
             const p = this.plain;
-            const { clauseMin, hardMax, slack } = limits(this.said);
             const inLabel = (x: number) => this.labels.some((l) => x > l.start && x < l.end);
             let cutAt = -1;
-            let lastSpace = -1;
             let waiting = false;
             for (let x = 0; x < p.length; x++) {
                 const c = p[x]!;
-                if (c === ' ' && !inLabel(x)) lastSpace = x;
-                const nextKnown = x + 1 < p.length;
-                const nextSpace = nextKnown ? /\s/.test(p[x + 1]!) : final;
                 if (c === '.' || c === '!' || c === '?') {
-                    if (!nextKnown && !final) {
-                        waiting = true;
+                    if (x + 1 >= p.length && !final) {
+                        waiting = true; // a sentence end, or "routes.ts"? The next character tells.
                         break;
                     }
+                    const nextSpace = x + 1 >= p.length || /\s/.test(p[x + 1]!);
                     if (nextSpace && x + 1 >= SENTENCE_MIN && !inLabel(x) && !abbreviation(p, x)) {
                         cutAt = x + 1;
                         break;
                     }
-                } else if (c === ',' || c === ';' || c === ':' || c === '—') {
-                    if (!nextKnown && !final) {
-                        waiting = true;
-                        break;
-                    }
-                    if (nextSpace && x + 1 >= clauseMin && !inLabel(x)) {
-                        cutAt = x + 1;
-                        break;
-                    }
                 }
-                if (x >= hardMax && lastSpace > clauseMin / 2) {
-                    // Too long: end at a sentence or clause just ahead, or else at the last space.
-                    const ahead = endWithin(p, x + 1, x + slack, final, inLabel);
-                    if (ahead === 'wait') waiting = true;
-                    else cutAt = ahead ?? lastSpace;
+                if (x + 1 >= LONG) {
+                    cutAt = longCut(p, LONG, inLabel);
                     break;
                 }
             }
@@ -248,26 +216,23 @@ export class SpeechChunker {
             const shift = cutAt + lead;
             this.plain = rest.slice(lead);
             this.labels = this.labels.filter((l) => l.end > cutAt).map((l) => ({ ...l, start: Math.max(0, l.start - shift), end: l.end - shift }));
-            if (/[\p{L}\p{N}]/u.test(text)) {
-                out.push({ text, keys: [...new Set(keys)] });
-                this.said = this.said ? { first: this.said.first, total: this.said.total + text.length } : { first: text.length, total: text.length };
-            }
+            if (/[\p{L}\p{N}]/u.test(text)) out.push({ text, keys: [...new Set(keys)] });
         }
         return out;
     }
 }
 
-/** A sentence or clause end in [from, to): its cut position, none, or 'wait' (the text doesn't reach `to` yet). */
-function endWithin(p: string, from: number, to: number, final: boolean, inLabel: (x: number) => boolean): number | undefined | 'wait' {
-    for (let y = from; y < to; y++) {
-        if (y >= p.length) return final ? undefined : 'wait';
-        const c = p[y]!;
-        if ('.!?,;:—'.includes(c) && !inLabel(y)) {
-            if (y + 1 >= p.length) return final ? y + 1 : 'wait';
-            if (/\s/.test(p[y + 1]!) && !(c === '.' && abbreviation(p, y))) return y + 1;
-        }
+/**
+ * Where a sentence too long for one go is split: after its last strong break (; : —) in the second half of
+ * `limit`, else its last comma there, else its last space (never inside a link's label).
+ */
+function longCut(p: string, limit: number, inLabel: (x: number) => boolean): number {
+    const min = Math.floor(limit / 2);
+    for (const marks of [';:—', ',']) {
+        for (let y = limit - 2; y >= min; y--) if (marks.includes(p[y]!) && /\s/.test(p[y + 1]!) && !inLabel(y)) return y + 1;
     }
-    return undefined;
+    for (let y = limit - 1; y >= min; y--) if (p[y] === ' ' && !inLabel(y)) return y;
+    return limit;
 }
 
 function abbreviation(text: string, dot: number): boolean {
