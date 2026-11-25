@@ -49,8 +49,16 @@ describe('computeGitAuthorship', () => {
 
     test('people ownership: every file blamed, lines counted by who last changed them (by email; bots and uncommitted lines left out)', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearchy-owners-'));
-        const as = (name: string, email: string, ...args: string[]) =>
-            execFileSync('git', ['-c', `user.name=${name}`, '-c', `user.email=${email}`, '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8' });
+        // Each commit a day after the last (git records author time to the second; same-second commits would tie).
+        let day = 0;
+        const as = (name: string, email: string, ...args: string[]) => {
+            const date = `${new Date(Date.UTC(2026, 0, 1 + day++)).toISOString()}`;
+            return execFileSync('git', ['-c', `user.name=${name}`, '-c', `user.email=${email}`, '-c', 'commit.gpgsign=false', ...args], {
+                cwd: dir,
+                encoding: 'utf8',
+                env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+            });
+        };
         try {
             as('Ada', 'ada@example.com', 'init', '-q', '-b', 'main');
             fs.writeFileSync(path.join(dir, 'a.ts'), 'one\ntwo\nthree\nfour\n');
