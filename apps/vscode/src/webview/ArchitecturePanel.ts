@@ -387,10 +387,15 @@ export class ArchitecturePanel {
         break;
 
       case WebviewMessageType.VoiceConfigPersist: {
-        const vcPayload = message.payload as { kokoroActivated?: boolean };
-        if (vcPayload && typeof vcPayload === 'object') {
+        // The voice choice, for every project (injected into the page as window.__CODEARCHY_VOICE_CONFIG).
+        const p = message.payload as { engine?: unknown; voiceId?: unknown; rate?: unknown } | null;
+        if (p && typeof p === 'object') {
           const current = (this.extensionContext.globalState.get<object>('codearchy.voiceConfig') ?? {}) as Record<string, unknown>;
-          this.extensionContext.globalState.update('codearchy.voiceConfig', { ...current, ...vcPayload });
+          const next: Record<string, unknown> = { ...current };
+          if (p.engine === 'kokoro' || p.engine === 'web-speech') next.engine = p.engine;
+          if (p.voiceId === null || (typeof p.voiceId === 'string' && p.voiceId.length < 200)) next.voiceId = p.voiceId;
+          if (typeof p.rate === 'number' && p.rate >= 0.5 && p.rate <= 2) next.rate = p.rate;
+          void this.extensionContext.globalState.update('codearchy.voiceConfig', next);
         }
         break;
       }

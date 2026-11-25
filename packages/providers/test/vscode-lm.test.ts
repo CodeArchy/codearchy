@@ -138,4 +138,21 @@ describe('vscode-lm', () => {
         const [cancelled] = await collect(vscodeLm(slow.api).chat({ model: 'm', messages: [] }, controller.signal));
         expect(cancelled).toMatchObject({ type: 'error', error: { code: 'cancelled' } });
     });
+
+    it('a model only VS Code itself may use is never offered again, and the request is answered by the next best model', async () => {
+        const { api, sent } = fakeVscode([
+            { id: 'copilot-dictation-cleanup-luna', maxInputTokens: 1_000_000, fail: new Error('Model copilot-dictation-cleanup-luna is only available to VS Code core.') },
+            { id: 'gpt-4.1', maxInputTokens: 128_000, stream: [] },
+            { id: 'claude-sonnet', maxInputTokens: 200_000, stream: [] },
+        ]);
+        const lm = vscodeLm(api);
+        expect((await lm.listModels()).map((m) => m.id)).toContain('copilot-dictation-cleanup-luna');
+        const events = await collect(lm.chat({ model: 'copilot-dictation-cleanup-luna', messages: [{ role: 'user', content: 'Hi' }] }));
+        expect(events.at(-1)?.type).toBe('done');
+        expect(sent.map((s) => s.model)).toEqual(['copilot-dictation-cleanup-luna', 'claude-sonnet']);
+        expect((await lm.listModels()).map((m) => m.id)).toEqual(['gpt-4.1', 'claude-sonnet']);
+        // Asked for it again (a cached choice): straight to the alternative.
+        await collect(lm.chat({ model: 'copilot-dictation-cleanup-luna', messages: [{ role: 'user', content: 'Hi' }] }));
+        expect(sent.map((s) => s.model)).toEqual(['copilot-dictation-cleanup-luna', 'claude-sonnet', 'claude-sonnet']);
+    });
 });

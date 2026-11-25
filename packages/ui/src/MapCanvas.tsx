@@ -71,7 +71,7 @@ export function AuthorshipBar({ shares }: { shares: Record<AuthorshipOrigin, num
 
 const NodeCard = memo(function NodeCard({ data, selected }: NodeProps<CardNode>) {
     const v = data.node.view!;
-    const badge = lensBadge(v.metrics, data.lens, v.kind, v.authorship);
+    const badge = lensBadge(v.metrics, data.lens, v.kind, v.authorship, v.owner);
     const classes = [
         'ca-node',
         `ca-kind-${v.kind}`,

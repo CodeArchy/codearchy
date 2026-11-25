@@ -254,7 +254,12 @@
                 "codearchy.authorship.enabled": {
                     "type": "boolean",
                     "default": true,
-                    "markdownDescription": "Show which code AI tools wrote (the Authorship lens), from the evidence AI tools leave in git history: `Co-authored-by` trailers, coding-agent bot commits and tool markers. Read-only (`git log`, `git blame`); nothing leaves this machine, and no person is named."
+                    "markdownDescription": "Show which code AI tools wrote (the Authorship lens), from the evidence AI tools leave in git history: `Co-authored-by` trailers, coding-agent bot commits and tool markers. Read-only (`git log`, `git blame`); nothing leaves this machine, and no person is named (people ownership is `codearchy.authorship.people`)."
+                },
+                "codearchy.authorship.people": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show who owns the code (the Ownership lens and the Inspector's Owners): each part's lines by the person who last changed them, from `git blame` on every file (bots and uncommitted lines left out; `.mailmap` respected). Names come from your git history and stay on this machine; they are never sent to AI models. Turn off to keep people's names out of CodeArchy."
                 },
                 "codearchy.authorship.capture": {
                     "type": "boolean",

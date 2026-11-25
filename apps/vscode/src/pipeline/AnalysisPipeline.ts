@@ -592,7 +592,8 @@ export class AnalysisPipeline {
         const started = Date.now();
         await this.readAgentLogs(state.root);
         if (run !== this.authorshipRun || state !== this.state) return;
-        const result = await computeGitAuthorship(state.root, state.analyses.keys(), { isCancelled: () => run !== this.authorshipRun });
+        const people = vscode.workspace.getConfiguration('codearchy').get<boolean>('authorship.people', true);
+        const result = await computeGitAuthorship(state.root, state.analyses.keys(), { people, isCancelled: () => run !== this.authorshipRun });
         if (run !== this.authorshipRun || state !== this.state) return;
         if (!result.ok) {
             this.authorshipData = undefined;
@@ -600,7 +601,7 @@ export class AnalysisPipeline {
         } else {
             this.authorshipData = result.data;
             const s = result.data.stats;
-            this.log(`authorship: ${s.aiCommits} of ${s.commits} commits carry AI markers; ${s.blamedFiles} files traced in ${Date.now() - started} ms${result.truncated ? ' (file limit reached)' : ''}`);
+            this.log(`authorship: ${s.aiCommits} of ${s.commits} commits carry AI markers; ${s.blamedFiles} files traced${s.people !== undefined ? `; ${s.people} people own today's lines` : ''} in ${Date.now() - started} ms${result.truncated ? ' (file limit reached)' : ''}`);
         }
         this.authorshipIndex = undefined;
         this.onAuthorshipChange?.();

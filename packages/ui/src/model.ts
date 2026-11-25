@@ -3,7 +3,7 @@
  * containers (expanded nodes), leaf nodes, external nodes for port stubs,
  * and edges with a visual weight. No React, no DOM: unit-tested directly.
  */
-import type { AuthorshipCounts, AuthorshipOrigin, NodeMetrics, View, ViewNode } from '@codearchy/protocol';
+import type { AuthorshipCounts, AuthorshipOrigin, NodeMetrics, NodeOwner, View, ViewNode } from '@codearchy/protocol';
 
 export type MapNodeType = 'container' | 'node' | 'external';
 
@@ -144,14 +144,18 @@ export function visibleEdges(model: MapModel, options: { all?: boolean; limit?: 
 
 // ─── lenses ─────────────────────────────────────────────────────────────────
 
-export type LensId = 'dependencies' | 'health' | 'tests' | 'authorship';
+export type LensId = 'dependencies' | 'health' | 'tests' | 'authorship' | 'ownership';
 
 export const LENSES: Array<{ id: LensId; label: string; description: string }> = [
     { id: 'dependencies', label: 'Dependencies', description: 'Edge thickness is the number of dependencies.' },
     { id: 'health', label: 'Health', description: 'Files in dependency cycles, hubs (very highly connected files) and orphans (no dependencies either way).' },
     { id: 'tests', label: 'Tests', description: 'Share of code files that at least one test file depends on.' },
     { id: 'authorship', label: 'Authorship', description: 'Share of lines AI tools wrote (from Co-authored-by trailers, bot commits and tool markers in git history), and how many were since changed by people.' },
+    { id: 'ownership', label: 'Ownership', description: 'Who owns the code: each part’s main owner and their share of its lines (whoever last changed each line, from git blame). ⚠ marks parts where one person holds most of the lines.' },
 ];
+
+/** One person holding at least this share (and more than half on their own) is a risk worth flagging. */
+const SOLE_OWNER = 0.75;
 
 /** Authorship origins in display order, with labels (colour never carries the value alone). */
 export const AUTHORSHIP_ORIGINS: Array<{ origin: AuthorshipOrigin; label: string; title: string }> = [
@@ -198,7 +202,17 @@ export interface LensBadge {
 /** AI share (unchanged AI lines) → ordinal step: >0, ≥10%, ≥25%, ≥50%, ≥75%. */
 const AI_STEPS = [0, 0.1, 0.25, 0.5, 0.75];
 
-export function lensBadge(m: NodeMetrics, lens: LensId, kind: string, authorship?: AuthorshipCounts): LensBadge | undefined {
+export function lensBadge(m: NodeMetrics, lens: LensId, kind: string, authorship?: AuthorshipCounts, owner?: NodeOwner): LensBadge | undefined {
+    if (lens === 'ownership') {
+        if (!owner) return undefined;
+        const others = owner.people - 1;
+        const sole = owner.busFactor === 1 && owner.share >= SOLE_OWNER * 100 && kind !== 'module';
+        const title =
+            `${owner.name} last changed ${owner.share}% of the lines here` +
+            (others > 0 ? `; ${others} other ${others === 1 ? 'person' : 'people'} the rest` : '') +
+            (owner.busFactor ? `. ${owner.busFactor === 1 ? 'One person holds' : `${owner.busFactor} people together hold`} more than half.` : '');
+        return { ...(sole ? { level: 'warning' as const } : {}), text: `${sole ? '⚠ ' : ''}${owner.name} ${owner.share}%${others > 0 ? ` · +${others}` : ''}`, title };
+    }
     if (lens === 'authorship') {
         if (!authorship) return undefined;
         const total = authorship.ai + authorship.reviewed + authorship.human + authorship.unknown;

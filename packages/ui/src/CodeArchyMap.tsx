@@ -224,6 +224,17 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const authorshipWhy = !client.authorshipStatus
         ? 'Authorship comes from git history. In the browser, connect the Companion (codearchy serve) on a git clone; VS Code reads it directly.'
         : authorshipState?.reason;
+    /** The Ownership lens: the same git history, plus people ownership being on (the status counts people then). */
+    const hasOwnership = !!view?.nodes.some((n) => n.owner);
+    const ownershipNote = hasOwnership
+        ? undefined
+        : authorshipState?.state === 'ready' && authorshipState.people === undefined
+          ? 'turned off'
+          : (authorshipNote ?? 'none in this view');
+    const ownershipWhy =
+        authorshipState?.state === 'ready' && authorshipState.people === undefined ? 'People ownership is turned off (in VS Code: the codearchy.authorship.people setting).' : authorshipWhy;
+    const lensOff = (id: LensId) => (id === 'authorship' ? authorshipNote : id === 'ownership' ? ownershipNote : undefined);
+    const lensWhy = (id: LensId) => (id === 'authorship' ? authorshipWhy : id === 'ownership' ? ownershipWhy : undefined);
 
     // Inspector data for the selection.
     useEffect(() => {
@@ -532,13 +543,14 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </div>
                 <label className="ca-lens" hidden={PAGE_MODES.has(mode)}>
                     Lens{' '}
-                    <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={lens === 'authorship' || !authorshipNote ? LENSES.find((l) => l.id === lens)?.description : authorshipWhy ?? LENSES.find((l) => l.id === lens)?.description}>
+                    <select value={lens} onChange={(e) => setLens(e.target.value as LensId)} title={LENSES.find((l) => l.id === lens)?.description}>
                         {LENSES.map((l) => {
-                            const off = l.id === 'authorship' && !!authorshipNote && lens !== 'authorship';
+                            const note = lensOff(l.id);
+                            const off = !!note && lens !== l.id;
                             return (
-                                <option key={l.id} value={l.id} disabled={off} title={off ? authorshipWhy : l.description}>
+                                <option key={l.id} value={l.id} disabled={off} title={off ? (lensWhy(l.id) ?? l.description) : l.description}>
                                     {l.label}
-                                    {off ? ` (${authorshipNote})` : ''}
+                                    {off ? ` (${note})` : ''}
                                 </option>
                             );
                         })}

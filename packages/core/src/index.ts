@@ -42,7 +42,7 @@ export { classifyFiles, isManifest, isPackageMarker, isTourFile, TOURS_DIR, DEFA
 export { FlowIndex, FLOW_LIMITS, lastSegment } from './flows/trace.js';
 export { displayName, generateStartHere, START_HERE_ID, type StartHereOptions } from './tours/startHere.js';
 export { classifyCommit, subjectOf, type AuthorshipRule, type CommitAttribution, type CommitInfo } from './authorship/commits.js';
-export { AuthorshipIndex, emptyCounts, rangesFromBlame, total as authorshipTotal, weekOf, type AttributedCommit, type AuthorshipData } from './authorship/index.js';
+export { AuthorshipIndex, emptyCounts, rangesFromBlame, total as authorshipTotal, weekOf, type AttributedCommit, type AuthorshipData, type FileOwner } from './authorship/index.js';
 export { lineCount } from './flows/enrich.js';
 export { addCounts, countLines, newDependencies, partLabel, partOf, renderBranchReport } from './authorship/report.js';
 export { NOTES_REF, NOTE_VERSION, parseNote, projectNotes, serializeNote, type AuthorshipNote, type BlameRun, type NoteRange } from './authorship/notes.js';
