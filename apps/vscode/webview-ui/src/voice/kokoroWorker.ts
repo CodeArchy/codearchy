@@ -471,7 +471,7 @@ async function generateOnce(
 function splitTextForSynthesis(text: string): string[] {
     const trimmed = text.trim();
     if (!trimmed) return [];
-    const MAX = 240; // safe under Kokoro's ~512 token cap
+    const MAX = 300; // whole sentences up to this (same as the speech engine); safe under Kokoro's ~512 token cap
     // First pass: sentence split on terminal punctuation, keeping the
     // delimiter so prosody stays natural.
     const sentences = trimmed

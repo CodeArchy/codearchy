@@ -59,6 +59,8 @@ export class ChatSession {
     private live?: { turn: string; utterance?: Utterance };
     /** The model has this conversation's history (false after a load: the stored turns go with the next question). */
     private primed = false;
+    /** Answers whose narration was started: once written, the whole answer is made and kept (stopped or not). */
+    private readonly narrated = new Set<string>();
     /** Shows nodes on the canvas (set by the map). */
     onFocus?: (keys: string[]) => void;
 
@@ -102,6 +104,7 @@ export class ChatSession {
             // Something at once, while the model starts: an acknowledgement (kept, so instant).
             this.speech!.say(ACKNOWLEDGEMENTS[hash(question) % ACKNOWLEDGEMENTS.length]!, { id: `ack:${turn.id}` });
             this.live = { turn: turn.id };
+            this.narrated.add(turn.id);
             this.set({ playing: { turn: turn.id } });
         }
         const conversation = this.conversation;
@@ -177,6 +180,7 @@ export class ChatSession {
                 update({ actions: [...turn.actions, e.action] });
                 break;
             case 'error':
+                this.narrated.delete(turnId);
                 update({ done: true, error: e.message });
                 if (live) this.stop();
                 break;
@@ -188,6 +192,8 @@ export class ChatSession {
                     actions: e.actions,
                     meta: `${e.provider} · ${e.model}${e.mode === 'rag' ? ' · from search results' : ''} · ${(e.usage.inputTokens + e.usage.outputTokens).toLocaleString()} tokens`,
                 });
+                // Its walkthrough is finished in the background and kept, even if it was stopped: replay is instant.
+                if (this.narrated.delete(turnId) && e.answer) this.speech?.prefetch(`answer:${turnId}`, [e.answer], { openers: 0, priority: 'later' });
                 if (live) {
                     // An answer that came all at once (no streamed text) is spoken now.
                     if (!live.utterance && e.answer) {

@@ -18,17 +18,30 @@ const ANSWER = [
 ].join('\n');
 
 describe('speech chunks', () => {
-    test('start short and grow (so synthesis stays ahead), cutting at sentences and clauses', () => {
-        const chunks = speechChunks(STEP);
-        expect(chunks[0]!.text).toBe('The big picture.');
-        // Every chunk ends at punctuation or a word, never mid-word; sizes grow from small.
-        for (const c of chunks) expect(c.text).toMatch(/^\S.*\S$/);
-        expect(chunks[1]!.text.length).toBeLessThanOrEqual(60);
-        const lengths = chunks.map((c) => c.text.length);
-        expect(Math.max(...lengths.slice(0, 3))).toBeLessThan(80);
-        expect(chunks.map((c) => c.text).join(' ')).toBe(
-            "The big picture. polyglot sample has 38 source files in 5 top-level parts: @poly/shared, app, php, poly and rusty-core. It is split into 5 packages, each with its own manifest. Most of the code is in poly. @poly/shared is the most depended-on part, so it's a good anchor while you explore. Double-click a part on the map to open it in place; the Inspector on the right summarises whatever you select."
-        );
+    test('a chunk is a whole sentence: never cut at a comma (Kokoro would read each clause like a full stop)', () => {
+        expect(speechChunks(STEP).map((c) => c.text)).toEqual([
+            'The big picture.',
+            'polyglot sample has 38 source files in 5 top-level parts: @poly/shared, app, php, poly and rusty-core.',
+            'It is split into 5 packages, each with its own manifest.',
+            'Most of the code is in poly.',
+            "@poly/shared is the most depended-on part, so it's a good anchor while you explore.",
+            'Double-click a part on the map to open it in place; the Inspector on the right summarises whatever you select.',
+        ]);
+    });
+
+    test('only a sentence too long for the model is split, at its strongest break (a semicolon before a comma)', () => {
+        const clause = 'the request is checked, logged, and handed to the service that owns it';
+        const long = `When an order arrives, ${clause}, ${clause}; then ${clause}, and ${clause}, and finally ${clause}.`;
+        expect(long.length).toBeGreaterThan(300);
+        const chunks = speechChunks(long).map((c) => c.text);
+        expect(chunks.length).toBe(2);
+        expect(chunks[0]!.endsWith(';')).toBe(true);
+        for (const c of chunks) expect(c.length).toBeLessThanOrEqual(300);
+        expect(chunks.join(' ')).toBe(long);
+        // No strong break: the last comma in reach; never inside a word.
+        const commas = speechChunks(long.replace(';', ',')).map((c) => c.text);
+        expect(commas[0]!.endsWith(',')).toBe(true);
+        expect(commas.join(' ')).toBe(long.replace(';', ','));
     });
 
     test('links become their label and mark the chunk with their node; a label is never split', () => {
@@ -69,13 +82,11 @@ describe('speech chunks', () => {
         }
     });
 
-    test('the first chunk comes out while the answer is still streaming', () => {
+    test('a sentence comes out as soon as it is complete, while the answer is still streaming', () => {
         const c = new SpeechChunker();
         expect(c.push('Requests enter through [routes')).toEqual([]);
-        expect(c.push('.ts](node:mod:src/api/routes.ts), which hands each one to a handler. Then')).toEqual([
-            { text: 'Requests enter through routes.ts,', keys: ['mod:src/api/routes.ts'] },
-            { text: 'which hands each one to a handler.', keys: [] },
-        ]);
+        expect(c.push('.ts](node:mod:src/api/routes.ts), which hands each one to a ')).toEqual([]); // mid-sentence: wait
+        expect(c.push('handler. Then')).toEqual([{ text: 'Requests enter through routes.ts, which hands each one to a handler.', keys: ['mod:src/api/routes.ts'] }]);
     });
 
     test('odd input: unclosed brackets and code are read as text at the end; nothing speakable, nothing said', () => {

@@ -10,7 +10,7 @@ export const settle = async () => {
 export class FakeSink implements AudioSink {
     t = 0;
     tail = 0;
-    played: Array<{ start: number; seconds: number }> = [];
+    played: Array<{ start: number; seconds: number; silenced?: boolean }> = [];
     private timers: Array<{ t: number; fn: () => void }> = [];
     now() {
         return this.t;
@@ -19,8 +19,16 @@ export class FakeSink implements AudioSink {
         const start = Math.max(this.t, this.tail);
         const seconds = a.pcm.length / a.sampleRate;
         this.tail = start + seconds;
-        this.played.push({ start, seconds });
-        return { start, end: this.tail };
+        const slot: { start: number; seconds: number; silenced?: boolean } = { start, seconds };
+        this.played.push(slot);
+        return {
+            start,
+            end: this.tail,
+            cancel: () => {
+                slot.silenced = true;
+                this.tail = Math.max(0, ...this.played.filter((p) => !p.silenced).map((p) => p.start + p.seconds));
+            },
+        };
     }
     at(t: number, fn: () => void) {
         if (t <= this.t) fn();
@@ -48,6 +56,7 @@ export function fakeVoice(opts: { kept?: boolean } = {}) {
     const asked: Array<{ text: string; priority: SynthesisPriority; signal?: AbortSignalLike }> = [];
     const reprioritized: Array<{ text: string; priority: SynthesisPriority }> = [];
     const spoken: string[] = [];
+    const stopped = { count: 0 };
     let key: string | undefined = 'kokoro:test:af_heart:1';
     const voice: VoiceClient = {
         state: () => ({}) as VoiceState,
@@ -57,7 +66,7 @@ export function fakeVoice(opts: { kept?: boolean } = {}) {
             spoken.push(text);
             o?.onEnd?.();
         },
-        stop: () => undefined,
+        stop: () => void (stopped.count += 1),
         ...(opts.kept === false
             ? {}
             : {
@@ -70,5 +79,5 @@ export function fakeVoice(opts: { kept?: boolean } = {}) {
                   },
               }),
     };
-    return { voice, asked, spoken, reprioritized, setKey: (k: string | undefined) => (key = k) };
+    return { voice, asked, spoken, reprioritized, stopped, setKey: (k: string | undefined) => (key = k) };
 }
