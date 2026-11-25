@@ -4,7 +4,9 @@
  * later changed by a human), `human` (positive evidence of a person), or
  * `unknown` (no evidence either way: the honest default for old history).
  *
- * Aggregates only: nothing here names a person.
+ * The AI side is aggregates only. Ownership (who last changed today's lines,
+ * from git blame) does name people, as git itself does; hosts can turn it off
+ * (VS Code: codearchy.authorship.people), and it is never sent to AI models.
  */
 
 export type AuthorshipOrigin = 'ai' | 'reviewed' | 'human' | 'unknown';
@@ -59,6 +61,41 @@ export interface NodeAuthorship {
     commits: AuthorshipCommit[];
     /** A module: its ranges (only the attributed ones; the rest are unknown). */
     ranges?: AuthorshipRange[];
+    /** Who holds today's lines (from git blame), when people ownership is on. */
+    ownership?: NodeOwnership;
+}
+
+/** A person's share of a part's lines today: the lines whose last change is theirs (git blame). */
+export interface PersonShare {
+    name: string;
+    lines: number;
+    /** Whole percent of the part's lines traced to people. */
+    share: number;
+    /** When they last changed a line that is still here (ms since the epoch). */
+    lastChange: number;
+}
+
+/** Who owns a part: its lines by the person who last changed them. Bots and uncommitted lines are left out. */
+export interface NodeOwnership {
+    /** Lines traced to a person. */
+    lines: number;
+    /** People with lines here. */
+    people: number;
+    /** The main owners, most lines first (at most 8). */
+    owners: PersonShare[];
+    /** The fewest people who together hold more than half the lines ("only one person knows this" at 1). */
+    busFactor: number;
+    /** The latest change to a line still here. */
+    lastChange?: number;
+}
+
+/** A view node's main owner (the Ownership lens). */
+export interface NodeOwner {
+    name: string;
+    /** Whole percent of the node's lines. */
+    share: number;
+    people: number;
+    busFactor: number;
 }
 
 /** What the engine knows about authorship in this workspace. */
@@ -73,6 +110,8 @@ export interface AuthorshipStatus {
     blamedFiles?: number;
     /** Commits with a CodeArchy authorship note (refs/notes/codearchy-authorship). */
     notedCommits?: number;
+    /** People with lines in the workspace (when people ownership is on). */
+    people?: number;
     /** Whole-workspace counts. */
     counts?: AuthorshipCounts;
 }

@@ -2,11 +2,45 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "codearchy: build packages and webview",
+            "detail": "The shared packages and the panel UI (cached by turbo: fast when nothing changed).",
+            "type": "shell",
+            "command": "pnpm turbo run build --filter=codearchy-webview-ui... --filter=codearchy^...",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent"
+            }
+        },
+        {
+            "label": "codearchy: watch extension",
+            "detail": "Bundles the extension with esbuild and rebuilds it on change.",
             "type": "npm",
             "script": "watch",
             "path": "apps/vscode",
-            "problemMatcher": "$tsc-watch",
+            "dependsOn": "codearchy: build packages and webview",
             "isBackground": true,
+            "problemMatcher": {
+                "owner": "esbuild",
+                "source": "esbuild",
+                "fileLocation": ["relative", "${workspaceFolder}/apps/vscode"],
+                "pattern": [
+                    {
+                        "regexp": "^✘ \\[ERROR\\] (.*)$",
+                        "message": 1
+                    },
+                    {
+                        "regexp": "^\\s+(.+):(\\d+):(\\d+):$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3
+                    }
+                ],
+                "background": {
+                    "activeBegin": true,
+                    "beginsPattern": "^\\[build\\]|^\\[watch\\] build started",
+                    "endsPattern": "^\\[watch\\] build finished"
+                }
+            },
             "presentation": {
                 "reveal": "never"
             },

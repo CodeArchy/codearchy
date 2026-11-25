@@ -4,7 +4,7 @@
  * Nodes are stored in DFS pre-order, so a container's counts are a difference
  * of prefix sums over its Euler interval: O(1) per node after O(N) setup.
  */
-import type { AuthorshipCommit, AuthorshipCounts, AuthorshipOrigin, AuthorshipRange, AuthorshipStatus, NodeAuthorship, View } from '@codearchy/protocol';
+import type { AuthorshipCommit, AuthorshipCounts, AuthorshipOrigin, AuthorshipRange, AuthorshipStatus, NodeAuthorship, NodeOwner, NodeOwnership, View } from '@codearchy/protocol';
 import type { HierarchyIndex } from '../hierarchy/project.js';
 
 const ORIGINS: AuthorshipOrigin[] = ['ai', 'reviewed', 'human', 'unknown'];
@@ -16,18 +16,34 @@ export interface AttributedCommit {
     subject: string;
 }
 
+/** A person's lines in one file (git blame), by index into `AuthorshipData.people`. */
+export interface FileOwner {
+    person: number;
+    lines: number;
+    /** Their latest change to a line still here (ms). */
+    last: number;
+}
+
 export interface AuthorshipData {
     /** Attributed ranges per workspace file; files not listed are all `unknown`. */
     ranges: Map<string, AuthorshipRange[]>;
     commits: Map<string, AttributedCommit>;
-    stats: { commits: number; aiCommits: number; blamedFiles: number; notedCommits?: number };
+    stats: { commits: number; aiCommits: number; blamedFiles: number; notedCommits?: number; people?: number };
+    /** People ownership (when it's on): each file's lines by the person who last changed them. */
+    owners?: Map<string, FileOwner[]>;
+    /** Display names, by person index. */
+    people?: string[];
 }
+
+/** At most this many owners are listed per part. */
+const OWNERS_SHOWN = 8;
 
 export const emptyCounts = (): AuthorshipCounts => ({ ai: 0, reviewed: 0, human: 0, unknown: 0 });
 
 export class AuthorshipIndex {
     /** prefix[o][i] = lines of origin o in nodes[0..i). */
     private readonly prefix: Record<AuthorshipOrigin, Float64Array>;
+    private readonly owned = new Map<string, NodeOwnership | undefined>();
 
     constructor(
         private readonly index: HierarchyIndex,
@@ -68,13 +84,66 @@ export class AuthorshipIndex {
         return out;
     }
 
-    /** The view with every node's counts attached (the Authorship lens). */
+    /** The view with every node's counts (the Authorship lens) and main owner (the Ownership lens) attached. */
     decorate(view: View): View {
-        return { ...view, nodes: view.nodes.map((v) => ({ ...v, authorship: this.counts(v.key) ?? emptyCounts() })) };
+        return {
+            ...view,
+            nodes: view.nodes.map((v) => {
+                const owner = this.owner(v.key);
+                return { ...v, authorship: this.counts(v.key) ?? emptyCounts(), ...(owner ? { owner } : {}) };
+            }),
+        };
     }
 
     status(): AuthorshipStatus {
         return { state: 'ready', ...this.data.stats, counts: this.counts('sys:root') ?? emptyCounts() };
+    }
+
+    /**
+     * Who holds a part's lines today: each person's lines (whoever last changed
+     * them), their latest change, and the bus factor (the fewest people who
+     * together hold more than half). Undefined when ownership is off.
+     */
+    ownership(key: string): NodeOwnership | undefined {
+        const owners = this.data.owners;
+        if (!owners) return undefined;
+        if (this.owned.has(key)) return this.owned.get(key);
+        const i = this.index.indexOf(key);
+        if (i === undefined) return undefined;
+        const nodes = this.index.hierarchy.nodes;
+        const node = nodes[i]!;
+        const per = new Map<number, { lines: number; last: number }>();
+        for (let j = node.tin; j <= node.tout; j++) {
+            const m = nodes[j]!;
+            if (m.kind !== 'module') continue;
+            for (const o of owners.get(m.path) ?? []) {
+                const p = per.get(o.person);
+                if (p) {
+                    p.lines += o.lines;
+                    p.last = Math.max(p.last, o.last);
+                } else per.set(o.person, { lines: o.lines, last: o.last });
+            }
+        }
+        const ranked = [...per].sort((a, b) => b[1].lines - a[1].lines || b[1].last - a[1].last);
+        const lines = ranked.reduce((n, [, p]) => n + p.lines, 0);
+        let busFactor = 0;
+        for (let held = 0; held * 2 <= lines && busFactor < ranked.length; ) held += ranked[busFactor++]![1].lines;
+        const result: NodeOwnership = {
+            lines,
+            people: ranked.length,
+            owners: ranked.slice(0, OWNERS_SHOWN).map(([person, p]) => ({ name: this.data.people?.[person] ?? 'Someone', lines: p.lines, share: lines ? Math.round((p.lines / lines) * 100) : 0, lastChange: p.last })),
+            busFactor: lines ? busFactor : 0,
+            ...(ranked.length ? { lastChange: Math.max(...ranked.map(([, p]) => p.last)) } : {}),
+        };
+        this.owned.set(key, result);
+        return result;
+    }
+
+    /** A node's main owner, for the Ownership lens. */
+    owner(key: string): NodeOwner | undefined {
+        const o = this.ownership(key);
+        const top = o?.owners[0];
+        return o && top ? { name: top.name, share: top.share, people: o.people, busFactor: o.busFactor } : undefined;
     }
 
     describe(key: string): NodeAuthorship | undefined {
@@ -124,6 +193,7 @@ export class AuthorshipIndex {
             weekly: [...weeks].sort((a, b) => a[0] - b[0]).map(([week, ai]) => ({ week, ai })),
             commits,
             ...(node.kind === 'module' ? { ranges: this.data.ranges.get(node.path) ?? [] } : {}),
+            ...(this.data.owners ? { ownership: this.ownership(key)! } : {}),
         };
     }
 }

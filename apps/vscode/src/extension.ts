@@ -88,6 +88,8 @@ export function activate(context: vscode.ExtensionContext): CodeArchyApi {
     });
     const uiConfigListener = vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('codearchy.ui')) ArchitecturePanel.reload();
+        // Authorship turned on or off, people ownership included: recompute (the views refresh when it's done).
+        if (e.affectsConfiguration('codearchy.authorship.enabled') || e.affectsConfiguration('codearchy.authorship.people')) pipeline?.refreshAuthorship();
     });
 
     const extensionVersion =

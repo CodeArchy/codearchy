@@ -282,7 +282,12 @@ function cutRange(r: AuthorshipRange, start: number, end: number): AuthorshipRan
 export function withLedger(data: AuthorshipData | undefined, ledger: AuthorshipLedger): AuthorshipData {
     const ranges = new Map(data?.ranges ?? []);
     for (const path of ledger.paths()) ranges.set(path, overlayRanges(ranges.get(path) ?? [], ledger.ranges(path)));
-    return { ranges, commits: data?.commits ?? new Map(), stats: data?.stats ?? { commits: 0, aiCommits: 0, blamedFiles: 0 } };
+    return {
+        ranges,
+        commits: data?.commits ?? new Map(),
+        stats: data?.stats ?? { commits: 0, aiCommits: 0, blamedFiles: 0 },
+        ...(data?.owners ? { owners: data.owners, people: data.people ?? [] } : {}),
+    };
 }
 
 /**

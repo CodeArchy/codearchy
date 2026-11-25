@@ -7,7 +7,7 @@
  *                 no runtime download, no activation required).
  */
 
-import { getVsCodeApi } from '../vscode';
+import { getVsCodeApi, postMessage } from '../vscode';
 
 export type VoiceEngineId = 'web-speech' | 'kokoro';
 
@@ -37,7 +37,20 @@ const DEFAULT_CONFIG: VoiceConfig = {
 let cached: VoiceConfig | null = null;
 const listeners = new Set<(cfg: VoiceConfig) => void>();
 
+/**
+ * The choice is kept in two places: the extension's global state (every project, every window; the host
+ * injects it into the page) and this panel's own state. The global one comes first: it's the latest choice
+ * made anywhere, and the panel's state belongs to one project.
+ */
 function readState(): VoiceConfig {
+    try {
+        const injected = (window as Window & { __CODEARCHY_VOICE_CONFIG?: Partial<VoiceConfig> }).__CODEARCHY_VOICE_CONFIG;
+        if (injected && typeof injected === 'object' && (injected.engine === 'kokoro' || injected.engine === 'web-speech')) {
+            return { ...DEFAULT_CONFIG, ...injected };
+        }
+    } catch {
+        /* ignore */
+    }
     try {
         const api = getVsCodeApi();
         const state = api.getState() as Record<string, unknown> | undefined;
@@ -47,14 +60,6 @@ function readState(): VoiceConfig {
         }
     } catch {
         /* ignore — fall through to default */
-    }
-    try {
-        const injected = (window as Window & { __CODEARCHY_VOICE_CONFIG?: Partial<VoiceConfig> }).__CODEARCHY_VOICE_CONFIG;
-        if (injected && typeof injected === 'object') {
-            return { ...DEFAULT_CONFIG, ...injected };
-        }
-    } catch {
-        /* ignore */
     }
     return { ...DEFAULT_CONFIG };
 }
@@ -66,6 +71,12 @@ function writeState(cfg: VoiceConfig): void {
         api.setState({ ...state, [STATE_KEY]: cfg });
     } catch {
         /* persistence is best-effort */
+    }
+    try {
+        // …and for every project: the host keeps it in its global state.
+        postMessage('voiceConfigPersist', { engine: cfg.engine, voiceId: cfg.voiceId, rate: cfg.rate });
+    } catch {
+        /* outside VS Code (tests) */
     }
 }
 

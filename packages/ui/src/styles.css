@@ -803,3 +803,13 @@ details[open] > summary .ca-steps-chevron { transform: rotate(90deg); }
 .ca-narrating-phrase { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
 .ca-chat-head .ca-icon-button.ca-on { color: var(--ca-accent); }
 @media (prefers-reduced-motion: reduce) { .ca-turn-playing .ca-msg-ai .ca-msg-body { transition: none; } }
+
+/* Ownership (Inspector): people by share of today's lines */
+.ca-owners { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 4px; }
+.ca-owners li { display: grid; grid-template-columns: minmax(0, 9em) 1fr 3.2em; align-items: center; gap: 8px; font-size: 12px; }
+.ca-owner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-owner-bar { height: 6px; border-radius: 3px; background: var(--ca-line); overflow: hidden; }
+.ca-owner-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--ca-accent); }
+.ca-owner-share { text-align: right; font-variant-numeric: tabular-nums; }
+.ca-owners-risk { margin: 4px 0; padding: 6px 8px; border-radius: 6px; font-size: 12px; background: color-mix(in srgb, var(--ca-warning) 18%, transparent); }
+.ca-owners-summary { font-size: 11.5px; }

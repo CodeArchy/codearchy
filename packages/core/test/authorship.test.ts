@@ -105,6 +105,41 @@ describe('AuthorshipIndex', () => {
         assert.deepStrictEqual(file.topFiles, []);
     });
 
+    test("ownership: each part's lines by person, main owners first, the bus factor, and the lens badge", () => {
+        const day = 86_400_000;
+        const owned = new AuthorshipIndex(index, (p) => lines[p], {
+            ranges: new Map(),
+            commits: new Map(),
+            stats: { commits: 12, aiCommits: 0, blamedFiles: 4, people: 3 },
+            people: ['Ada', 'Bob', 'Cy'],
+            owners: new Map([
+                ['api/routes.ts', [{ person: 0, lines: 10, last: 5 * day }]],
+                ['api/handlers.ts', [{ person: 0, lines: 36, last: 7 * day }, { person: 1, lines: 4, last: 9 * day }]],
+                ['core/orders.ts', [{ person: 1, lines: 50, last: 3 * day }, { person: 2, lines: 50, last: 4 * day }]],
+                ['core/util.ts', [{ person: 2, lines: 20, last: 2 * day }]],
+            ]),
+        });
+        // api: Ada holds 46 of 50 lines, so she alone holds more than half: bus factor 1.
+        const api = owned.ownership('dir:api')!;
+        assert.deepStrictEqual(api.owners.map((o) => `${o.name}:${o.lines}:${o.share}`), ['Ada:46:92', 'Bob:4:8']);
+        assert.deepStrictEqual([api.lines, api.people, api.busFactor, api.lastChange], [50, 2, 1, 9 * day]);
+        // core: Bob 50, Cy 70 of 120: Cy alone holds more than half too; the whole system needs two people.
+        assert.deepStrictEqual(owned.ownership('dir:core')!.owners.map((o) => o.name), ['Cy', 'Bob']);
+        assert.strictEqual(owned.ownership('sys:root')!.busFactor, 2);
+        // An even split needs both people: 50 is not more than half of 100.
+        assert.strictEqual(owned.ownership('mod:core/orders.ts')!.busFactor, 2);
+        const v = owned.decorate(index.project());
+        assert.deepStrictEqual(Object.fromEntries(v.nodes.map((n) => [n.key, n.owner])), {
+            'dir:api': { name: 'Ada', share: 92, people: 2, busFactor: 1 },
+            'dir:core': { name: 'Cy', share: 58, people: 2, busFactor: 1 },
+        });
+        assert.strictEqual(owned.describe('dir:api')!.ownership!.owners[0]!.name, 'Ada');
+        // Off (no owners): nothing about people anywhere.
+        assert.strictEqual(a.ownership('dir:api'), undefined);
+        assert.strictEqual(a.describe('dir:api')!.ownership, undefined);
+        assert.ok(a.decorate(index.project()).nodes.every((n) => n.owner === undefined));
+    });
+
     test('weeks start on Monday (UTC)', () => {
         assert.strictEqual(new Date(weekOf(t1)).getUTCDay(), 1);
         assert.strictEqual(weekOf(Date.UTC(2026, 10, 2, 0)), Date.UTC(2026, 10, 2)); // a Monday is its own week

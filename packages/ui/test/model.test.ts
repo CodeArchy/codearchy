@@ -125,6 +125,18 @@ describe('Lenses', () => {
         assert.strictEqual(lensBadge(m({ codeModules: 1, testedModules: 1 }), 'tests', 'module')!.text, 'tested');
         assert.strictEqual(lensBadge(m({ codeModules: 0, testModules: 2 }), 'tests', 'component')!.text, 'tests only');
     });
+    test('ownership: the main owner and share, how many others, and a warning when one person holds most of a part', () => {
+        assert.deepStrictEqual(lensBadge(m({}), 'ownership', 'component', undefined, { name: 'Ada', share: 92, people: 3, busFactor: 1 }), {
+            level: 'warning',
+            text: '⚠ Ada 92% · +2',
+            title: 'Ada last changed 92% of the lines here; 2 other people the rest. One person holds more than half.',
+        });
+        const shared = lensBadge(m({}), 'ownership', 'component', undefined, { name: 'Bob', share: 40, people: 4, busFactor: 2 })!;
+        assert.deepStrictEqual([shared.level, shared.text], [undefined, 'Bob 40% · +3']);
+        // One file with one author is normal: no warning on files.
+        assert.strictEqual(lensBadge(m({}), 'ownership', 'module', undefined, { name: 'Cy', share: 100, people: 1, busFactor: 1 })!.level, undefined);
+        assert.strictEqual(lensBadge(m({}), 'ownership', 'component'), undefined); // no ownership: no badge
+    });
     test('health: the worst issue sets the status, every count is in the text', () => {
         assert.deepStrictEqual(lensBadge(m({ cyclicModules: 2, orphanModules: 1 }), 'health', 'component'), { level: 'critical', text: '⟳ 2 in cycles · ○ 1 orphan', title: '⟳ 2 in cycles, ○ 1 orphan (of 3 files)' });
         assert.strictEqual(lensBadge(m({ hubModules: 1 }), 'health', 'component')!.level, 'serious');

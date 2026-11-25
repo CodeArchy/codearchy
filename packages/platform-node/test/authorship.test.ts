@@ -47,6 +47,40 @@ describe('computeGitAuthorship', () => {
         }
     });
 
+    test('people ownership: every file blamed, lines counted by who last changed them (by email; bots and uncommitted lines left out)', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearchy-owners-'));
+        const as = (name: string, email: string, ...args: string[]) =>
+            execFileSync('git', ['-c', `user.name=${name}`, '-c', `user.email=${email}`, '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8' });
+        try {
+            as('Ada', 'ada@example.com', 'init', '-q', '-b', 'main');
+            fs.writeFileSync(path.join(dir, 'a.ts'), 'one\ntwo\nthree\nfour\n');
+            fs.writeFileSync(path.join(dir, 'b.ts'), 'x\n');
+            as('Ada', 'ada@example.com', 'add', '.');
+            as('Ada', 'ada@example.com', 'commit', '-q', '-m', 'start');
+            fs.writeFileSync(path.join(dir, 'a.ts'), 'one\nTWO\nthree\nfour\n');
+            as('Bob', 'bob@example.com', 'commit', '-q', '-am', 'bob edits');
+            fs.appendFileSync(path.join(dir, 'b.ts'), 'y\n');
+            as('dependabot[bot]', 'dependabot[bot]@users.noreply.github.com', 'commit', '-q', '-am', 'bump');
+            fs.appendFileSync(path.join(dir, 'a.ts'), 'five\n');
+            as('Ada Lovelace', 'ADA@example.com', 'commit', '-q', '-am', 'ada again, new name'); // same person (email)
+            fs.appendFileSync(path.join(dir, 'b.ts'), 'not committed\n');
+            const result = await computeGitAuthorship(dir, ['a.ts', 'b.ts'], { people: true });
+            expect(result.ok).toBe(true);
+            if (!result.ok) return;
+            const d = result.data;
+            expect(d.stats).toMatchObject({ blamedFiles: 2, people: 2 });
+            expect(d.people).toEqual(['Ada Lovelace', 'Bob']); // shown by the latest name
+            const by = (file: string) => Object.fromEntries((d.owners!.get(file) ?? []).map((o) => [d.people![o.person], o.lines]));
+            expect(by('a.ts')).toEqual({ 'Ada Lovelace': 4, Bob: 1 });
+            expect(by('b.ts')).toEqual({ 'Ada Lovelace': 1 }); // the bot's line and the uncommitted one aren't anyone's
+            // Off by default: no blame of files AI commits didn't touch.
+            const off = await computeGitAuthorship(dir, ['a.ts', 'b.ts']);
+            expect(off.ok && off.data.owners).toBeUndefined();
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     test('a folder outside git has nothing to attribute', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearchy-nogit-'));
         try {

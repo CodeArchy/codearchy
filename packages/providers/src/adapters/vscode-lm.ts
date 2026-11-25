@@ -42,13 +42,19 @@ export interface VscodeLmOptions {
 }
 
 const ID = 'vscode-lm';
+/** VS Code lists some models only its own features may use (e.g. Copilot's dictation clean-up); asking one fails with this. */
+const CORE_ONLY = /only available to VS Code core/i;
 
 export function vscodeLm(api: VscodeLmApi, options: VscodeLmOptions = {}): ProviderAdapter {
     const justification = options.justification ?? 'CodeArchy uses this model to explain your codebase and answer questions about it.';
+    /** Models VS Code refused to let an extension use (learned on first use: the API doesn't say so up front). */
+    const coreOnly = new Set<string>();
     const models = async (): Promise<LmChatModel[]> => {
         if (!api.lm) return [];
-        return [...(await api.lm.selectChatModels({}))];
+        return (await api.lm.selectChatModels({})).filter((m) => !coreOnly.has(m.id));
     };
+    /** What to use instead of a model VS Code keeps for itself: the next best (the registry's order: larger context first). */
+    const alternative = async (): Promise<LmChatModel | undefined> => (await models()).reduce<LmChatModel | undefined>((a, b) => (!a || (b.maxInputTokens || 0) > (a.maxInputTokens || 0) ? b : a), undefined);
 
     return {
         id: ID,
@@ -88,8 +94,9 @@ export function vscodeLm(api: VscodeLmApi, options: VscodeLmOptions = {}): Provi
 
     async function* run(request: ChatRequest, signal?: SignalLike): AsyncGenerator<ChatEvent> {
         if (!api.lm) throw new ProviderError('unavailable', ID, 'This VS Code has no Language Model API (needs 1.95 or later)');
-        const model = (await api.lm.selectChatModels({ id: request.model }))[0];
-        if (!model) throw new ProviderError('bad_request', ID, `VS Code has no model "${request.model}" (is Copilot signed in?)`);
+        const asked = coreOnly.has(request.model) ? await alternative() : (await api.lm.selectChatModels({ id: request.model }))[0];
+        if (!asked) throw new ProviderError('bad_request', ID, `VS Code has no model "${request.model}" (is Copilot signed in?)`);
+        let model: LmChatModel = asked;
 
         const messages = toMessages(api, request);
         const cts = new api.CancellationTokenSource();
@@ -99,15 +106,19 @@ export function vscodeLm(api: VscodeLmApi, options: VscodeLmOptions = {}): Provi
         const toolCalls: ToolCall[] = [];
         try {
             const tools = request.tools?.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
-            let response: { stream: AsyncIterable<unknown> };
-            try {
-                response = await model.sendRequest(
-                    messages,
-                    { justification, ...(tools?.length ? { tools, toolMode: api.LanguageModelChatToolMode?.Auto ?? 1 } : {}) },
-                    cts.token,
-                );
-            } catch (err) {
-                throw toError(api, err, signal);
+            let response: { stream: AsyncIterable<unknown> } | undefined;
+            const options = { justification, ...(tools?.length ? { tools, toolMode: api.LanguageModelChatToolMode?.Auto ?? 1 } : {}) };
+            while (!response) {
+                try {
+                    response = await model.sendRequest(messages, options, cts.token);
+                } catch (err) {
+                    // A model only VS Code itself may use: never offer it again, and answer with the next best now.
+                    if (signal?.aborted || !CORE_ONLY.test(err instanceof Error ? err.message : String(err))) throw toError(api, err, signal);
+                    coreOnly.add(model.id);
+                    const next: LmChatModel | undefined = await alternative();
+                    if (!next) throw toError(api, err, signal);
+                    model = next;
+                }
             }
             try {
                 for await (const part of response.stream) {

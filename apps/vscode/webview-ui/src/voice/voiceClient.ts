@@ -1,8 +1,8 @@
 /**
  * The shared UI's VoiceClient over this webview's TTS manager: Kokoro (the
  * model the extension host downloads once and serves locally) and the system
- * voice. Tours narrate through it; the Voice dialog (VoiceSelector) stays the
- * place to activate Kokoro and pick voices.
+ * voice. Tours and answers narrate through it, and the shared Voice panel
+ * reads and changes it (engine, voice, speed, activating Kokoro).
  *
  * Speech is made a phrase at a time by v1's Kokoro job queue, for the shared
  * SpeechEngine (which plays and keeps it): the phrase about to be spoken goes
@@ -68,7 +68,7 @@ function snapshot(): VoiceState {
 /** The speech engine's priorities as v1's queue lanes. */
 const lane = (p: SynthesisPriority): KokoroJobPriority => (p === 'now' ? 'urgent' : p === 'soon' ? 'narrator' : 'message');
 
-export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
+export function vscodeVoiceClient(): VoiceClient {
     let state = snapshot();
     const listeners = new Set<(s: VoiceState) => void>();
     const emit = () => {
@@ -85,6 +85,8 @@ export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
     const warm = () => {
         if (getVoiceConfig().engine === 'kokoro' && isKokoroEverActivated() && getKokoroStatus().status === 'idle') void startKokoroEngine().catch(() => undefined);
     };
+    // Set up before (in any project): load it now, in the background, so the first word needs no click.
+    setTimeout(warm, 300);
     return {
         state: () => state,
         subscribe: (l) => {
@@ -106,7 +108,6 @@ export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
             void speak(text, { onEnd: options?.onEnd, onError: (e) => options?.onError?.(e instanceof Error ? e : new Error(String(e))) });
         },
         stop: () => stopSpeaking(),
-        openSettings,
         cacheKey: () => (isKokoroActive() ? `kokoro-vscode:${getActiveKokoroVoiceId()}` : undefined),
         reprioritize: (text, priority) => reprioritizeKokoroJob(text, getActiveKokoroVoiceId(), lane(priority)),
         synthesize: async (text, priority, signal) => {

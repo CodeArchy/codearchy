@@ -1,11 +1,11 @@
 /**
- * The Inspector's Authorship section: how much of the selected part AI tools
+ * The Inspector's Authorship section: who owns the selected part (people, from
+ * git blame, when the host has ownership on), and how much of it AI tools
  * wrote (and people since changed), by tool, over time, in which files, and
  * from which commits. Evidence only (doc 07): what has none is "unknown".
- * No person is named anywhere.
  */
 import { useEffect, useState } from 'react';
-import type { AuthorshipStatus, NodeAuthorship } from '@codearchy/protocol';
+import type { AuthorshipStatus, NodeAuthorship, NodeOwnership } from '@codearchy/protocol';
 import { AUTHORSHIP_ORIGINS, agentName, authorshipShares, type LensId } from './model.js';
 import { AuthorshipBar } from './MapCanvas.js';
 
@@ -34,7 +34,7 @@ export function AuthorshipSection(props: { nodeKey: string; source: AuthorshipSo
         };
     }, [source, nodeKey, props.dataVersion]);
 
-    const active = props.lens === 'authorship' ? ' ca-lens-active' : '';
+    const active = props.lens === 'authorship' || props.lens === 'ownership' ? ' ca-lens-active' : '';
     if (!status) return null;
     if (status.state !== 'ready') {
         return (
@@ -54,6 +54,8 @@ export function AuthorshipSection(props: { nodeKey: string; source: AuthorshipSo
     return (
         <section className={`ca-lens-section ca-authorship${active}`} aria-label="Authorship">
             <h3>Authorship</h3>
+            {data.ownership ? <Owners ownership={data.ownership} container={!data.ranges} /> : null}
+            {data.ownership ? <h4>Written by AI tools</h4> : null}
             {total ? (
                 <>
                     <AuthorshipBar shares={shares} />
@@ -130,8 +132,43 @@ export function AuthorshipSection(props: { nodeKey: string; source: AuthorshipSo
                 </>
             ) : null}
             <p className="ca-muted ca-authorship-note">
-                From the evidence AI tools leave in git (Co-authored-by trailers, coding-agent bot commits, tool markers), traced to today's lines with git blame. Lines with no evidence are unknown.
+                {data.ownership ? 'Owners: whoever last changed each line still here (git blame), bots and uncommitted lines left out. ' : ''}
+                AI lines: from the evidence AI tools leave in git (Co-authored-by trailers, coding-agent bot commits, tool markers), traced to today's lines with git blame. Lines with no evidence are unknown.
             </p>
         </section>
+    );
+}
+
+/** Who holds the part's lines today, most first, and whether it rests on one person. */
+function Owners({ ownership: o, container }: { ownership: NodeOwnership; container: boolean }) {
+    if (!o.lines) return null;
+    const top = o.owners[0]!;
+    const sole = container && o.busFactor === 1 && top.share >= 75;
+    return (
+        <>
+            <h4>Owners</h4>
+            {sole ? (
+                <p className="ca-owners-risk" role="note">
+                    ⚠ {top.name} last changed {top.share}% of the lines here. Few others have worked on this part.
+                </p>
+            ) : null}
+            <ul className="ca-owners">
+                {o.owners.map((p, i) => (
+                    <li key={i} title={`${p.lines.toLocaleString()} lines · last changed ${dateFmt.format(p.lastChange)}`}>
+                        <span className="ca-owner-name">{p.name}</span>
+                        <span className="ca-owner-bar" aria-hidden="true">
+                            <span style={{ width: `${Math.max(2, p.share)}%` }} />
+                        </span>
+                        <span className="ca-owner-share">{p.share === 0 ? '<1' : p.share}%</span>
+                    </li>
+                ))}
+            </ul>
+            <p className="ca-muted ca-owners-summary">
+                {o.people.toLocaleString()} {o.people === 1 ? 'person' : 'people'} · {o.lines.toLocaleString()} lines
+                {o.lastChange ? ` · last change ${dateFmt.format(o.lastChange)}` : ''}
+                {o.people > 1 ? ` · ${o.busFactor === 1 ? 'one person holds' : `${o.busFactor} people together hold`} more than half` : ''}
+                {o.people > o.owners.length ? ` · ${o.people - o.owners.length} more not shown` : ''}
+            </p>
+        </>
     );
 }

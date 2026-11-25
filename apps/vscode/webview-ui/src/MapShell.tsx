@@ -2,8 +2,8 @@
  * The 2.0 panel: @codearchy/ui's CodeArchyMap, talking to the engine and the
  * AI host in the extension host over postMessage. Chat, summary cards and AI
  * settings come from the shared UI (the `ai` client), Ollama's models are
- * managed there too (AI → Providers); voice keeps its v1 dialog, and tours
- * narrate through the same voice (made ahead and kept). The classic views (App.tsx) remain behind
+ * managed there too (AI → Providers), and so is the voice (the shared Voice
+ * panel over v1's Kokoro engine; tours and answers narrate through it, kept for replay). The classic views (App.tsx) remain behind
  * the `codearchy.ui` setting during the 2.0 beta.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -12,7 +12,6 @@ import type { AiClient, AiHostEvent, Architecture, ChatEvent, EdgeExplanation, F
 import '@codearchy/ui/styles.css';
 import './mapShell.css';
 import { postMessage } from './vscode';
-import { VoiceSelector } from './components/VoiceSelector';
 import { vscodeVoiceClient } from './voice/voiceClient';
 import { completeGpuModelDownload, isKokoroActive, restartKokoroEngine, subscribeGpuModelNeeded } from './voice/ttsManager';
 
@@ -152,8 +151,8 @@ export function MapShell() {
     const revisionRef = useRef<string>();
     const [dataVersion, setDataVersion] = useState(0);
     const [reveal, setReveal] = useState<{ key: string; nonce: number }>();
-    const [dialog, setDialog] = useState<'voice'>();
-    const [voice] = useState(() => vscodeVoiceClient(() => setDialog('voice')));
+    // Voice settings are the shared panel (as in the web app); v1's dialog stays with the legacy views.
+    const [voice] = useState(() => vscodeVoiceClient());
 
     useEffect(() => {
         let url: string | undefined;
@@ -225,7 +224,6 @@ export function MapShell() {
                     voice={voice}
                 />
             )}
-            {dialog === 'voice' ? <VoiceSelector onClose={() => setDialog(undefined)} /> : null}
         </div>
     );
 }

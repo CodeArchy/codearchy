@@ -49,6 +49,8 @@ export interface WorkspaceOptions {
     onAuthorship?: () => void;
     /** Skip authorship (no git commands at all). */
     noAuthorship?: boolean;
+    /** People ownership (who owns today's lines, from git blame on every file); on unless false. */
+    people?: boolean;
     /** People's review marks and corrections (the Companion keeps it in its data folder); laid over git's evidence. */
     ledger?: AuthorshipLedger;
     /** Called after the ledger changes, to persist it. */
@@ -174,7 +176,7 @@ export class Workspace {
 
     /** git log + blame for the snapshot just built; the snapshot gets it when done. */
     private async traceAuthorship(snap: Snapshot, lines: Map<string, number | undefined>): Promise<void> {
-        const result = await computeGitAuthorship(this.root, lines.keys(), { isCancelled: () => this.current !== snap });
+        const result = await computeGitAuthorship(this.root, lines.keys(), { people: this.options.people !== false, isCancelled: () => this.current !== snap });
         if (this.current !== snap) return;
         // Files may have changed since the ledger last saw them: re-find its ranges first.
         const ledger = this.options.ledger;

@@ -3,6 +3,11 @@
  * blame only the files AI commits touched (no other file can have AI lines)
  * and project the AI commits onto today's lines.
  *
+ * With `people`, every workspace file is blamed (in the same pass) and each
+ * file's lines are counted by the person who last changed them: ownership.
+ * Identities are grouped by email (git blame applies .mailmap); bots and lines
+ * not committed yet are left out.
+ *
  * Read-only: `git log`, `git log --no-walk --name-only` and `git blame`. Works
  * on a workspace that is a subfolder of the repository.
  */
@@ -10,7 +15,7 @@ import { execFile, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { classifyCommit, NOTES_REF, overlayRanges, parseNote, projectNotes, rangesFromBlame, serializeNote, subjectOf, type AttributedCommit, type AuthorshipData, type AuthorshipNote, type AuthorshipRule, type BlameRun } from '@codearchy/core';
+import { classifyCommit, NOTES_REF, overlayRanges, parseNote, projectNotes, rangesFromBlame, serializeNote, subjectOf, type AttributedCommit, type AuthorshipData, type AuthorshipNote, type AuthorshipRule, type BlameRun, type FileOwner } from '@codearchy/core';
 import type { AuthorshipRange } from '@codearchy/protocol';
 
 export interface GitAuthorshipOptions {
@@ -21,6 +26,8 @@ export interface GitAuthorshipOptions {
     concurrency?: number;
     /** Extra AI markers (an in-house agent's co-author line…). */
     rules?: AuthorshipRule[];
+    /** People ownership: blame every workspace file (up to `maxFiles`) and count lines by who last changed them. */
+    people?: boolean;
     isCancelled?: () => boolean;
 }
 
@@ -118,11 +125,11 @@ export async function computeGitAuthorship(root: string, workspaceFiles: Iterabl
     }
     const notes = await readAuthorshipNotes(root).catch(() => new Map<string, AuthorshipNote>());
     const empty = (): GitAuthorship => ({ ok: true, data: { ranges: new Map(), commits, stats: { commits: scanned, aiCommits: commits.size, blamedFiles: 0, notedCommits: notes.size } }, truncated: false });
-    if (commits.size === 0 && notes.size === 0) return empty();
+    if (commits.size === 0 && notes.size === 0 && !options.people) return empty();
 
     // The workspace files AI commits touched (git paths are relative to the repository root),
     // followed through later renames (a moved file keeps its blame).
-    const renamed = await renames(root);
+    const renamed = commits.size || notes.size ? await renames(root) : new Map<string, string>();
     const inWorkspace = new Set(workspaceFiles);
     const touched = new Set<string>();
     const hashes = [...commits.keys()];
@@ -157,25 +164,93 @@ export async function computeGitAuthorship(root: string, workspaceFiles: Iterabl
     }
 
     const maxFiles = options.maxFiles ?? 5000;
-    const files = [...touched].sort().slice(0, maxFiles);
+    // Files AI commits touched first (they need blame for AI lines), then, for ownership, every other file.
+    const wanted = [...touched].sort();
+    if (options.people) for (const f of [...inWorkspace].sort()) if (!touched.has(f)) wanted.push(f);
+    const files = wanted.slice(0, maxFiles);
     const ranges = new Map<string, AuthorshipRange[]>();
+    const owners = new Map<string, FileOwner[]>();
+    const people = new People();
     let next = 0;
     const worker = async () => {
         while (next < files.length && !options.isCancelled?.()) {
             const file = files[next++]!;
             try {
                 const out = await git(root, ['blame', '--incremental', '--', file], 64 * 1024 * 1024);
-                const runs = parseIncrementalBlame(out);
-                // Commit metadata says "this commit was AI-assisted"; a note says exactly which lines.
-                const r = overlayRanges(rangesFromBlame(runs, commits), projectNotes(runs, notes));
-                if (r.length) ranges.set(file, r);
+                const { runs, authors } = parseBlame(out);
+                if (touched.has(file)) {
+                    // Commit metadata says "this commit was AI-assisted"; a note says exactly which lines.
+                    const r = overlayRanges(rangesFromBlame(runs, commits), projectNotes(runs, notes));
+                    if (r.length) ranges.set(file, r);
+                }
+                if (options.people) {
+                    const o = people.count(runs, authors);
+                    if (o.length) owners.set(file, o);
+                }
             } catch {
-                // deleted, binary or unreadable: its lines stay unknown
+                // deleted, binary, untracked or unreadable: its lines stay unknown
             }
         }
     };
     await Promise.all(Array.from({ length: Math.max(1, options.concurrency ?? 4) }, worker));
-    return { ok: true, data: { ranges, commits: shown, stats: { commits: scanned, aiCommits: commits.size, blamedFiles: files.length, notedCommits: notes.size } }, truncated: touched.size > files.length };
+    const stats = { commits: scanned, aiCommits: commits.size, blamedFiles: files.length, notedCommits: notes.size, ...(options.people ? { people: people.size } : {}) };
+    const data: AuthorshipData = { ranges, commits: shown, stats, ...(options.people ? { owners, people: people.names() } : {}) };
+    return { ok: true, data, truncated: wanted.length > files.length };
+}
+
+/** A commit's author, from blame's header lines. */
+export interface BlameAuthor {
+    name: string;
+    mail: string;
+    /** ms since the epoch. */
+    time: number;
+}
+
+const NOT_COMMITTED = '0'.repeat(40);
+
+/** People across the files blamed: one index per identity (email, else name), shown by their latest name. */
+class People {
+    private readonly ids = new Map<string, number>();
+    private readonly shown: Array<{ name: string; time: number }> = [];
+
+    get size(): number {
+        return this.shown.length;
+    }
+
+    names(): string[] {
+        return this.shown.map((p) => p.name);
+    }
+
+    /** A file's lines by the person who last changed them (bots and lines not committed yet left out). */
+    count(runs: BlameRun[], authors: Map<string, BlameAuthor>): FileOwner[] {
+        const per = new Map<number, FileOwner>();
+        for (const run of runs) {
+            const a = authors.get(run.commit);
+            if (!a || run.commit === NOT_COMMITTED || isBot(a)) continue;
+            const person = this.id(a);
+            const o = per.get(person);
+            if (o) {
+                o.lines += run.count;
+                o.last = Math.max(o.last, a.time);
+            } else per.set(person, { person, lines: run.count, last: a.time });
+        }
+        return [...per.values()];
+    }
+
+    private id(a: BlameAuthor): number {
+        const key = (a.mail || a.name).toLowerCase();
+        let id = this.ids.get(key);
+        if (id === undefined) {
+            id = this.shown.length;
+            this.ids.set(key, id);
+            this.shown.push({ name: a.name || a.mail, time: a.time });
+        } else if (a.time > this.shown[id]!.time && a.name) this.shown[id] = { name: a.name, time: a.time };
+        return id;
+    }
+}
+
+function isBot(a: BlameAuthor): boolean {
+    return /\[bot\]/i.test(a.name) || /\[bot\]@/i.test(a.mail);
 }
 
 /** Where each renamed path ended up (old → newer), from one pass over the history's renames. */
@@ -216,10 +291,28 @@ function current(path: string, renamed: Map<string, string>): string {
  * then key lines, ending with `filename <path at that commit>`.
  */
 export function parseIncrementalBlame(out: string): BlameRun[] {
+    return parseBlame(out).runs;
+}
+
+/**
+ * The runs, and each commit's author: the first run of a commit carries its
+ * `author`, `author-mail` and `author-time` lines (later runs of it don't).
+ */
+export function parseBlame(out: string): { runs: BlameRun[]; authors: Map<string, BlameAuthor> } {
     const runs: BlameRun[] = [];
+    const authors = new Map<string, BlameAuthor>();
+    let commit: string | undefined;
     for (const line of out.split('\n')) {
         if (line.startsWith('filename ') && runs.length && runs[runs.length - 1]!.file === undefined) {
             runs[runs.length - 1]!.file = line.slice('filename '.length);
+            continue;
+        }
+        if (commit && line.startsWith('author')) {
+            const a = authors.get(commit) ?? { name: '', mail: '', time: 0 };
+            if (line.startsWith('author ')) a.name = line.slice(7).trim();
+            else if (line.startsWith('author-mail ')) a.mail = line.slice(12).trim().replace(/^<|>$/g, '');
+            else if (line.startsWith('author-time ')) a.time = Number(line.slice(12)) * 1000 || 0;
+            authors.set(commit, a);
             continue;
         }
         if (line.length < 46 || line.charCodeAt(40) !== 32) continue; // "<40 hex> 1 1 1" is the shortest
@@ -228,9 +321,12 @@ export function parseIncrementalBlame(out: string): BlameRun[] {
         const orig = Number(parts[1]);
         const start = Number(parts[2]);
         const count = Number(parts[3]);
-        if (Number.isInteger(start) && Number.isInteger(count) && Number.isInteger(orig)) runs.push({ start, count, commit: parts[0]!, orig });
+        if (Number.isInteger(start) && Number.isInteger(count) && Number.isInteger(orig)) {
+            runs.push({ start, count, commit: parts[0]!, orig });
+            commit = parts[0]!;
+        }
     }
-    return runs;
+    return { runs, authors };
 }
 
 function isHash(s: string): boolean {
