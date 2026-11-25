@@ -17,6 +17,7 @@ import { getVoiceConfig } from './voiceConfig';
 import {
     initKokoro,
     isKokoroReady,
+    resetKokoro,
     kokoroSpeak,
     kokoroStop,
     kokoroWarm,
@@ -274,6 +275,18 @@ export function completeGpuModelDownload(success: boolean, error?: string): void
     notifyGpuModelReady(success);
 }
 
+/**
+ * Restarts Kokoro (the worker probes for the GPU model again): when the GPU
+ * model finishes downloading, speech moves to WebGPU now, not at the next
+ * VS Code start. Until the new engine is ready, speech uses the system voice.
+ */
+export function restartKokoroEngine(): Promise<void> {
+    if (kokoroStatus === 'loading') return startKokoroEngine();
+    resetKokoro();
+    setKokoroStatus('idle');
+    return startKokoroEngine();
+}
+
 /** Boot the Kokoro worker. Idempotent — safe to call multiple times. */
 export function startKokoroEngine(): Promise<void> {
     if (kokoroStatus === 'ready') return Promise.resolve();
@@ -465,30 +478,66 @@ export async function speak(text: string, opts: SpeakOpts = {}): Promise<void> {
 // through a tiny priority queue: narrator jobs jump ahead of any pending
 // message jobs (without preempting the in-flight one).
 
-export type KokoroJobPriority = 'narrator' | 'message';
+/**
+ * Lanes, most urgent first: 'urgent' (the phrase about to be spoken),
+ * 'narrator' (what's likely next), 'message' (the rest). FIFO within a lane,
+ * so phrases asked for in order are made in order.
+ */
+export type KokoroJobPriority = 'urgent' | 'narrator' | 'message';
+const LANE: Record<KokoroJobPriority, number> = { urgent: 0, narrator: 1, message: 2 };
 
 interface KokoroJob {
     priority: KokoroJobPriority;
     text: string;
     voiceId: string;
     onProgress?: (done: number, total: number) => void;
-    resolve: (value: KokoroAudio | null) => void;
+    /** Everyone waiting for this audio (a repeat request joins the queued job). */
+    resolvers: Array<(value: KokoroAudio | null) => void>;
 }
 
 const kokoroQueue: KokoroJob[] = [];
 let kokoroQueueRunning = false;
 
+function insertKokoroJob(job: KokoroJob): void {
+    // After the last job of the same or a more urgent lane.
+    let idx = kokoroQueue.findIndex(j => LANE[j.priority] > LANE[job.priority]);
+    if (idx === -1) idx = kokoroQueue.length;
+    kokoroQueue.splice(idx, 0, job);
+}
+
 function enqueueKokoroJob(job: KokoroJob): void {
-    if (job.priority === 'narrator') {
-        // Insert before the first 'message' job so narrator stories play
-        // through ASAP. Preserves narrator-vs-narrator FIFO order.
-        const idx = kokoroQueue.findIndex(j => j.priority === 'message');
-        if (idx === -1) kokoroQueue.push(job);
-        else kokoroQueue.splice(idx, 0, job);
-    } else {
-        kokoroQueue.push(job);
+    const queued = kokoroQueue.find(j => j.text === job.text && j.voiceId === job.voiceId);
+    if (queued) {
+        // Already waiting: join it, and move it up if this request is more urgent.
+        queued.resolvers.push(...job.resolvers);
+        if (LANE[job.priority] < LANE[queued.priority]) {
+            kokoroQueue.splice(kokoroQueue.indexOf(queued), 1);
+            queued.priority = job.priority;
+            insertKokoroJob(queued);
+        }
+        return;
     }
+    insertKokoroJob(job);
     void runKokoroQueue();
+}
+
+/** Moves a queued job to another lane (up or down): a phrase whose urgent asker gave up waits behind what's needed now. */
+export function reprioritizeKokoroJob(text: string, voiceId: string, priority: KokoroJobPriority): void {
+    const clean = cleanText(text);
+    const job = kokoroQueue.find(j => j.text === clean && j.voiceId === voiceId);
+    if (!job || job.priority === priority) return;
+    kokoroQueue.splice(kokoroQueue.indexOf(job), 1);
+    job.priority = priority;
+    insertKokoroJob(job);
+}
+
+/** Takes a not-yet-started job's waiter out; the job goes when nobody waits for it. */
+function dropKokoroWaiter(text: string, voiceId: string, resolve: (value: KokoroAudio | null) => void): void {
+    const job = kokoroQueue.find(j => j.text === text && j.voiceId === voiceId);
+    if (!job) return;
+    job.resolvers = job.resolvers.filter(r => r !== resolve);
+    if (!job.resolvers.length) kokoroQueue.splice(kokoroQueue.indexOf(job), 1);
+    resolve(null);
 }
 
 async function runKokoroQueue(): Promise<void> {
@@ -499,10 +548,10 @@ async function runKokoroQueue(): Promise<void> {
             const job = kokoroQueue.shift()!;
             try {
                 const audio = await kokoroGenerate(job.text, job.voiceId, job.onProgress);
-                job.resolve(audio);
+                for (const r of job.resolvers) r(audio);
             } catch (err) {
                 console.warn('[CodeArchy] kokoroGenerate failed:', err);
-                job.resolve(null);
+                for (const r of job.resolvers) r(null);
             }
         }
     } finally {
@@ -524,6 +573,7 @@ export async function synthesizeKokoroAudio(
     voiceId?: string,
     onProgress?: (done: number, total: number) => void,
     priority: KokoroJobPriority = 'message',
+    signal?: { readonly aborted: boolean; addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void },
 ): Promise<KokoroAudio | null> {
     const clean = cleanText(text);
     if (!clean) return null;
@@ -533,8 +583,10 @@ export async function synthesizeKokoroAudio(
     // surreptitiously triggering a multi-second download/init.
     if (!isKokoroReady()) return null;
     const target = voiceId ?? getVoiceConfig().voiceId ?? DEFAULT_KOKORO_VOICE;
+    if (signal?.aborted) return null;
     return new Promise<KokoroAudio | null>((resolve) => {
-        enqueueKokoroJob({ priority, text: clean, voiceId: target, onProgress, resolve });
+        enqueueKokoroJob({ priority, text: clean, voiceId: target, onProgress, resolvers: [resolve] });
+        signal?.addEventListener('abort', () => dropKokoroWaiter(clean, target, resolve), { once: true });
     });
 }
 

@@ -6,7 +6,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { VoiceClient, VoiceEngineId, VoiceState } from '@codearchy/protocol';
 import { Icon, type IconName } from './icons.js';
-import type { Narrator } from './narration.js';
+import type { SpeechEngine, SpeechState } from './speech/engine.js';
 
 /** Plain text for speech: links keep their label, code and markup marks go. */
 export function speechText(markdown: string): string {
@@ -45,6 +45,14 @@ function linkLabels(s: string): string {
     return out;
 }
 
+/** The engine's speaking state (which utterance, which phrase), for indicators. */
+export function useSpeechState(speech: SpeechEngine): SpeechState {
+    return useSyncExternalStore(
+        (on) => speech.subscribe(on),
+        () => speech.state()
+    );
+}
+
 export function useVoiceState(voice: VoiceClient): VoiceState {
     return useSyncExternalStore(
         (on) => voice.subscribe(on),
@@ -79,24 +87,26 @@ export function kokoroLabel(s: VoiceState['kokoro']): string {
     }
 }
 
-export function VoiceSettingsPanel({ voice, narrator, onClose }: { voice: VoiceClient; narrator?: Narrator; onClose(): void }) {
+export function VoiceSettingsPanel({ voice, speech, onClose }: { voice: VoiceClient; speech?: SpeechEngine; onClose(): void }) {
     const state = useVoiceState(voice);
     const [previewing, setPreviewing] = useState(false);
-    useEffect(() => () => voice.stop(), [voice]);
+    useEffect(() => () => (speech ? speech.stop() : voice.stop()), [voice, speech]);
     // The sample is made (and kept) as soon as this voice can be kept, so Preview plays at once.
     const cacheKey = voice.cacheKey?.() ?? '';
     useEffect(() => {
-        if (cacheKey) narrator?.prefetch([SAMPLE], { first: 1, priority: 'now' });
-    }, [narrator, cacheKey]);
+        if (cacheKey) speech?.prefetch('preview', [SAMPLE], { openers: 8, priority: 'soon', pin: true });
+    }, [speech, cacheKey]);
     const k = state.kokoro;
     const busy = k.status === 'downloading' || k.status === 'loading';
     const preview = () => {
         if (previewing) {
-            voice.stop();
+            if (speech) speech.stop();
+            else voice.stop();
             return setPreviewing(false);
         }
         setPreviewing(true);
-        (narrator ?? voice).speak(SAMPLE, { onEnd: () => setPreviewing(false), onError: () => setPreviewing(false) });
+        if (speech) speech.say(SAMPLE, { id: 'preview', onEnd: () => setPreviewing(false), onError: () => setPreviewing(false) });
+        else voice.speak(SAMPLE, { onEnd: () => setPreviewing(false), onError: () => setPreviewing(false) });
     };
 
     return (

@@ -168,8 +168,12 @@ export interface AiClient {
     setKey(provider: string, key: string | null): Promise<AiState>;
     /** The newest card for a node; `generate` asks for an AI card now (it may take a while). */
     card(key: string, options?: { generate?: boolean }): Promise<AiCard | undefined>;
-    /** Asks in a conversation (the host keeps its history); events stream to `onEvent` until `done` or `error`. */
-    ask(conversation: string, question: string, options: { selection?: string }, onEvent: (event: ChatEvent) => void): Promise<void>;
+    /**
+     * Asks in a conversation (the host keeps its history); events stream to
+     * `onEvent` until `done` or `error`. `earlier`: the conversation's previous
+     * turns, used only when the host doesn't have them (a follow-up after a reload).
+     */
+    ask(conversation: string, question: string, options: { selection?: string; earlier?: Array<{ question: string; answer: string }> }, onEvent: (event: ChatEvent) => void): Promise<void>;
     cancel(conversation: string): void;
     /** Forget a conversation's history. */
     reset(conversation: string): void;

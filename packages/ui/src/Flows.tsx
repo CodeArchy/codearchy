@@ -33,6 +33,8 @@ export interface FlowsViewProps {
     onWalk?(flow: Flow): void;
     /** "Add to tour": capture the flow as a step of the draft tour. */
     onAddToTour?(flow: Flow): void;
+    /** A flow is on screen (its walkthrough's openings can be made ahead, so Walk through speaks at once). */
+    onFlowShown?(flow: Flow): void;
 }
 
 export function FlowsView(props: FlowsViewProps) {
@@ -67,7 +69,11 @@ export function FlowsView(props: FlowsViewProps) {
             setFlow(undefined);
             return;
         }
-        void client.flow(current).then((f) => live && setFlow(f));
+        void client.flow(current).then((f) => {
+            if (!live) return;
+            setFlow(f);
+            if (f) props.onFlowShown?.(f);
+        });
         return () => {
             live = false;
         };

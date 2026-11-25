@@ -3,11 +3,12 @@
  * "ask before sending" preview. Everything goes through an AiClient, so the
  * same components run in VS Code and the web app.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AiCard, AiClient, AiLocalModel, AiProviderInfo, AiPullProgress, AiRole, AiSettings, AiState, CanvasAction, ChatCitation, ChatEvent, PrivacyTier, SendPreview } from '@codearchy/protocol';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type { AiCard, AiClient, AiLocalModel, AiProviderInfo, AiPullProgress, AiRole, AiSettings, AiState, CanvasAction, PrivacyTier, SendPreview } from '@codearchy/protocol';
 import { parseAnswer, type Block, type Inline } from './answer.js';
 import { Icon, type IconName } from './icons.js';
-import { formatBytes } from './voice.js';
+import { formatBytes, SpeakingBars } from './voice.js';
+import type { ChatSession, ChatSnapshot, ChatTurn } from './chatSession.js';
 
 // ── Answers ─────────────────────────────────────────────────────────────────
 
@@ -89,9 +90,9 @@ export function Answer({ text, links }: { text: string; links: AnswerLinks }) {
 // ── Small shared pieces ─────────────────────────────────────────────────────
 
 /** A button that shows only an icon (the label is for screen readers and the tooltip). */
-function IconButton({ icon, label, onClick, disabled, className }: { icon: IconName; label: string; onClick(): void; disabled?: boolean; className?: string }) {
+function IconButton({ icon, label, onClick, disabled, className, pressed }: { icon: IconName; label: string; onClick(): void; disabled?: boolean; className?: string; pressed?: boolean }) {
     return (
-        <button type="button" className={`ca-icon-button${className ? ` ${className}` : ''}`} aria-label={label} title={label} onClick={onClick} disabled={disabled}>
+        <button type="button" className={`ca-icon-button${className ? ` ${className}` : ''}`} aria-label={label} title={label} onClick={onClick} disabled={disabled} {...(pressed !== undefined ? { 'aria-pressed': pressed } : {})}>
             <Icon name={icon} />
         </button>
     );
@@ -120,34 +121,36 @@ function useAiState(ai: AiClient): [AiState | undefined, (s: AiState) => void] {
 
 // ── Chat ────────────────────────────────────────────────────────────────────
 
-interface Turn {
-    question: string;
-    answer: string;
-    status: string[];
-    citations: ChatCitation[];
-    actions: CanvasAction[];
-    done: boolean;
-    error?: string;
-    meta?: string;
-}
-
 export interface ChatPanelProps extends AnswerLinks {
     ai: AiClient;
+    /** The conversation (history, the answer being written, narration): it outlives this panel. */
+    session: ChatSession;
     /** The node selected in the map, offered as context. */
     selection?: { key: string; name: string };
     onAction(action: CanvasAction): void;
     onOpenSettings(): void;
     /** A question to put in the box (e.g. from "Ask about this"); a new nonce repeats it. */
     prompt?: { text: string; nonce: number };
+    /** Turns an answer's walkthrough into tour steps. */
+    onMakeTour?(turn: ChatTurn): void;
+}
+
+function useChat(session: ChatSession): ChatSnapshot {
+    return useSyncExternalStore(
+        (on) => session.subscribe(on),
+        () => session.snapshot()
+    );
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-    const { ai } = props;
+    const { ai, session } = props;
     const [state] = useAiState(ai);
-    const [turns, setTurns] = useState<Turn[]>([]);
+    const chatState = useChat(session);
+    const turns = chatState.turns;
+    const speech = session.speech;
     const [draft, setDraft] = useState(props.prompt?.text ?? '');
     const [useSelection, setUseSelection] = useState(true);
-    const conversation = useRef(newConversationId());
+    const [followUp, setFollowUp] = useState<ChatTurn>();
     const busy = turns.length > 0 && !turns[turns.length - 1]!.done;
     const end = useRef<HTMLDivElement>(null);
     const box = useRef<HTMLTextAreaElement>(null);
@@ -161,7 +164,7 @@ export function ChatPanel(props: ChatPanelProps) {
     }, [props.prompt?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => {
         end.current?.scrollIntoView?.({ block: 'end' });
-    }, [turns]);
+    }, [turns.length, turns.at(-1)?.answer.length, turns.at(-1)?.done]);
     // The box grows with its text, up to a limit.
     useEffect(() => {
         const el = box.current;
@@ -170,43 +173,15 @@ export function ChatPanel(props: ChatPanelProps) {
         el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     }, [draft]);
 
-    const update = (patch: (t: Turn) => Turn) => setTurns((all) => [...all.slice(0, -1), patch(all[all.length - 1]!)]);
-
     const ask = useCallback(
         (text: string) => {
-            const question = text.trim();
-            if (!question || busy) return;
+            if (!text.trim() || busy) return;
             setDraft('');
-            setTurns((all) => [...all, { question, answer: '', status: [], citations: [], actions: [], done: false }]);
-            const selection = useSelection ? props.selection?.key : undefined;
-            void ai
-                .ask(conversation.current, question, { selection }, (e: ChatEvent) => {
-                    if (e.type === 'text') update((t) => ({ ...t, answer: t.answer + e.delta }));
-                    else if (e.type === 'restart') update((t) => ({ ...t, answer: '' }));
-                    else if (e.type === 'status') update((t) => ({ ...t, status: [...t.status, e.text] }));
-                    else if (e.type === 'action') update((t) => ({ ...t, actions: [...t.actions, e.action] }));
-                    else if (e.type === 'error') update((t) => ({ ...t, done: true, error: e.message }));
-                    else if (e.type === 'done')
-                        update((t) => ({
-                            ...t,
-                            done: true,
-                            answer: e.answer,
-                            citations: e.citations,
-                            actions: e.actions,
-                            meta: `${e.provider} · ${e.model}${e.mode === 'rag' ? ' · from search results' : ''} · ${(e.usage.inputTokens + e.usage.outputTokens).toLocaleString()} tokens`,
-                        }));
-                })
-                .catch((err: unknown) => update((t) => ({ ...t, done: true, error: err instanceof Error ? err.message : String(err) })));
+            setFollowUp(undefined);
+            session.ask(text, { ...(useSelection && props.selection ? { selection: props.selection.key } : {}) });
         },
-        [ai, busy, useSelection, props.selection?.key],
+        [session, busy, useSelection, props.selection?.key] // eslint-disable-line react-hooks/exhaustive-deps
     );
-
-    const newChat = () => {
-        ai.reset(conversation.current);
-        conversation.current = newConversationId();
-        setTurns([]);
-        box.current?.focus();
-    };
 
     const chat = state?.resolved.chat;
     const unavailable = chat && !chat.ok ? chat.reason : undefined;
@@ -235,7 +210,16 @@ export function ChatPanel(props: ChatPanelProps) {
                     </span>
                 )}
                 <span className="ca-toolbar-gap" />
-                {turns.length ? <IconButton icon="plus" label="New chat" onClick={newChat} /> : null}
+                {speech ? (
+                    <IconButton
+                        icon={chatState.narrate ? 'volume' : 'mute'}
+                        label={chatState.narrate ? 'Narration on: answers are spoken and the canvas follows' : 'Narration off'}
+                        className={chatState.narrate ? 'ca-on' : ''}
+                        pressed={chatState.narrate}
+                        onClick={() => session.setNarrate(!chatState.narrate)}
+                    />
+                ) : null}
+                {turns.length ? <IconButton icon="plus" label="New chat" onClick={() => session.newChat()} /> : null}
                 <IconButton icon="sliders" label="AI settings" onClick={props.onOpenSettings} />
             </div>
 
@@ -251,13 +235,15 @@ export function ChatPanel(props: ChatPanelProps) {
                             <Icon name="sliders" /> Set up AI
                         </button>
                     </div>
-                ) : turns.length === 0 ? (
+                ) : turns.length === 0 && chatState.loaded ? (
                     <div className="ca-chat-empty">
                         <span className="ca-empty-icon">
                             <Icon name="sparkles" size={22} />
                         </span>
                         <p className="ca-empty-title">Ask about this codebase</p>
-                        <p className="ca-muted">Answers come from the map and cite the parts and lines they rely on.</p>
+                        <p className="ca-muted">
+                            Answers come from the map and cite the parts and lines they rely on.{speech && chatState.narrate ? ' They\'re spoken as they\'re written, and the canvas shows each part as it\'s mentioned.' : ''}
+                        </p>
                         <div className="ca-suggestions">
                             {suggestions.map((s) => (
                                 <button key={s} type="button" className="ca-suggestion" onClick={() => ask(s)}>
@@ -268,64 +254,96 @@ export function ChatPanel(props: ChatPanelProps) {
                     </div>
                 ) : null}
 
-                {turns.map((t, i) => (
-                    <div key={i} className="ca-turn">
-                        <div className="ca-msg ca-msg-user">
-                            <div className="ca-bubble">{t.question}</div>
-                        </div>
-                        <div className="ca-msg ca-msg-ai">
-                            <span className="ca-avatar" aria-hidden="true">
-                                <Icon name="sparkles" size={14} />
-                            </span>
-                            <div className="ca-msg-body">
-                                {!t.done ? (
-                                    <div className="ca-thinking" role="status">
-                                        <span className="ca-typing" aria-hidden="true">
-                                            <i />
-                                            <i />
-                                            <i />
-                                        </span>
-                                        <span>{t.status[t.status.length - 1] ?? 'Thinking…'}</span>
-                                    </div>
-                                ) : t.status.length ? (
-                                    <details className="ca-steps">
-                                        <summary>
-                                            <Icon name="chevron" size={12} className="ca-steps-chevron" /> Looked at {t.status.length} thing{t.status.length === 1 ? '' : 's'}
-                                        </summary>
-                                        <ul>
-                                            {t.status.map((s, j) => (
-                                                <li key={j}>{s}</li>
+                {turns.map((t, i) => {
+                    const playing = chatState.playing?.turn === t.id;
+                    return (
+                        <div key={t.id} className={`ca-turn${playing ? ' ca-turn-playing' : ''}`}>
+                            <div className="ca-msg ca-msg-user">
+                                <div className="ca-bubble">{t.question}</div>
+                            </div>
+                            <div className="ca-msg ca-msg-ai">
+                                <span className="ca-avatar" aria-hidden="true">
+                                    <Icon name="sparkles" size={14} />
+                                </span>
+                                <div className="ca-msg-body">
+                                    {!t.done ? (
+                                        <div className="ca-thinking" role="status">
+                                            <span className="ca-typing" aria-hidden="true">
+                                                <i />
+                                                <i />
+                                                <i />
+                                            </span>
+                                            <span>{t.status[t.status.length - 1] ?? 'Thinking…'}</span>
+                                        </div>
+                                    ) : t.status.length ? (
+                                        <details className="ca-steps">
+                                            <summary>
+                                                <Icon name="chevron" size={12} className="ca-steps-chevron" /> Looked at {t.status.length} thing{t.status.length === 1 ? '' : 's'}
+                                            </summary>
+                                            <ul>
+                                                {t.status.map((s, j) => (
+                                                    <li key={j}>{s}</li>
+                                                ))}
+                                            </ul>
+                                        </details>
+                                    ) : null}
+                                    {t.answer ? <Answer text={t.answer} links={props} /> : null}
+                                    {playing ? (
+                                        <div className="ca-narrating" role="status" aria-live="off">
+                                            <SpeakingBars active={!!chatState.playing?.phrase} />
+                                            <span className="ca-narrating-phrase">{chatState.playing?.phrase ?? 'Getting ready to speak…'}</span>
+                                            <button type="button" className="ca-icon-button" aria-label="Stop the walkthrough" title="Stop" onClick={() => session.stop()}>
+                                                <Icon name="stop" size={13} />
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                    {t.error ? (
+                                        <div className="ca-chat-error" role="alert">
+                                            <Icon name="alert" />
+                                            <span>{t.error}</span>
+                                            {i === turns.length - 1 ? (
+                                                <button type="button" className="ca-button ca-button-ghost" onClick={() => ask(t.question)}>
+                                                    <Icon name="retry" /> Retry
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+                                    {t.done && !t.error ? (
+                                        <div className="ca-msg-actions">
+                                            {speech && t.answer && !playing ? (
+                                                <button type="button" className="ca-button ca-button-soft" title="Hear it again, with the canvas following" onClick={() => session.play(t.id)}>
+                                                    <Icon name="play" size={13} /> Play walkthrough
+                                                </button>
+                                            ) : null}
+                                            {t.actions.map((a, j) => (
+                                                <button key={j} type="button" className="ca-button ca-button-soft" onClick={() => props.onAction(a)}>
+                                                    <Icon name="target" /> Show me{t.actions.length > 1 ? ` (${j + 1})` : ''}
+                                                </button>
                                             ))}
-                                        </ul>
-                                    </details>
-                                ) : null}
-                                {t.answer ? <Answer text={t.answer} links={props} /> : null}
-                                {t.error ? (
-                                    <div className="ca-chat-error" role="alert">
-                                        <Icon name="alert" />
-                                        <span>{t.error}</span>
-                                        {i === turns.length - 1 ? (
-                                            <button type="button" className="ca-button ca-button-ghost" onClick={() => ask(t.question)}>
-                                                <Icon name="retry" /> Retry
+                                            <button
+                                                type="button"
+                                                className="ca-button ca-button-ghost"
+                                                onClick={() => {
+                                                    setFollowUp(t);
+                                                    box.current?.focus();
+                                                }}
+                                            >
+                                                <Icon name="chat" size={13} /> Follow up
                                             </button>
-                                        ) : null}
-                                    </div>
-                                ) : null}
-                                {t.done && !t.error ? (
-                                    <div className="ca-msg-actions">
-                                        {t.actions.map((a, j) => (
-                                            <button key={j} type="button" className="ca-button ca-button-soft" onClick={() => props.onAction(a)}>
-                                                <Icon name="target" /> Show me{t.actions.length > 1 ? ` (${j + 1})` : ''}
-                                            </button>
-                                        ))}
-                                        <CopyButton text={t.answer} />
-                                        {t.meta ? <span className="ca-muted ca-chat-meta">{t.meta}</span> : null}
-                                    </div>
-                                ) : null}
+                                            {props.onMakeTour && t.citations.some((c) => c.type === 'node') ? (
+                                                <button type="button" className="ca-icon-button" aria-label="Make a tour from this answer" title="Make a tour from this answer" onClick={() => props.onMakeTour!(t)}>
+                                                    <Icon name="map" size={14} />
+                                                </button>
+                                            ) : null}
+                                            <CopyButton text={t.answer} />
+                                            {t.meta ? <span className="ca-muted ca-chat-meta">{t.meta}</span> : null}
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
                 <div ref={end} />
             </div>
 
@@ -337,6 +355,14 @@ export function ChatPanel(props: ChatPanelProps) {
                 }}
             >
                 <div className={`ca-composer-box${unavailable ? ' ca-disabled' : ''}`}>
+                    {followUp ? (
+                        <span className="ca-context-chip" title="Your question continues this conversation">
+                            <Icon name="chat" size={13} /> Following up on <strong>{followUp.question.length > 48 ? `${followUp.question.slice(0, 47)}…` : followUp.question}</strong>
+                            <button type="button" aria-label="Not a follow-up" onClick={() => setFollowUp(undefined)}>
+                                <Icon name="close" size={12} />
+                            </button>
+                        </span>
+                    ) : null}
                     {props.selection && useSelection ? (
                         <span className="ca-context-chip" title="The answer focuses on the selected part of the map">
                             <Icon name="target" size={13} /> About <strong>{props.selection.name}</strong>
@@ -356,7 +382,7 @@ export function ChatPanel(props: ChatPanelProps) {
                             rows={1}
                             value={draft}
                             disabled={!!unavailable}
-                            placeholder={unavailable ? 'Set up a model first' : 'Ask about the codebase…'}
+                            placeholder={unavailable ? 'Set up a model first' : followUp ? 'Ask a follow-up…' : 'Ask about the codebase…'}
                             onChange={(e) => setDraft(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -366,7 +392,7 @@ export function ChatPanel(props: ChatPanelProps) {
                             }}
                         />
                         {busy ? (
-                            <IconButton icon="stop" label="Stop" className="ca-send ca-send-stop" onClick={() => ai.cancel(conversation.current)} />
+                            <IconButton icon="stop" label="Stop" className="ca-send ca-send-stop" onClick={() => session.cancel()} />
                         ) : (
                             <button type="submit" className="ca-icon-button ca-send" aria-label="Send" title="Send (Enter)" disabled={!draft.trim() || !!unavailable}>
                                 <Icon name="send" />
@@ -404,10 +430,6 @@ function CopyButton({ text }: { text: string }) {
             <Icon name={copied ? 'check' : 'copy'} />
         </button>
     );
-}
-
-function newConversationId(): string {
-    return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // ── Summary cards (in the Inspector) ────────────────────────────────────────

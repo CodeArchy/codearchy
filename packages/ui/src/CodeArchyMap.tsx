@@ -32,11 +32,12 @@ import { buildMapModel, DEFAULT_EDGE_LIMIT, flowRoles, keyOfExternal, LENSES, re
 import { Matrix } from './Matrix.js';
 import { ArchitectureView } from './Architecture.js';
 import { FlowsView } from './Flows.js';
-import { AddToTourDialog, ToursList, TourPlayer } from './Tours.js';
-import { addToDraft, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type DraftTour, type StepCapture } from './tourModel.js';
+import { AddToTourDialog, stepSpeech, ToursList, TourPlayer } from './Tours.js';
+import { addToDraft, capturesFromAnswer, loadDraft, loadProgress, removeFromDraft, saveDraft, saveProgress, stepView, tourFromFlow, type DraftTour, type StepCapture } from './tourModel.js';
 import { Resizer, usePanelSize } from './Resizer.js';
 import { VoiceSettingsPanel } from './voice.js';
-import { Narrator } from './narration.js';
+import { SpeechEngine } from './speech/engine.js';
+import { ACKNOWLEDGEMENTS, ChatSession, type ChatTurn } from './chatSession.js';
 import { flowRows } from './flowModel.js';
 import { Breadcrumb, Inspector, Navigator, SearchBox } from './panels.js';
 
@@ -51,6 +52,8 @@ export interface CodeArchyMapProps {
     theme?: 'system' | 'light' | 'dark';
     /** Changes when a different workspace is loaded: the view resets to the top. */
     revision?: string;
+    /** Stable identity of the workspace (kept across reloads): chat history, tour drafts and progress are per workspace. Default: `revision`. */
+    workspace?: string;
     /** Changes when the same workspace's data changes (a file saved): the current view refetches in place. */
     dataVersion?: number;
     /** Ask the Map to show a node (e.g. "Reveal in Map" from the editor); a new `nonce` repeats it. */
@@ -86,7 +89,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     /** The tour being played, and its step. */
     const [playing, setPlaying] = useState<{ tour: TourDetails; index: number }>();
     const [done, setDone] = useState<Set<string>>(new Set());
-    const workspaceId = props.revision || 'workspace';
+    const workspaceId = props.workspace || props.revision || 'workspace';
     const [draft, setDraftState] = useState<DraftTour | undefined>(() => loadDraft(workspaceId));
     const [capture, setCapture] = useState<StepCapture>();
     /** Ask Flows mode to show a flow (a tour step, or a reveal); a new `nonce` repeats it. */
@@ -101,8 +104,23 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const [sideTab, setSideTab] = useState<'inspector' | 'chat'>('inspector');
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [voiceOpen, setVoiceOpen] = useState(false);
-    /** Narration made ahead and kept (when the voice allows), shared by tours and the voice settings. */
-    const narrator = useMemo(() => (props.voice ? new Narrator(props.voice) : undefined), [props.voice]);
+    /** The voice: speech made a phrase at a time, kept, and played gaplessly (tours, answers, the preview). */
+    const speech = useMemo(() => (props.voice ? new SpeechEngine(props.voice) : undefined), [props.voice]);
+    /** The conversation about this workspace: it outlives the Ask tab and the page. */
+    const chat = useMemo(() => (props.ai ? new ChatSession({ ai: props.ai, workspace: workspaceId, ...(speech ? { speech } : {}) }) : undefined), [props.ai, workspaceId, speech]);
+    useEffect(() => () => chat?.dispose(), [chat]);
+    // Once the natural voice is ready, the acknowledgements are made ahead: an answer starts speaking at once.
+    useEffect(() => {
+        if (!speech) return;
+        let key = '';
+        const warm = () => {
+            const k = speech.voice.cacheKey?.() ?? '';
+            if (k && k !== key) speech.prefetch('acks', ACKNOWLEDGEMENTS, { openers: 4, priority: 'soon', pin: true });
+            key = k;
+        };
+        warm();
+        return speech.voice.subscribe(warm);
+    }, [speech]);
     // Panels: drag the edges to resize (remembered), or hide them from the toolbar.
     const navWidth = usePanelSize('navigator', 260, 160, 560);
     const sideWidth = usePanelSize('side', 340, 240, 820);
@@ -343,6 +361,35 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
         },
         [workspaceId]
     );
+    /**
+     * Shows parts on the canvas for a narration or an answer: on the Map (from
+     * a page mode), revealing the first. A ref, so the chat session always
+     * calls the current one.
+     */
+    const focusRef = useRef<(keys: string[]) => void>(() => undefined);
+    focusRef.current = (keys: string[]) => {
+        const key = keys[0];
+        if (!key) return;
+        if (mode !== 'map' && mode !== 'matrix') setMode('map');
+        void reveal(key);
+    };
+    const focusKeys = useCallback((keys: string[]) => focusRef.current(keys), []);
+    useEffect(() => {
+        if (chat) chat.onFocus = focusKeys;
+    }, [chat, focusKeys]);
+    /** An answer's walkthrough becomes steps of the draft tour (one per part it explains). */
+    const makeTour = useCallback(
+        (turn: ChatTurn) => {
+            const captures = capturesFromAnswer(turn.answer);
+            if (!captures.length) return;
+            let d = draft;
+            for (const c of captures) d = addToDraft(d, c, turn.question);
+            setDraft(d);
+            setPlaying(undefined);
+            setMode('tours');
+        },
+        [draft, setDraft]
+    );
     /** "Walk through": the flow as a tour, in Flows, with each call highlighted in turn. */
     const walkFlow = useCallback((f: Flow) => play(tourFromFlow(f, flowRows(f).map((r) => r.index))), [play]);
     const markDone = useCallback(
@@ -571,7 +618,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             onDraftChange={setDraft}
                             onWalkFlow={client.flows ? walkFlow : undefined}
                             onShowFlows={client.flows ? () => setMode('flows') : undefined}
-                            narrator={narrator}
+                            speech={speech}
                         />
                     ) : mode === 'flows' ? (
                         <FlowsView
@@ -587,6 +634,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             openFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
                             focusFlow={flowFocus}
                             onWalk={walkFlow}
+                            onFlowShown={speech ? (f) => speech.caching && speech.prefetch('flow', tourFromFlow(f, flowRows(f).map((r) => r.index)).steps.map(stepSpeech), { openers: 2, priority: 'later' }) : undefined}
                             onAddToTour={captureFlow}
                         />
                     ) : mode === 'matrix' && view ? (
@@ -632,7 +680,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                                 void reveal(k);
                             }}
                             onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
-                            narrator={narrator}
+                            speech={speech}
                             onVoiceSettings={props.voice ? () => (props.voice!.openSettings ? props.voice!.openSettings() : setVoiceOpen(true)) : undefined}
                             onAsk={
                                 props.ai
@@ -668,14 +716,16 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             ))}
                         </div>
                     ) : null}
-                    {props.ai && sideTab === 'chat' ? (
+                    {props.ai && chat && sideTab === 'chat' ? (
                         <ChatPanel
                             ai={props.ai}
+                            session={chat}
+                            onMakeTour={client.tours ? makeTour : undefined}
                             selection={details ? { key: details.key, name: details.name } : undefined}
                             prompt={chatPrompt}
                             onNode={(k) => void reveal(k)}
                             onFile={host?.openFile ? (p, line) => host.openFile!(p, line) : undefined}
-                            onAction={(a) => a.keys[0] && void reveal(a.keys[0])}
+                            onAction={(a) => a.keys[0] && focusKeys(a.keys)}
                             onOpenSettings={() => setSettingsOpen(true)}
                         />
                     ) : (
@@ -712,7 +762,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
             {props.voice && voiceOpen ? (
                 <div className="ca-modal" onClick={(e) => e.target === e.currentTarget && setVoiceOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setVoiceOpen(false)}>
                     <div className="ca-modal-body">
-                        <VoiceSettingsPanel voice={props.voice} narrator={narrator} onClose={() => setVoiceOpen(false)} />
+                        <VoiceSettingsPanel voice={props.voice} {...(speech ? { speech } : {})} onClose={() => setVoiceOpen(false)} />
                     </div>
                 </div>
             ) : null}

@@ -252,11 +252,11 @@ export class ArchitecturePanel {
       }
 
       case WebviewMessageType.AiAsk: {
-        const { conversation, question, selection } = message.payload as { conversation: string; question: string; selection?: string };
+        const { conversation, question, selection, earlier } = message.payload as { conversation: string; question: string; selection?: string; earlier?: Array<{ question: string; answer: string }> };
         const send = (event: unknown) => void this.panel.webview.postMessage({ type: WebviewMessageType.AiChatEvent, payload: { conversation, event } });
         const host = ArchitecturePanel.aiHost;
         if (!host) send({ type: 'error', code: 'unavailable', message: 'AI is not available' });
-        else void host.ask(conversation, question, { selection }, send).catch((err: unknown) => send({ type: 'error', code: 'unavailable', message: err instanceof Error ? err.message : String(err) }));
+        else void host.ask(conversation, question, { selection, ...(Array.isArray(earlier) ? { earlier } : {}) }, send).catch((err: unknown) => send({ type: 'error', code: 'unavailable', message: err instanceof Error ? err.message : String(err) }));
         break;
       }
 

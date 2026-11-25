@@ -12,8 +12,8 @@ import { Answer } from './ai.js';
 import { Icon } from './icons.js';
 import { flowRows, splitLabel } from './flowModel.js';
 import { draftFrom, firstUndone, loadNarration, loadProgress, moveStep, saveNarration, saveProgress, slug, tourFile, tourFromFlow, tourToSave, updateStep, type DraftTour, type StepCapture } from './tourModel.js';
-import { SpeakingBars, speechText, useVoiceState } from './voice.js';
-import type { NarrationProgress, Narrator } from './narration.js';
+import { SpeakingBars, speechText, useSpeechState, useVoiceState } from './voice.js';
+import type { PrefetchProgress, SpeechEngine } from './speech/engine.js';
 import type { TourStep } from '@codearchy/protocol';
 
 /** What the narrator says for a step. */
@@ -35,8 +35,8 @@ export interface ToursListProps {
     onWalkFlow?(flow: Flow): void;
     /** Open Flows mode (to see every entrypoint). */
     onShowFlows?(): void;
-    /** With a voice that can be kept: Start Here's first steps are made ahead, so starting it speaks at once. */
-    narrator?: Narrator;
+    /** With a voice that can be kept: Start Here's opening phrases are made ahead, so any step starts at once. */
+    speech?: SpeechEngine;
 }
 
 /** Flow walk-throughs offered in the list (the rest are in Flows). */
@@ -72,12 +72,12 @@ export function ToursList(props: ToursListProps) {
     }, [client, props.workspace, props.dataVersion, reload]);
 
     // Warm the narration for Start Here's opening steps while the list is open.
-    const warmKey = props.narrator?.voice.cacheKey?.() ?? '';
+    const warmKey = props.speech?.voice.cacheKey?.() ?? '';
     useEffect(() => {
-        const n = props.narrator;
-        if (!n || !warmKey || !client.tour || !tours?.some((t) => t.id === 'start-here')) return;
-        void client.tour('start-here').then((t) => t && n.prefetch(t.steps.slice(0, 2).map(stepSpeech), { first: 1, priority: 'later' }));
-    }, [props.narrator, warmKey, tours]); // eslint-disable-line react-hooks/exhaustive-deps
+        const sp = props.speech;
+        if (!sp || !warmKey || !client.tour || !tours?.some((t) => t.id === 'start-here')) return;
+        void client.tour('start-here').then((t) => t && sp.prefetch('tours-list', t.steps.map(stepSpeech), { openers: 1, priority: 'later' }));
+    }, [props.speech, warmKey, tours]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const play = async (id: string, restart = false) => {
         if (!client.tour) return;
@@ -561,7 +561,7 @@ export interface TourPlayerProps {
     /** Draft tours: take a step out. */
     onRemove?(stepId: string): void;
     /** With it, steps are narrated (made ahead and kept when the voice allows). */
-    narrator?: Narrator;
+    speech?: SpeechEngine;
     onVoiceSettings?(): void;
 }
 
@@ -605,7 +605,7 @@ export function TourPlayer(props: TourPlayerProps) {
                     <Icon name="close" size={14} />
                 </button>
             </header>
-            {props.narrator ? <Narration narrator={props.narrator} tour={tour} index={index} last={last} onNext={() => props.onIndex(index + 1)} onSettings={props.onVoiceSettings} /> : null}
+            {props.speech ? <Narration speech={props.speech} tour={tour} index={index} last={last} onNext={() => props.onIndex(index + 1)} onSettings={props.onVoiceSettings} /> : null}
             {collapsed ? null : (
                 <div className="ca-tour-step">
                     <h3 ref={heading} tabIndex={-1}>
@@ -672,14 +672,17 @@ export function TourPlayer(props: TourPlayerProps) {
  * The narrator: reads each step aloud as it opens (unless muted), and with
  * auto-play moves on when it finishes. Preferences are remembered per viewer.
  */
-function Narration({ narrator, tour, index, last, onNext, onSettings }: { narrator: Narrator; tour: TourDetails; index: number; last: boolean; onNext(): void; onSettings?(): void }) {
-    const voice = narrator.voice;
+function Narration({ speech, tour, index, last, onNext, onSettings }: { speech: SpeechEngine; tour: TourDetails; index: number; last: boolean; onNext(): void; onSettings?(): void }) {
+    const voice = speech.voice;
     const state = useVoiceState(voice);
+    const said = useSpeechState(speech);
     const [prefs, setPrefs] = useState(loadNarration);
     const [replay, setReplay] = useState(0);
-    const [made, setMade] = useState<NarrationProgress>({ ready: 0, total: 0 });
-    useEffect(() => narrator.subscribe(setMade), [narrator]);
+    const [made, setMade] = useState<PrefetchProgress>({ ready: 0, total: 0 });
+    useEffect(() => speech.onProgress('tour', setMade), [speech]);
     const step = tour.steps[index];
+    const id = `tour:${tour.id}:${index}`;
+    const mine = said.utterance === id;
     const next = useRef(onNext);
     next.current = onNext;
     const update = (p: Partial<typeof prefs>) =>
@@ -691,27 +694,23 @@ function Narration({ narrator, tour, index, last, onNext, onSettings }: { narrat
     /** Changes when another voice or speed becomes the one that speaks: kept audio is per voice. */
     const cacheKey = voice.cacheKey?.() ?? '';
 
-    // Make the steps ahead of time: the next one first, then the rest of the tour (kept for revisits).
+    // Openings first (every step starts at once), the next step leading; then the rest, kept for revisits.
     useEffect(() => {
         if (!prefs.narrate || !cacheKey) return;
-        const order = [...tour.steps.slice(index + 1), ...tour.steps.slice(0, index), ...(voice.capturesSpeech ? [] : [tour.steps[index]!])];
-        narrator.prefetch(order.map(stepSpeech), { first: 1 });
-    }, [narrator, tour, index, prefs.narrate, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
-    useEffect(() => () => narrator.cancelPrefetch(), [narrator, tour.id]);
+        speech.prefetch('tour', [...tour.steps.slice(index + 1), ...tour.steps.slice(0, index)].map(stepSpeech), { openers: 2 });
+    }, [speech, tour, index, prefs.narrate, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => () => speech.cancelPrefetch('tour'), [speech, tour.id]);
 
     useEffect(() => {
         if (!prefs.narrate || !step) return;
-        let cancelled = false;
-        narrator.speak(stepSpeech(step), {
+        const u = speech.say(stepSpeech(step), {
+            id,
             onEnd: () => {
-                if (!cancelled && prefs.auto && !last) next.current();
+                if (prefs.auto && !last) next.current();
             },
         });
-        return () => {
-            cancelled = true;
-            narrator.stop();
-        };
-    }, [narrator, tour.id, index, prefs.narrate, replay]); // eslint-disable-line react-hooks/exhaustive-deps
+        return () => u.cancel();
+    }, [speech, tour.id, index, prefs.narrate, replay]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const kokoroAvailable = state.engines.some((e) => e.id === 'kokoro' && e.available);
     const busy = state.kokoro.status === 'downloading' || state.kokoro.status === 'loading';
@@ -729,9 +728,9 @@ function Narration({ narrator, tour, index, last, onNext, onSettings }: { narrat
             </button>
             {prefs.narrate ? (
                 <>
-                    <SpeakingBars active={state.speaking} />
+                    <SpeakingBars active={mine && said.speaking} />
                     <span className="ca-muted ca-narration-state" role="status">
-                        {state.preparing
+                        {mine && said.preparing
                             ? 'Preparing voice…'
                             : busy
                               ? `Natural voice ${state.kokoro.status === 'downloading' ? 'downloading' : 'loading'} ${state.kokoro.progress ?? 0}%`
@@ -739,8 +738,8 @@ function Narration({ narrator, tour, index, last, onNext, onSettings }: { narrat
                                 ? `Voice ready for ${made.ready} of ${made.total} steps ahead`
                                 : ''}
                     </span>
-                    <button type="button" className="ca-icon-button" title={state.speaking ? 'Stop' : 'Read this step again'} aria-label={state.speaking ? 'Stop reading' : 'Read this step again'} onClick={() => (state.speaking || state.preparing ? narrator.stop() : setReplay((n) => n + 1))}>
-                        <Icon name={state.speaking || state.preparing ? 'pause' : 'replay'} size={14} />
+                    <button type="button" className="ca-icon-button" title={mine ? 'Stop' : 'Read this step again'} aria-label={mine ? 'Stop reading' : 'Read this step again'} onClick={() => (mine ? speech.stop() : setReplay((n) => n + 1))}>
+                        <Icon name={mine ? 'pause' : 'replay'} size={14} />
                     </button>
                 </>
             ) : null}

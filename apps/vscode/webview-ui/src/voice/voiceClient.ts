@@ -4,11 +4,12 @@
  * voice. Tours narrate through it; the Voice dialog (VoiceSelector) stays the
  * place to activate Kokoro and pick voices.
  *
- * Narration is made ahead and kept (the shared Narrator) through v1's Kokoro
- * job queue: the step on screen and the next one go first ('narrator'), the
- * rest of the tour behind them ('message').
+ * Speech is made a phrase at a time by v1's Kokoro job queue, for the shared
+ * SpeechEngine (which plays and keeps it): the phrase about to be spoken goes
+ * first ('urgent'), then what's likely next ('narrator'), then the rest
+ * ('message'). Phrases nobody wants any more leave the queue.
  */
-import type { VoiceClient, VoiceState } from '@codearchy/protocol';
+import type { SynthesisPriority, VoiceClient, VoiceState } from '@codearchy/protocol';
 import { KOKORO_VOICES } from './kokoroVoices';
 import { getVoiceConfig, setVoiceConfig, subscribeVoiceConfig } from './voiceConfig';
 import {
@@ -16,9 +17,11 @@ import {
     getWebSpeechVoices,
     getActiveKokoroVoiceId,
     isKokoroActive,
+    type KokoroJobPriority,
     isKokoroEverActivated,
     isSpeaking,
     playCachedAudio,
+    reprioritizeKokoroJob,
     synthesizeKokoroAudio,
     isSynthesizing,
     speak,
@@ -62,6 +65,9 @@ function snapshot(): VoiceState {
     };
 }
 
+/** The speech engine's priorities as v1's queue lanes. */
+const lane = (p: SynthesisPriority): KokoroJobPriority => (p === 'now' ? 'urgent' : p === 'soon' ? 'narrator' : 'message');
+
 export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
     let state = snapshot();
     const listeners = new Set<(s: VoiceState) => void>();
@@ -102,8 +108,9 @@ export function vscodeVoiceClient(openSettings: () => void): VoiceClient {
         stop: () => stopSpeaking(),
         openSettings,
         cacheKey: () => (isKokoroActive() ? `kokoro-vscode:${getActiveKokoroVoiceId()}` : undefined),
-        synthesize: async (text, priority) => {
-            const audio = await synthesizeKokoroAudio(text, getActiveKokoroVoiceId(), undefined, priority === 'later' ? 'message' : 'narrator');
+        reprioritize: (text, priority) => reprioritizeKokoroJob(text, getActiveKokoroVoiceId(), lane(priority)),
+        synthesize: async (text, priority, signal) => {
+            const audio = await synthesizeKokoroAudio(text, getActiveKokoroVoiceId(), undefined, lane(priority), signal);
             return audio ? { pcm: audio.pcm, sampleRate: audio.sampleRate } : undefined;
         },
         play: (audio, options) => {

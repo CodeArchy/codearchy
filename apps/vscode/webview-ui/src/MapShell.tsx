@@ -14,6 +14,7 @@ import './mapShell.css';
 import { postMessage } from './vscode';
 import { VoiceSelector } from './components/VoiceSelector';
 import { vscodeVoiceClient } from './voice/voiceClient';
+import { completeGpuModelDownload, isKokoroActive, restartKokoroEngine, subscribeGpuModelNeeded } from './voice/ttsManager';
 
 declare global {
     interface Window {
@@ -116,7 +117,7 @@ const ai: AiClient = {
                     resolve();
                 }
             });
-            postMessage('aiAsk', { conversation, question, selection: options.selection });
+            postMessage('aiAsk', { conversation, question, selection: options.selection, earlier: options.earlier });
         }),
     cancel: (conversation) => void aiRequest('cancel', { conversation }),
     reset: (conversation) => void aiRequest('reset', { conversation }),
@@ -176,11 +177,21 @@ export function MapShell() {
             } else if (msg?.type === 'revealNode') {
                 const key = (msg.payload as { key?: string })?.key;
                 if (key) setReveal({ key, nonce: Date.now() });
+            } else if (msg?.type === 'gpuModelDownloadComplete') {
+                // The GPU voice model is here: move speech to WebGPU now (~1.5x faster than speech, vs ~0.4x on the CPU).
+                const result = msg.payload as { success: boolean; error?: string };
+                completeGpuModelDownload(result.success, result.error);
+                if (result.success && isKokoroActive()) void restartKokoroEngine().catch(() => undefined);
             }
         };
         window.addEventListener('message', onMessage);
+        // Kokoro asks for the GPU model when WebGPU is available and the model isn't downloaded yet.
+        const unsubGpu = subscribeGpuModelNeeded(() => postMessage('downloadGpuModel', {}));
         postMessage('ready');
-        return () => window.removeEventListener('message', onMessage);
+        return () => {
+            window.removeEventListener('message', onMessage);
+            unsubGpu();
+        };
     }, []);
 
     const extras = (

@@ -246,3 +246,26 @@ describe('local models', () => {
     });
 });
 
+describe('follow-ups after a reload', () => {
+    it('a conversation the host does not know starts from the earlier turns the UI kept; one it knows ignores them', async () => {
+        const p = provider('ollama', { local: true });
+        const { h } = host([p.factory], { tier: 'local-only' });
+        const earlier = [{ question: 'Where does login happen?', answer: 'In [session.ts](node:mod:src/auth/session.ts).' }];
+        await run(h, 'reloaded', 'And how are tokens signed?');
+        const fresh = p.requests.at(-1)!.messages.map((m) => m.role);
+        expect(fresh).toEqual(['user']);
+        await h.ask('after-reload', 'And how are tokens signed?', { earlier }, () => undefined);
+        const seeded = p.requests.at(-1)!.messages;
+        expect(seeded.slice(0, 2).map((m) => [m.role, typeof m.content === 'string' ? m.content : ''])).toEqual([
+            ['user', 'Where does login happen?'],
+            ['assistant', 'In [session.ts](node:mod:src/auth/session.ts).'],
+        ]);
+        // Known now: later earlier turns don't pile up.
+        const before = seeded.length;
+        await h.ask('after-reload', 'Thanks, and logout?', { earlier }, () => undefined);
+        const next = p.requests.at(-1)!.messages;
+        expect(next.filter((m) => m.role === 'user' && m.content === 'Where does login happen?')).toHaveLength(1);
+        expect(next.length).toBeGreaterThan(before);
+    });
+});
+
