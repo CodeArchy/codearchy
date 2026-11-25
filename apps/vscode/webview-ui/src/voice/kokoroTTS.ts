@@ -466,6 +466,21 @@ export function initKokoro(onProgress?: (p: KokoroInitProgress) => void): Promis
     return readyPromise;
 }
 
+/**
+ * Forgets the running engine (its worker is stopped), so the next init starts
+ * fresh: used to switch to the GPU model as soon as it has downloaded.
+ */
+export function resetKokoro(): void {
+    try {
+        worker?.terminate();
+    } catch {
+        /* already gone */
+    }
+    worker = null;
+    ready = false;
+    readyPromise = null;
+}
+
 export function isKokoroReady(): boolean {
     return ready;
 }

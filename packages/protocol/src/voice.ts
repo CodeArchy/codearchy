@@ -70,6 +70,12 @@ export interface VoiceAudio {
     sampleRate: number;
 }
 
+/** An AbortSignal (structural: the protocol has no DOM types). */
+export interface AbortSignalLike {
+    readonly aborted: boolean;
+    addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void;
+}
+
 /** How soon audio is needed: the step on screen, the next one, the rest. */
 export type SynthesisPriority = 'now' | 'soon' | 'later';
 
@@ -94,8 +100,19 @@ export interface VoiceClient {
      * voice), or the voice isn't ready.
      */
     cacheKey?(): string | undefined;
-    /** Makes the audio for `text` without playing it; undefined when the cacheable voice isn't ready. */
-    synthesize?(text: string, priority: SynthesisPriority): Promise<VoiceAudio | undefined>;
+    /**
+     * Makes the audio for `text` (a phrase) without playing it; undefined when
+     * the cacheable voice isn't ready, or when `signal` aborted it before it
+     * started. Requests run in priority order, first come first served within
+     * one priority, so phrases asked for in order arrive in order.
+     */
+    synthesize?(text: string, priority: SynthesisPriority, signal?: AbortSignalLike): Promise<VoiceAudio | undefined>;
+    /**
+     * Sets a queued phrase's priority (up or down): the speech engine lowers a
+     * phrase again when the one who needed it now gave up (a skipped step), so
+     * leftovers don't hold up what's needed next.
+     */
+    reprioritize?(text: string, priority: SynthesisPriority): void;
     /** Plays audio from `synthesize` (or the cache), replacing anything playing. */
     play?(audio: VoiceAudio, options?: SpeakOptions): void;
     /** Drops queued synthesis that hasn't started (a closed tour's remaining steps). */

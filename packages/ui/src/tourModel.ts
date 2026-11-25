@@ -223,3 +223,52 @@ export function loadDraft(workspace: string): DraftTour | undefined {
 export function saveDraft(workspace: string, draft: DraftTour | undefined): void {
     storage.set(draftKey(workspace), draft ? JSON.stringify(draft) : undefined);
 }
+
+/**
+ * An answer's walkthrough as tour steps: one step per paragraph (or list
+ * item) that links a part of the map, at that part; text without a link
+ * joins the step before it (or the first). Line by line, no backtracking.
+ */
+export function capturesFromAnswer(answer: string): StepCapture[] {
+    const blocks: string[] = [];
+    let current: string[] = [];
+    const flush = () => {
+        const text = current.join('\n').trim();
+        if (text) blocks.push(text);
+        current = [];
+    };
+    for (const line of answer.split('\n')) {
+        const t = line.trim();
+        if (!t) flush();
+        else {
+            if (/^([-*+]|\d{1,3}[.)])\s/.test(t)) flush();
+            current.push(line);
+        }
+    }
+    flush();
+    const out: StepCapture[] = [];
+    let lead = '';
+    for (const b of blocks) {
+        const link = firstNodeLink(b);
+        if (!link) {
+            if (out.length) out[out.length - 1]!.body += `\n\n${b}`;
+            else lead += `${b}\n\n`;
+            continue;
+        }
+        out.push({ title: link.label, body: `${lead}${b}`, target: { node: link.key }, view: { mode: 'map', focus: link.key } });
+        lead = '';
+    }
+    return out;
+}
+
+/** The first `[label](node:key)` in a text (a plain scan). */
+function firstNodeLink(text: string): { label: string; key: string } | undefined {
+    for (let i = text.indexOf('['); i >= 0; i = text.indexOf('[', i + 1)) {
+        const close = text.indexOf('](node:', i);
+        if (close < 0) return undefined;
+        const end = text.indexOf(')', close);
+        const label = text.slice(i + 1, close);
+        if (end > close && !label.includes('[') && !label.includes(']')) return { label, key: text.slice(close + 7, end) };
+    }
+    return undefined;
+}

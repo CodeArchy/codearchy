@@ -69,6 +69,16 @@ export interface AiHostOptions {
 export const DEFAULT_AI_SETTINGS: AiSettings = { tier: 'local-only', askBeforeSend: false, roles: {}, defaults: {}, budgets: {} };
 
 const ROLES: AiRole[] = ['chat', 'summarizer', 'architect', 'embedder'];
+
+/** Earlier turns as chat history (plain question and answer; at most 6, each answer capped). */
+function seedHistory(earlier: Array<{ question: string; answer: string }> | undefined): ChatMessage[] {
+    const out: ChatMessage[] = [];
+    for (const t of (earlier ?? []).slice(-6)) {
+        if (typeof t?.question !== 'string' || typeof t?.answer !== 'string') continue;
+        out.push({ role: 'user', content: t.question.slice(0, 4000) }, { role: 'assistant', content: t.answer.slice(0, 8000), toolCalls: [] });
+    }
+    return out;
+}
 /** Ollama-style names: `qwen3:8b`, `hf.co/org/model:Q4_K_M`, `library/llama3.2`. */
 const MODEL_NAME = /^[A-Za-z0-9][\w.\-/:]{0,159}$/;
 
@@ -166,11 +176,12 @@ export class AiHost {
         return toAiCard(card);
     }
 
-    async ask(conversation: string, question: string, options: { selection?: string }, onEvent: (event: UiChatEvent) => void): Promise<void> {
+    async ask(conversation: string, question: string, options: { selection?: string; earlier?: Array<{ question: string; answer: string }> }, onEvent: (event: UiChatEvent) => void): Promise<void> {
         await this.used();
         const s = this.indexState();
         if (!s) return onEvent({ type: 'error', code: 'unavailable', message: 'The workspace is still being indexed' });
-        const conv = this.conversations.get(conversation) ?? { history: [] };
+        // A conversation this host doesn't know (a follow-up after a reload) starts from the turns the UI kept.
+        const conv = this.conversations.get(conversation) ?? { history: seedHistory(options.earlier) };
         this.conversations.set(conversation, conv);
         conv.controller?.abort();
         const controller = new AbortController();

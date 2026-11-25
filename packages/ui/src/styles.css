@@ -796,3 +796,10 @@ details[open] > summary .ca-steps-chevron { transform: rotate(90deg); }
 .ca-arch-parts .ca-pill { font-family: var(--ca-mono); font-size: 11px; }
 .ca-arch-type-service .ca-arch-shape { stroke-width: 1.6; }
 .ca-arch-type-layer .ca-arch-shape { fill: color-mix(in srgb, var(--ca-accent) 5%, var(--ca-node)); }
+
+/* ── Narrated answers ───────────────────────────────────────────────────── */
+.ca-turn-playing .ca-msg-ai .ca-msg-body { border-left: 2px solid var(--ca-accent); padding-left: 10px; margin-left: -12px; }
+.ca-narrating { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; padding: 6px 8px 6px 10px; border-radius: 10px; background: var(--ca-soft); color: var(--ca-fg); font-size: 12px; }
+.ca-narrating-phrase { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.ca-chat-head .ca-icon-button.ca-on { color: var(--ca-accent); }
+@media (prefers-reduced-motion: reduce) { .ca-turn-playing .ca-msg-ai .ca-msg-body { transition: none; } }
