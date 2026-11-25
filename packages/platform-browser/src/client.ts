@@ -143,6 +143,13 @@ export function sourceFromFileList(list: FileList | File[]): EngineSource | unde
     return { kind: 'files', name, files };
 }
 
+/** A public GitHub or GitLab repository by URL (downloaded by the engine worker; see parseRepositoryUrl). */
+export function sourceFromRepository(url: string): EngineSource {
+    return { kind: 'repository', url: url.trim() };
+}
+
+export { parseRepositoryUrl, MAX_REPOSITORY_FILES, type RepositoryRef } from './engine/repositoryUrl.js';
+
 /** A single dropped .zip, or a list with one. */
 export async function sourceFromZip(file: File): Promise<EngineSource> {
     return { kind: 'zip', name: file.name.replace(/\.zip$/i, ''), data: await file.arrayBuffer() };

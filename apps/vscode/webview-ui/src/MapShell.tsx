@@ -7,7 +7,8 @@
  * the `codearchy.ui` setting during the 2.0 beta.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CodeArchyMap, type EngineClient } from '@codearchy/ui';
+import { CodeArchyMap, Icon, type EngineClient } from '@codearchy/ui';
+import { SettingsPanel } from './components/SettingsPanel';
 import type { AiClient, AiHostEvent, Architecture, ChatEvent, EdgeExplanation, Flow, FlowSummary, NodeDetails, NodeSummary, AuthorshipStatus, NodeAuthorship, Tour, TourDetails, TourSummary, View, ViewRequest } from '@codearchy/protocol';
 import '@codearchy/ui/styles.css';
 import './mapShell.css';
@@ -153,6 +154,7 @@ export function MapShell() {
     const [reveal, setReveal] = useState<{ key: string; nonce: number }>();
     // Voice settings are the shared panel (as in the web app); v1's dialog stays with the legacy views.
     const [voice] = useState(() => vscodeVoiceClient());
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     useEffect(() => {
         let url: string | undefined;
@@ -195,6 +197,9 @@ export function MapShell() {
 
     const extras = (
         <>
+            <button type="button" className="ca-search-button ca-with-icon" title="CodeArchy settings" onClick={() => setSettingsOpen(true)}>
+                <Icon name="sliders" size={14} /> Settings
+            </button>
             <button type="button" className="ca-search-button" title="Switch to the classic System / Flow / Dense views (setting: codearchy.ui)" onClick={() => postMessage('setUi', { ui: 'classic' })}>
                 Classic views
             </button>
@@ -224,6 +229,16 @@ export function MapShell() {
                     voice={voice}
                 />
             )}
+            {settingsOpen ? (
+                // In a .ca-root (the UI's theme tokens live there), zero-height: the modal itself is fixed over the page.
+                <div className="ca-root" data-host="vscode" style={{ height: 0, minHeight: 0 }}>
+                    <div className="ca-modal" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)} onKeyDown={(e) => e.key === 'Escape' && setSettingsOpen(false)}>
+                        <div className="ca-modal-body ca-modal-wide">
+                            <SettingsPanel onClose={() => setSettingsOpen(false)} />
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }

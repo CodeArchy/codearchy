@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import { exec } from 'child_process';
 import { ArchitectureGraph, WebviewMessage, WebviewMessageType } from '../types';
+import { settingsSchema, settingsSnapshot, updateSetting, type SettingSchema } from './settings';
 import { OllamaService, MODEL_OPTIONS, SystemArchitecture, ProcessingMode } from '../inference/OllamaService';
 import { HostAudioRecorder } from '../audio/HostAudioRecorder';
 import { KOKORO_REPO, VoiceModelStore } from '../voice/VoiceModelStore';
@@ -95,6 +96,12 @@ export class ArchitecturePanel {
     this.processingMode = config.get<ProcessingMode>('aiProcessing', 'moderate');
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    // The Settings panel follows changes made anywhere (VS Code's own settings, settings.json, another window).
+    vscode.workspace.onDidChangeConfiguration(
+      (e) => e.affectsConfiguration('codearchy') && void this.panel.webview.postMessage({ type: WebviewMessageType.SettingsChanged, payload: null }),
+      null,
+      this.disposables
+    );
 
     // Start the localhost model server asynchronously; set the webview HTML
     // once the port is known (address() returns null until 'listening' fires).
@@ -237,6 +244,26 @@ export class ArchitecturePanel {
           .then(
             (result) => send({ id: req.id, result }),
             (err: unknown) => send({ id: req.id, error: err instanceof Error ? err.message : String(err) })
+          );
+        break;
+      }
+
+      case WebviewMessageType.SettingsRequest: {
+        const req = message.payload as { id: number; method: string; params?: Record<string, unknown> };
+        const reply = (body: { result?: unknown; error?: string }) =>
+          void this.panel.webview.postMessage({ type: WebviewMessageType.SettingsResponse, payload: { id: req.id, ...body } });
+        const schema = this.settingsSchema();
+        const p = req.params ?? {};
+        Promise.resolve()
+          .then(async () => {
+            if (req.method === 'get') return settingsSnapshot(schema);
+            if (req.method === 'update') return void (await updateSetting(schema, p.key, p.value, p.target));
+            if (req.method === 'open') return void (await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${this.extensionContext.extension.id}`));
+            throw new Error(`Unknown settings request: ${req.method}`);
+          })
+          .then(
+            (result) => reply({ result }),
+            (err: unknown) => reply({ error: err instanceof Error ? err.message : String(err) })
           );
         break;
       }
@@ -1066,6 +1093,12 @@ export class ArchitecturePanel {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`CodeArchy: Export failed — ${msg}`);
     }
+  }
+
+  private settingsCache?: SettingSchema[];
+  /** The extension's own codearchy.* settings (from its manifest), for the Settings panel. */
+  private settingsSchema(): SettingSchema[] {
+    return (this.settingsCache ??= settingsSchema(this.extensionContext.extension.packageJSON));
   }
 
   private dispose() {

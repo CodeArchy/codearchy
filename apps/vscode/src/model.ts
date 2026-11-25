@@ -21,6 +21,11 @@ export enum WebviewMessageType {
     SetUi = 'setUi',
     /** Host → new UI: show this node on the Map: { key }. */
     RevealNode = 'revealNode',
+    /** New UI ↔ settings: { id, method: 'get' | 'update' | 'open', params } / { id, result?, error? }. */
+    SettingsRequest = 'settingsRequest',
+    SettingsResponse = 'settingsResponse',
+    /** Host → new UI: a codearchy.* setting changed (anywhere): refresh the Settings panel. */
+    SettingsChanged = 'settingsChanged',
     /** New UI ↔ AI host: { id, method, params } / { id, result?, error? } (AiClient methods). */
     AiRequest = 'aiRequest',
     AiResponse = 'aiResponse',
