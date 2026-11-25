@@ -41,6 +41,7 @@ import { HandleFileSystem, MemoryFileSystem, listHandleFiles, type MemoryEntry }
 import { BrowserWorkerPool, type WorkspaceSource } from '../pool.js';
 import { openSqliteWasm, opfsSyncAccessAvailable } from '../storage.js';
 import type { EngineReply, EngineRequest, EngineSource } from './messages.js';
+import { downloadRepository } from './repository.js';
 
 export interface EngineWorkerConfig {
     /** Module worker script that calls runBrowserParseWorker(). */
@@ -118,7 +119,11 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
     async function open(source: EngineSource): Promise<WorkspaceSummary> {
         const ticket = ++opening;
         close();
-        const { name, fs, paths, workers } = await readSource(source, maxFileSize);
+        const { name, fs, paths, workers } = await readSource(source, maxFileSize, {
+            // A repository is downloaded first: its own phase, by file (GitHub) or kilobyte (GitLab).
+            onProgress: (current, total) => emit({ type: 'progress', phase: 'download', current, total }),
+            isCancelled: () => ticket !== opening,
+        });
         const discovery = classifyFiles(paths, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 }, source.kind);
         const { store, storage } = await openStore(name, config.poolName ?? 'codearchy', sqliteWasmUrl);
         const pool = new BrowserWorkerPool({ ...parsers, workerUrl: config.parseWorkerUrl, source: workers, maxFileSize, ...(config.workers ? { workers: config.workers } : {}) });
@@ -371,14 +376,20 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const { id, method, params } = ev.data;
         handle(method, params ?? {}).then(
             (result) => scope.postMessage({ id, result }),
-            (err: unknown) => scope.postMessage({ id, error: err instanceof Error ? (err.stack ?? err.message) : String(err) })
+            (err: unknown) =>
+                // The message first: Firefox's and WebKit's stacks are only the frames (Chromium's start with the message).
+                scope.postMessage({ id, error: err instanceof Error ? [err.message, err.stack?.startsWith(`${err.name}: ${err.message}`) ? err.stack.split('\n').slice(1).join('\n') : err.stack].filter(Boolean).join('\n') : String(err) })
         );
     };
 }
 
 // ─── sources and storage ────────────────────────────────────────────────────
 
-async function readSource(source: EngineSource, maxFileSize: number): Promise<{ name: string; fs: FileSystemPort; paths: string[]; workers: WorkspaceSource }> {
+async function readSource(
+    source: EngineSource,
+    maxFileSize: number,
+    download: { onProgress(current: number, total: number): void; isCancelled(): boolean }
+): Promise<{ name: string; fs: FileSystemPort; paths: string[]; workers: WorkspaceSource }> {
     if (source.kind === 'handle') {
         const paths = (await listHandleFiles(source.handle)).filter((p) => !p.split('/').some((s) => SKIP_SEGMENTS.has(s)));
         return { name: source.handle.name, fs: new HandleFileSystem(source.handle), paths, workers: { kind: 'handle', handle: source.handle } };
@@ -386,6 +397,10 @@ async function readSource(source: EngineSource, maxFileSize: number): Promise<{ 
     let entries: Array<[string, MemoryEntry]>;
     if (source.kind === 'files') {
         entries = source.files.map(({ path, file }) => [path, { data: file, mtimeMs: file.lastModified }]);
+    } else if (source.kind === 'repository') {
+        const repo = await downloadRepository(source.url, { maxFileSize, ...download, unzip: (data) => unzipEntries(data, maxFileSize) });
+        const mem = new MemoryFileSystem(repo.entries.filter(([p]) => !p.split('/').some((s) => SKIP_SEGMENTS.has(s))));
+        return { name: repo.name, fs: mem, paths: mem.paths(), workers: { kind: 'memory', entries: mem.entries() } };
     } else if (source.kind === 'texts') {
         // Fixed mtimes: a sample never changes, so a reload reuses every file by stat.
         entries = Object.entries(source.files).map(([p, text]) => [p, { data: text, mtimeMs: 1 }]);

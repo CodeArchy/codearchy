@@ -37,7 +37,8 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test:browser": "tsc -p tsconfig.json && node test/browser/run.mjs"
+        "test:browser": "tsc -p tsconfig.json && node test/browser/run.mjs",
+        "test:unit": "vitest run test/unit"
     },
     "dependencies": {
         "@codearchy/core": "workspace:*",
@@ -51,7 +52,8 @@
         "@codearchy/grammars": "workspace:*",
         "esbuild": "0.25.12",
         "playwright": "1.65.0",
-        "typescript": "5.9.3"
+        "typescript": "5.9.3",
+        "vitest": "5.1.0"
     },
     "repository": {
         "type": "git",
