@@ -13,16 +13,15 @@ to it. With it you get:
 
 ## Start it
 
-The CLI isn't published on npm yet, so run it from a checkout of this repository (the
-same setup as [the MCP guide](mcp.md#set-it-up)):
+In the repository you want to explore (Node.js 22 or later):
 
 ```sh
-git clone https://github.com/CodeArchy/codearchy.git
-cd codearchy
-corepack enable && pnpm install
-pnpm --filter "@codearchy/cli..." build
-node apps/cli/dist/main.js serve --root /path/to/repo
+npx codearchy serve --root .
 ```
+
+`npx` downloads [the `codearchy` package](https://www.npmjs.com/package/codearchy) the first time and reuses it after that.
+If you use it often, install it once with `npm install -g codearchy`, then run `codearchy serve --root .`.
+To run it from a checkout of this repository instead, see [From source](mcp.md#from-source).
 
 It indexes the folder and prints a link:
 

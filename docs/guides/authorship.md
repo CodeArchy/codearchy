@@ -39,7 +39,7 @@ Edits an agent makes through shell commands (scripts, `sed`) aren't in its logs.
 Your editor's record of who wrote what stays on your machine. To share it, write it to **git notes**: small annotations on commits that travel with the repository when pushed.
 
 - **VS Code:** run **CodeArchy: Write Authorship Notes for the Last Commit**, or set `codearchy.authorship.gitNotes` to `onCommit`.
-- **The CLI and the Companion:** run `codearchy authorship notes` after a commit. Or install a hook once, with `codearchy authorship hook install`, and it runs after every commit. It never replaces a hook it didn't write.
+- **The CLI and the Companion:** run `codearchy authorship notes` after a commit. Or install a hook once, with `codearchy authorship hook install`, and it runs after every commit. It never replaces a hook it didn't write. Install the CLI globally first (`npm install -g codearchy`): the hook calls the copy that installed it, and `npx`'s copy lives in a cache npm may clear.
 
 Notes stay local until you push them:
 
