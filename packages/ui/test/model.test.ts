@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import * as assert from 'node:assert';
 import type { View, ViewNode } from '@codearchy/protocol';
-import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, authorshipShares, agentName, type MapModel } from '../src/index.js';
+import { buildMapModel, neighbourhood, strokeWidthFor, toElkGraph, fromElkGraph, visibleEdges, reduceEdges, lensBadge, matrixOrder, heatStep, flowRoles, revealPlan, authorshipShares, agentName, type MapModel } from '../src/index.js';
 
 const METRICS = { modules: 3, symbols: 0, codeModules: 3, testModules: 0, testedModules: 0, cyclicModules: 0, orphanModules: 0, hubModules: 0, fanIn: 0, fanOut: 0 };
 
@@ -95,8 +95,61 @@ describe('Map model', () => {
         orders.height = 200;
         orders.children![0].x = 5;
         const layout = fromElkGraph(g);
-        assert.deepStrictEqual(layout.get('dir:core/orders'), { x: 10, y: 20, width: 300, height: 200 });
-        assert.strictEqual(layout.get('mod:core/orders/new.ts')!.x, 5, 'child positions stay relative to the container');
+        assert.deepStrictEqual(layout.boxes.get('dir:core/orders'), { x: 10, y: 20, width: 300, height: 200 });
+        assert.strictEqual(layout.boxes.get('mod:core/orders/new.ts')!.x, 5, 'child positions stay relative to the container');
+        assert.strictEqual(g.layoutOptions!['elk.json.edgeCoords'], 'ROOT', 'routes come back in canvas coordinates');
+    });
+
+    test('ELK routes every edge around the cards: no line passes through a card that is not one of its ends', async () => {
+        // A dense view shaped like the ones that tangled (tokio, nowinandroid): 12 parts, edges skipping
+        // layers, a cycle, and one part expanded into a container of files.
+        const keys = ['app', 'cli', 'web', 'api', 'auth', 'orders', 'billing', 'search', 'util', 'db', 'queue', 'tests'].map((k) => `dir:${k}`);
+        const nodes: ViewNode[] = keys.map((k) => node(k, k === 'dir:orders' ? { expanded: true } : {}));
+        nodes.push(node('mod:orders/a.ts', { kind: 'module', hasChildren: false, group: 'dir:orders' }), node('mod:orders/b.ts', { kind: 'module', hasChildren: false, group: 'dir:orders' }));
+        const pairs = [
+            ['app', 'api'], ['app', 'util'], ['app', 'db'], ['cli', 'api'], ['cli', 'util'], ['web', 'api'], ['web', 'auth'], ['web', 'search'],
+            ['api', 'auth'], ['api', 'billing'], ['api', 'search'], ['api', 'util'], ['auth', 'db'], ['billing', 'db'], ['billing', 'queue'],
+            ['search', 'db'], ['search', 'util'], ['util', 'db'], ['tests', 'app'], ['tests', 'util'], ['tests', 'db'], ['db', 'util'], ['queue', 'util'],
+        ];
+        const edges = pairs.map(([s, t]) => ({ source: `dir:${s}`, target: `dir:${t}`, weight: 2, count: 1, implicit: false }));
+        edges.push(
+            { source: 'dir:api', target: 'mod:orders/a.ts', weight: 2, count: 1, implicit: false },
+            { source: 'mod:orders/a.ts', target: 'mod:orders/b.ts', weight: 1, count: 1, implicit: false },
+            { source: 'mod:orders/b.ts', target: 'dir:db', weight: 2, count: 1, implicit: false },
+            { source: 'mod:orders/a.ts', target: 'dir:queue', weight: 1, count: 1, implicit: false },
+        );
+        const m = buildMapModel({ ...VIEW, scope: 'sys:root', nodes, edges, ports: [], frontierHash: 'dense' });
+        const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+        const layout = fromElkGraph(await new ELK().layout(toElkGraph(m)));
+
+        // Absolute boxes (boxes are relative to their container).
+        const parent = new Map(m.nodes.map((n) => [n.id, n.parent]));
+        const abs = (id: string): { x: number; y: number; width: number; height: number } => {
+            const b = layout.boxes.get(id)!;
+            const p = parent.get(id);
+            if (!p) return b;
+            const pb = abs(p);
+            return { ...b, x: b.x + pb.x, y: b.y + pb.y };
+        };
+        const inside = (x: number, y: number, b: { x: number; y: number; width: number; height: number }) => x > b.x + 1 && x < b.x + b.width - 1 && y > b.y + 1 && y < b.y + b.height - 1;
+        assert.strictEqual(layout.routes.size, m.edges.length, 'a route for every edge');
+        for (const e of m.edges) {
+            const r = layout.routes.get(e.id)!;
+            for (let i = 1; i < r.points.length; i++) {
+                const [a, b] = [r.points[i - 1]!, r.points[i]!];
+                assert.ok(Math.abs(a.x - b.x) < 0.5 || Math.abs(a.y - b.y) < 0.5, `${e.id}: orthogonal segments only (to the pixel) ${JSON.stringify(r.points)}`);
+                // Sample the segment: no point of it may be inside a card that isn't one of the edge's ends
+                // (or a container holding one of them).
+                for (let k = 0; k <= 20; k++) {
+                    const x = a.x + ((b.x - a.x) * k) / 20;
+                    const y = a.y + ((b.y - a.y) * k) / 20;
+                    for (const n of m.nodes) {
+                        if (n.id === e.source || n.id === e.target || n.type === 'container') continue;
+                        assert.ok(!inside(x, y, abs(n.id)), `${e.id} passes through ${n.id}`);
+                    }
+                }
+            }
+        }
     });
 
     test('dense views draw their heaviest edges, plus everything around the selection', () => {
@@ -108,6 +161,37 @@ describe('Map model', () => {
         assert.deepStrictEqual(visibleEdges(m, { limit: 3, around: new Set(['b0']) }).map((e) => e.id), ['e0', 'e7', 'e8', 'e9']);
         assert.strictEqual(visibleEdges(m, { limit: 3, all: true }).length, 10);
         assert.strictEqual(visibleEdges(m, { limit: 20 }).length, 10);
+    });
+
+    const edge = (source: string, target: string, weight = 1, cyclic = false) => ({ id: `${source}->${target}`, source, target, weight, count: 1, implicit: false, port: false, strokeWidth: 1, ...(cyclic ? { cyclic } : {}) });
+    const reachable = (edges: Array<{ source: string; target: string }>, from: string) => {
+        const seen = new Set<string>();
+        const stack = [from];
+        while (stack.length) for (const e of edges.filter((x) => x.source === stack.pop())) if (!seen.has(e.target)) (seen.add(e.target), stack.push(e.target));
+        return seen;
+    };
+
+    test('implied lines are left out: A → B → C needs no A → C, and what depends on what is unchanged', () => {
+        const edges = [edge('app', 'feature'), edge('feature', 'core'), edge('app', 'core', 9), edge('app', 'util'), edge('util', 'core'), edge('tests', 'app'), edge('tests', 'core')];
+        const kept = reduceEdges(edges).map((e) => e.id);
+        assert.deepStrictEqual(kept.sort(), ['app->feature', 'app->util', 'feature->core', 'tests->app', 'util->core']);
+        for (const n of ['app', 'feature', 'util', 'tests']) assert.deepStrictEqual([...reachable(reduceEdges(edges), n)].sort(), [...reachable(edges, n)].sort(), `${n} still reaches the same parts`);
+        // Default drawing: the reduction; the selection still draws all of its own lines; "all" draws everything.
+        const m: MapModel = { nodes: [], edges };
+        assert.strictEqual(visibleEdges(m).length, 5);
+        assert.ok(visibleEdges(m, { around: new Set(['app']) }).some((e) => e.id === 'app->core'));
+        assert.strictEqual(visibleEdges(m, { all: true }).length, 7);
+    });
+
+    test('a cycle stays a cycle (only its shortcuts go), and of two edges that imply each other only one goes', () => {
+        const cyc = [edge('a', 'b', 1, true), edge('b', 'c', 1, true), edge('c', 'a', 1, true), edge('a', 'c', 1, true)];
+        const keptCycle = reduceEdges(cyc);
+        assert.deepStrictEqual(keptCycle.map((e) => e.id).sort(), ['a->b', 'b->c', 'c->a']);
+        for (const n of ['a', 'b', 'c']) assert.deepStrictEqual([...reachable(keptCycle, n)].sort(), [...reachable(cyc, n)].sort());
+        const scc = [edge('a', 'b'), edge('b', 'a'), edge('a', 'c'), edge('b', 'c')];
+        const kept = reduceEdges(scc);
+        for (const n of ['a', 'b']) assert.deepStrictEqual([...reachable(kept, n)].sort(), [...reachable(scc, n)].sort());
+        assert.strictEqual(kept.length, 3, 'one of a → c and b → c goes, not both');
     });
 
 });

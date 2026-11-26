@@ -16,9 +16,11 @@
  * Keyboard: Enter / Space expand · Shift+Enter open on its own · Backspace up a level ·
  * F focus (2-hop neighbourhood) · Esc clear · ⌘K / Ctrl+K search.
  *
- * Dense views draw their heaviest dependencies (plus everything around the
- * selection); "show all" draws every one. Layout uses the drawn set, so
- * selecting never moves anything; only the toggle re-lays out.
+ * By default the Map leaves out lines a longer path already implies (the
+ * transitive reduction) and, on dense views, draws the heaviest of the rest;
+ * the selection always draws all of its own. "show all" draws every one.
+ * Layout uses the drawn set, so selecting never moves anything; only the
+ * toggle re-lays out.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -256,11 +258,17 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     /** "Uses N · used by M" for the legend while something is selected. */
     const flow = useMemo(() => (model && selection?.kind === 'node' ? flowRoles(model, selection.key, 1) : undefined), [model, selection]);
 
+    /** How many lines the default drawing has (implied ones and, when dense, the lightest left out). */
+    const defaultCount = useMemo(() => (model ? visibleEdges(model).length : 0), [model]);
+
     const drawn = useMemo(() => {
         if (!model) return [];
         const key = selection?.kind === 'node' ? selection.key : undefined;
-        // The selection's own edges always draw (for an expanded node: everything inside it).
-        const roles = key ? flowRoles(model, key, 1) : undefined;
+        // A selected card always draws all of its own edges. An expanded part (a container: it is
+        // selected as it opens) lights its flow on the laid-out lines only: adding every edge of
+        // everything inside it would draw unrouted lines across the part just opened.
+        const container = key ? model.nodes.find((n) => n.id === key)?.type === 'container' : false;
+        const roles = key && !container ? flowRoles(model, key, 1) : undefined;
         const around = roles ? (focus ? roles.lit : roles.selected) : undefined;
         return visibleEdges(model, { all: allEdges, around });
     }, [model, allEdges, selection, focus]);
@@ -514,9 +522,12 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 )}
                 {focus ? <span className="ca-chip" title="F toggles focus">Focus: 2 hops</span> : null}
                 {view?.skipped.length ? <span className="ca-muted">{view.skipped.length} expansion(s) over budget</span> : null}
-                {mode === 'map' && model && model.edges.length > DEFAULT_EDGE_LIMIT ? (
-                    <span className="ca-muted ca-edge-count">
-                        {allEdges ? `all ${model.edges.length} dependencies` : `heaviest ${DEFAULT_EDGE_LIMIT} of ${model.edges.length} dependencies`}
+                {mode === 'map' && model && (allEdges || defaultCount < model.edges.length) ? (
+                    <span
+                        className="ca-muted ca-edge-count"
+                        title="Lines a longer path already shows are left out (A → B → C needs no A → C line), and on dense views the lightest. Select a part to see all of its own."
+                    >
+                        {allEdges ? `all ${model.edges.length} dependencies` : `${defaultCount} of ${model.edges.length} dependencies drawn`}
                         {' · '}
                         <button type="button" className="ca-link" onClick={() => setAllEdges((a) => !a)}>
                             {allEdges ? 'show fewer' : 'show all'}

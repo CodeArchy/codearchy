@@ -2,6 +2,11 @@
  * Layout with ELK (layered, left to right) in a Web Worker, so it never runs
  * on the UI thread. Results are cached by the view's frontier hash: going
  * back to a view, or re-expanding the same node, reuses the same positions.
+ *
+ * ELK places the nodes AND routes the edges (orthogonal, around the nodes,
+ * each edge in its own lane between layers). The canvas draws those routes;
+ * a line drawn straight from handle to handle would cut through the cards
+ * in between and pile onto its neighbours.
  */
 import * as elkApi from 'elkjs/lib/elk-api.js';
 import type { ELK as ElkInstance, ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api.js';
@@ -14,8 +19,25 @@ export interface Box {
     height: number;
 }
 
-/** Positions relative to the parent container (or the canvas), as React Flow expects. */
-export type Layout = Map<string, Box>;
+export interface Point {
+    x: number;
+    y: number;
+}
+
+/** An edge's route on the canvas (absolute coordinates): start, bends, end. */
+export interface Route {
+    points: Point[];
+    /** Where its source and target sat (absolute) when it was routed; a route is only drawn while they still do. */
+    source: Point;
+    target: Point;
+}
+
+export interface Layout {
+    /** Positions relative to the parent container (or the canvas), as React Flow expects. */
+    boxes: Map<string, Box>;
+    /** ELK's route per edge id. */
+    routes: Map<string, Route>;
+}
 
 const ROOT_OPTIONS: Record<string, string> = {
     'elk.algorithm': 'layered',
@@ -27,9 +49,18 @@ const ROOT_OPTIONS: Record<string, string> = {
     // Keep the engine's (stable, hierarchy) order where it doesn't cost crossings, so
     // expanding one node doesn't reshuffle its unrelated neighbours.
     'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+    // Try harder to untangle (the default is 7; views are small, so this stays fast).
+    'elk.layered.thoroughness': '20',
+    'elk.layered.crossingMinimization.greedySwitch.type': 'TWO_SIDED',
     'elk.spacing.nodeNode': '36',
     'elk.layered.spacing.nodeNodeBetweenLayers': '80',
     'elk.spacing.edgeNode': '24',
+    // Every edge gets its own lane: parallel lines stay apart, never one shared trunk.
+    'elk.spacing.edgeEdge': '12',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+    // Routes come back in canvas coordinates, whichever container an edge belongs to.
+    'elk.json.edgeCoords': 'ROOT',
 };
 const CONTAINER_OPTIONS: Record<string, string> = {
     'elk.padding': '[top=44,left=20,bottom=20,right=20]',
@@ -52,15 +83,31 @@ export function toElkGraph(model: MapModel): ElkNode {
 }
 
 export function fromElkGraph(root: ElkNode): Layout {
-    const out: Layout = new Map();
-    const walk = (n: ElkNode) => {
+    const boxes = new Map<string, Box>();
+    const absolute = new Map<string, Point>();
+    const walk = (n: ElkNode, ox: number, oy: number) => {
         for (const c of n.children ?? []) {
-            out.set(c.id, { x: c.x ?? 0, y: c.y ?? 0, width: c.width ?? 0, height: c.height ?? 0 });
-            walk(c);
+            const box = { x: c.x ?? 0, y: c.y ?? 0, width: c.width ?? 0, height: c.height ?? 0 };
+            boxes.set(c.id, box);
+            absolute.set(c.id, { x: ox + box.x, y: oy + box.y });
+            walk(c, ox + box.x, oy + box.y);
         }
     };
-    walk(root);
-    return out;
+    walk(root, 0, 0);
+    const routes = new Map<string, Route>();
+    const collect = (n: ElkNode) => {
+        for (const e of n.edges ?? []) {
+            const s = e.sections?.[0];
+            const source = absolute.get(e.sources[0]!);
+            const target = absolute.get(e.targets[0]!);
+            // One section per edge (one source, one target); anything else is drawn the plain way.
+            if (!s || e.sections!.length !== 1 || !source || !target) continue;
+            routes.set(e.id, { points: [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map((p) => ({ x: p.x, y: p.y })), source, target });
+        }
+        for (const c of n.children ?? []) collect(c);
+    };
+    collect(root);
+    return { boxes, routes };
 }
 
 type ElkConstructor = new (args: { workerUrl?: string }) => ElkInstance;
