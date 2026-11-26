@@ -1,0 +1,113 @@
+name: Publish — npm (codearchy CLI)
+
+# Publishes the `codearchy` npm package (apps/cli, bundled by apps/cli/scripts/package.mjs).
+# A tag cli-vX.Y.Z publishes version X.Y.Z (it must match apps/cli/package.json);
+# cli-vX.Y.Z-next.N style tags publish to the `next` dist-tag instead of `latest`.
+#
+# Authentication: npm trusted publishing (OIDC). No npm token is stored in this
+# repository: npm trusts this workflow file, in this repository, as configured on
+# the package's settings page on npmjs.com. Provenance is attached automatically.
+
+on:
+  push:
+    tags:
+      - 'cli-v[0-9]+.[0-9]+.[0-9]+'
+      - 'cli-v[0-9]+.[0-9]+.[0-9]+-*'
+  # Builds, packs and smoke-tests without publishing (a dry run), or publishes when asked.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to npm? (false = dry run: build, pack and smoke-test only)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: read
+
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+concurrency:
+  group: publish-cli
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, smoke-test and publish
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # trusted publishing (OIDC) and provenance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # npm's trusted publishing needs npm 11.5.1 or later: Node 24 ships it.
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Version and channel
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./apps/cli/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME#cli-v}"
+            if [ "${TAG%%-*}" != "$VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME doesn't match apps/cli/package.json ($VERSION)"
+              exit 1
+            fi
+            if [[ "$TAG" == *-* ]]; then echo "dist_tag=next" >> "$GITHUB_OUTPUT"; else echo "dist_tag=latest" >> "$GITHUB_OUTPUT"; fi
+            if [[ "$TAG" == *-* ]]; then echo "version=$TAG" >> "$GITHUB_OUTPUT"; fi
+          else
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the CLI and the packages it bundles
+        run: pnpm turbo run build --filter=@codearchy/cli...
+
+      - name: Package (apps/cli/npm)
+        run: pnpm --filter @codearchy/cli package
+
+      # A pre-release tag (cli-v0.2.0-next.1) publishes that exact version.
+      - name: Set the pre-release version
+        if: steps.meta.outputs.dist_tag == 'next'
+        working-directory: apps/cli/npm
+        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+
+      - name: Install the packed package alone and run it
+        run: pnpm --filter @codearchy/cli smoke:package
+
+      - name: Not published already
+        run: |
+          if npm view "codearchy@${{ steps.meta.outputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::codearchy@${{ steps.meta.outputs.version }} is already on npm: bump apps/cli/package.json"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish == 'true'
+        working-directory: apps/cli/npm
+        run: npm publish --access public --tag "${{ steps.meta.outputs.dist_tag }}"
+
+      - name: Summary
+        run: |
+          echo "### codearchy@${{ steps.meta.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$GITHUB_REF" == refs/tags/* ]] || [ "${{ github.event.inputs.publish }}" == "true" ]; then
+            echo "Published to npm (dist-tag \`${{ steps.meta.outputs.dist_tag }}\`): https://www.npmjs.com/package/codearchy" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Dry run: built, packed and smoke-tested; not published." >> "$GITHUB_STEP_SUMMARY"
+          fi

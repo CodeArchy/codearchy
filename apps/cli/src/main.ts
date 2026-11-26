@@ -76,7 +76,8 @@ const log = (message: string) => process.stderr.write(`[codearchy] ${message}\n`
 async function main(argv: string[]): Promise<number> {
     const [command, ...rest] = argv;
     if (!command || command === '--help' || command === '-h' || command === 'help') {
-        process.stderr.write(HELP);
+        // Asked for: stdout (so it pipes into a pager). No command at all is a usage error: stderr.
+        (command ? process.stdout : process.stderr).write(HELP);
         return command ? 0 : 1;
     }
     if (command === '--version' || command === '-v') {
