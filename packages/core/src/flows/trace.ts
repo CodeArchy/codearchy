@@ -261,6 +261,9 @@ export class FlowIndex {
         const imports = this.imports().get(file);
         const imported = imports ? all.filter((t) => imports.has(t.file)) : [];
         if (imported.length) return { ...imported[0], resolution: 'import' };
+        // Imported through a file that only passes it on (a package's index.ts, a Python __init__.py).
+        const reexported = this.throughReexports(name, imports, all);
+        if (reexported) return { ...reexported, resolution: 'import' };
         // By name alone: only distinctive names, in the same language family, outside sample code.
         if (AMBIGUOUS.has(name) || name.length < 4) return undefined;
         const lang = family(this.analyses.get(file)?.language);
@@ -276,6 +279,35 @@ export class FlowIndex {
         // Several share the name: the one closest to the caller in the tree.
         const best = [...anywhere].sort((a, b) => sharedPrefix(b.file, file) - sharedPrefix(a.file, file) || (a.file < b.file ? -1 : 1))[0];
         return { ...best, resolution: 'name' };
+    }
+
+    /**
+     * A name imported from a file that doesn't declare it but passes it on
+     * (`export { placeOrder } from './placeOrder'`, `export * from './money'`,
+     * `from .model import recommend_for`): followed to the declaration, a few
+     * files deep. Workspace packages are usually imported this way, through their index.
+     */
+    private throughReexports(name: string, start: Set<string> | undefined, all: Target[]): Target | undefined {
+        if (!start) return undefined;
+        let frontier = [...start];
+        const seen = new Set(frontier);
+        for (let hop = 0; hop < 3 && frontier.length; hop++) {
+            const next: string[] = [];
+            for (const f of frontier) {
+                // Re-exported by name, or everything (`export *`); the regex fallback doesn't record names, so any import may pass it on.
+                const passes = this.analyses.get(f)?.imports.some((i) => i.isNamespace || i.specifiers.includes(name) || (i.specifiers.length === 0 && !i.isDefault));
+                if (!passes) continue;
+                for (const g of this.imports().get(f) ?? []) {
+                    if (seen.has(g)) continue;
+                    seen.add(g);
+                    const hit = all.find((t) => t.file === g);
+                    if (hit) return hit;
+                    next.push(g);
+                }
+            }
+            frontier = next;
+        }
+        return undefined;
     }
 
     /** The nearest package above a file (the root when there are none): name-only matches stay inside it. */

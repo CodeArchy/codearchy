@@ -218,6 +218,23 @@ describe('FlowIndex', () => {
         assert.deepStrictEqual(flow.steps.map((s) => `${s.key} ${s.resolution}`), ['mod:api/routes.ts entry', 'sym:api/handlers.ts#checkHealth import']);
     });
 
+    test("calls through a package's index (re-exports, `export *`, a few files deep) reach the declaration", () => {
+        const flow = flows({
+            'api/routes.ts': ["import express from 'express';", "import { placeOrder } from '../orders';", 'const router = express.Router();', "router.post('/checkout', (req, res) => {", '  placeOrder(req.body);', '});'].join('\n'),
+            'orders/index.ts': ["export { placeOrder } from './placeOrder';", "export * from './repository';"].join('\n'),
+            'orders/placeOrder.ts': ["import { charge } from '../payments';", 'export function placeOrder(items) {', '  return charge(items);', '}'].join('\n'),
+            'orders/repository.ts': 'export function getOrder(id) { return id; }',
+            'payments/index.ts': "export * from './stripe';",
+            'payments/stripe.ts': "export * from './charge';",
+            'payments/charge.ts': 'export function charge(items) { return items; }',
+        }).trace('flow:api/routes.ts#http:POST /checkout')!;
+        assert.deepStrictEqual(
+            flow.steps.map((s) => `${'  '.repeat(s.depth)}${s.key} (${s.resolution})`),
+            ['mod:api/routes.ts (entry)', '  sym:orders/placeOrder.ts#placeOrder (import)', '    sym:payments/charge.ts#charge (import)']
+        );
+        assert.strictEqual(flow.approximate, false);
+    });
+
     test('unknown ids are undefined', () => {
         assert.strictEqual(flows(FILES).trace('flow:nope'), undefined);
     });
