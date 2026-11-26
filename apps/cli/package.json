@@ -1,6 +1,6 @@
 {
     "name": "@codearchy/cli",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "private": true,
     "description": "The codearchy command line. `codearchy mcp` serves the architecture map to your own AI agent (Claude Code, Codex, Gemini CLI, Copilot) over the Model Context Protocol.",
     "license": "MIT",
