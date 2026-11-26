@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-26
+
+### Changed
+
+- **A new README and demo** on the Marketplace page: what CodeArchy does for you and your team, how to start (in VS Code, the browser and your AI agent), and every command and setting.
+
 ### Fixed
 
 - **Flows follow calls through a package's index.** A call to a function that a package re-exports (`export { placeOrder } from './placeOrder'`, `export * from`, a Python `__init__.py`) now leads to the function itself, so a trace carries on into the other packages of a monorepo instead of stopping at the import.
