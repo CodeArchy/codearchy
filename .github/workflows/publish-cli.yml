@@ -47,11 +47,13 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # npm's trusted publishing needs npm 11.5.1 or later: Node 24 ships it.
+      # No `registry-url` here: with it, setup-node writes an .npmrc that authenticates with
+      # NODE_AUTH_TOKEN (a placeholder when unset), and npm then publishes with that token
+      # instead of trusted publishing, which the registry refuses (E404).
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Enable pnpm (Corepack, version from package.json)
         run: corepack enable
@@ -101,7 +103,9 @@ jobs:
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish == 'true'
         working-directory: apps/cli/npm
-        run: npm publish --access public --tag "${{ steps.meta.outputs.dist_tag }}"
+        run: |
+          echo "npm $(npm --version): trusted publishing (OIDC)"
+          npm publish --access public --tag "${{ steps.meta.outputs.dist_tag }}"
 
       - name: Summary
         run: |
