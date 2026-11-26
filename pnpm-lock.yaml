@@ -69,15 +69,24 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@codearchy/grammars':
+        specifier: workspace:*
+        version: link:../../packages/grammars
       '@codearchy/platform-browser':
         specifier: workspace:*
         version: link:../../packages/platform-browser
+      '@codearchy/treesitter':
+        specifier: workspace:*
+        version: link:../../packages/treesitter
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.43
       '@types/ws':
         specifier: 8.18.2
         version: 8.18.2
+      esbuild:
+        specifier: 0.25.12
+        version: 0.25.12
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -280,7 +289,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 5.1.0
-        version: 5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8)
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
   packages/conformance:
     dependencies:
@@ -339,7 +348,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 5.1.0
-        version: 5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8)
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
   packages/grammars: {}
 
@@ -481,7 +490,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 5.1.0
-        version: 5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8(esbuild@0.25.12))
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
   packages/platform-node:
     dependencies:
@@ -528,7 +537,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 5.1.0
-        version: 5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8)
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
   packages/sdk:
     devDependencies:
@@ -584,7 +593,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 5.1.0
-        version: 5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8)
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43))
 
 packages:
 
@@ -4141,15 +4150,6 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitest/mocker@5.1.0(vite@8.3.8(@types/node@20.19.43))':
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      '@vitest/spy': 5.1.0
-      estree-walker: 3.0.3
-      magic-string: 1.4.5
-    optionalDependencies:
-      vite: 8.3.8(@types/node@20.19.43)
-
   '@vitest/mocker@5.1.0(vite@8.3.8(esbuild@0.25.12))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
@@ -4157,16 +4157,7 @@ snapshots:
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      vite: 8.3.8(esbuild@0.25.12)
-
-  '@vitest/mocker@5.1.0(vite@8.3.8)':
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      '@vitest/spy': 5.1.0
-      estree-walker: 3.0.3
-      magic-string: 1.4.5
-    optionalDependencies:
-      vite: 8.3.8(esbuild@0.25.12)
+      vite: 8.3.8(@types/node@20.19.43)(esbuild@0.25.12)
 
   '@vitest/spy@5.1.0': {}
 
@@ -5889,7 +5880,7 @@ snapshots:
 
   version-range@4.15.0: {}
 
-  vite@8.3.8(@types/node@20.19.43):
+  vite@8.3.8(@types/node@20.19.43)(esbuild@0.25.12):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -5898,42 +5889,10 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 20.19.43
-      fsevents: 2.3.3
-
-  vite@8.3.8(esbuild@0.25.12):
-    dependencies:
-      lightningcss: 1.33.0
-      picomatch: 4.0.7
-      postcss: 8.5.33
-      rolldown: 1.2.19
-      tinyglobby: 0.2.17
-    optionalDependencies:
       esbuild: 0.25.12
       fsevents: 2.3.3
 
   vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(vite@8.3.8(@types/node@20.19.43)):
-    dependencies:
-      '@types/chai': 5.2.3
-      '@vitest/mocker': 5.1.0(vite@8.3.8(@types/node@20.19.43))
-      chai: 6.3.0
-      es-module-lexer: 2.3.2
-      expect-type: 1.4.0
-      magic-string: 1.4.5
-      obug: 3.0.0
-      picomatch: 4.0.7
-      std-env: 4.3.0
-      tinybench: 6.2.4
-      tinyexec: 1.3.1
-      tinyglobby: 0.2.17
-      vite: 8.3.8(@types/node@20.19.43)
-      why-is-node-running: 3.2.1
-    optionalDependencies:
-      '@opentelemetry/api': 1.10.0
-      '@types/node': 20.19.43
-    transitivePeerDependencies:
-      - msw
-
-  vitest@5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8(esbuild@0.25.12)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.1.0(vite@8.3.8(esbuild@0.25.12))
@@ -5947,31 +5906,11 @@ snapshots:
       tinybench: 6.2.4
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.8(esbuild@0.25.12)
+      vite: 8.3.8(@types/node@20.19.43)(esbuild@0.25.12)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@opentelemetry/api': 1.10.0
-    transitivePeerDependencies:
-      - msw
-
-  vitest@5.1.0(@opentelemetry/api@1.10.0)(vite@8.3.8):
-    dependencies:
-      '@types/chai': 5.2.3
-      '@vitest/mocker': 5.1.0(vite@8.3.8)
-      chai: 6.3.0
-      es-module-lexer: 2.3.2
-      expect-type: 1.4.0
-      magic-string: 1.4.5
-      obug: 3.0.0
-      picomatch: 4.0.7
-      std-env: 4.3.0
-      tinybench: 6.2.4
-      tinyexec: 1.3.1
-      tinyglobby: 0.2.17
-      vite: 8.3.8(esbuild@0.25.12)
-      why-is-node-running: 3.2.1
-    optionalDependencies:
-      '@opentelemetry/api': 1.10.0
+      '@types/node': 20.19.43
     transitivePeerDependencies:
       - msw
 

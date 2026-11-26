@@ -7,6 +7,7 @@
 import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { AuthorshipIndex, markLines, renderBranchReport, withLedger, type AgentId, type AuthorshipData, type AuthorshipLedger, buildGraph, buildHierarchy, DEFAULT_EXCLUDE_PATTERNS, DEFAULT_LANGUAGE_IDS, FlowIndex, HierarchyIndex, readManifests, TourIndex, type Analyzer } from '@codearchy/core';
 import type { AuthorshipOrigin, AuthorshipStatus, BranchReport, FileAnalysis } from '@codearchy/protocol';
 import { AgentLogIngester, computeBranchReport, computeGitAuthorship, createNodeAnalyzer, discover, fromPosix, type NodeFileSystem } from '@codearchy/platform-node';
@@ -128,7 +129,7 @@ export class Workspace {
     private async build(): Promise<Snapshot> {
         const started = Date.now();
         this.stale = false; // edits during the build mark it stale again
-        this.engine ??= createNodeAnalyzer({ root: this.root, maxFileSize: this.options.maxFileSize ?? 1_000_000 });
+        this.engine ??= createNodeAnalyzer({ root: this.root, maxFileSize: this.options.maxFileSize ?? 1_000_000, ...packagedParsers(), log: this.log });
         const { analyzer, fs: fsPort } = await this.engine;
         const discovery = await discover(this.root, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 });
         const analyses = await analyzer.analyzeAll(discovery.sourceFiles);
@@ -170,7 +171,10 @@ export class Workspace {
             const lines = new Map([...analyses].map(([p, a]) => [p, a.lines]));
             void this.traceAuthorship(this.current, lines).catch((err: unknown) => this.log(`Authorship failed: ${err instanceof Error ? err.message : String(err)}`));
         }
-        this.log(`Indexed ${files} files in ${this.current.buildMs} ms (${graph.metadata.languages.join(', ') || 'no supported languages'}).`);
+        // Which parser read each file: tree-sitter, or the regex fallback when a grammar couldn't load.
+        let regex = 0;
+        for (const a of analyses.values()) if (a.parser === 'regex') regex++;
+        this.log(`Indexed ${files} files in ${this.current.buildMs} ms (${graph.metadata.languages.join(', ') || 'no supported languages'}; ${regex ? `tree-sitter ${analyses.size - regex}, regex fallback ${regex}` : 'all with tree-sitter'}).`);
         return this.current;
     }
 
@@ -257,4 +261,14 @@ export class Workspace {
         this.options.onAuthorship?.();
         return { marked };
     }
+}
+
+/**
+ * In the npm package (one bundled file, no node_modules), the tree-sitter grammars and runtime ship in
+ * parsers/ next to dist/. From a source checkout there's no such folder: the packages resolve their own.
+ */
+function packagedParsers(): { grammarDir?: string; runtimeWasmPath?: string } {
+    const dir = fileURLToPath(new URL('../parsers/', import.meta.url));
+    const runtime = path.join(dir, 'web-tree-sitter.wasm');
+    return fs.existsSync(runtime) ? { grammarDir: dir, runtimeWasmPath: runtime } : {};
 }

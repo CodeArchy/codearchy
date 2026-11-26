@@ -11,3 +11,6 @@ parsers/
 .turbo/
 packages/grammars/wasm/
 dist-test/
+
+# The npm package build (apps/cli/scripts/package.mjs)
+apps/cli/npm/

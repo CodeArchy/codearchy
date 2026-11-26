@@ -154,6 +154,45 @@ jobs:
   #    Packages the extension into a .vsix and verifies critical files are
   #    present. The VSIX artefact is kept for manual inspection / QA download.
   # ─────────────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2c. CLI NPM PACKAGE
+  #     The `codearchy` npm package as users get it: bundled (apps/cli/scripts/
+  #     package.mjs), packed, installed alone into an empty folder, then
+  #     --version / --help, `codearchy mcp` (the polyglot fixture, every file
+  #     parsed with tree-sitter from the packaged grammars) and `codearchy serve`.
+  # ─────────────────────────────────────────────────────────────────────────────
+  cli-package:
+    name: CLI package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: lint-typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm (Corepack, version from package.json)
+        run: corepack enable
+
+      - name: Install dependencies (pnpm workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI and the packages it bundles
+        run: pnpm turbo run build --filter=@codearchy/cli...
+
+      - name: Package (apps/cli/npm)
+        run: pnpm --filter @codearchy/cli package
+
+      - name: Install the packed package alone and run it
+        run: pnpm --filter @codearchy/cli smoke:package
+
   package:
     name: Package Extension
     runs-on: ubuntu-latest
