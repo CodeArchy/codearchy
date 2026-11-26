@@ -39,3 +39,7 @@ webview-ui/dist/kokoro-model/**/model.onnx
 # Unit-test fixtures and benchmark tooling
 .vscode-test.mjs
 webview-ui/test/**
+
+# Turborepo build logs (local paths, build noise)
+.turbo/**
+webview-ui/.turbo/**

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-26
+
 ### Added
 
 - **Ask about your code, in the Map.** An **Ask** panel beside the Inspector answers questions from the map itself. It searches, follows dependencies and, where the privacy tier allows it, reads code. A status line shows what it's looking at. Answers cite the parts and lines they rely on: click a citation to see it on the map or open the file. **Show me** opens what an answer points to, and **Ask about this** in the Inspector asks about the selected node.
@@ -58,10 +60,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - See the [authorship guide](https://github.com/CodeArchy/codearchy/blob/main/docs/guides/authorship.md).
 - **Ask about flows.** Chat and `codearchy mcp` can find entrypoints and trace them (`find_flows`), so "what happens when someone logs in?" gets an answer that follows the code.
 - `codearchy.ollama.url` setting: where Ollama listens.
+- **Ownership.** A new **Ownership** lens shows who owns each part: its main owner, their share of today's lines (whoever last changed each line, from git blame), and how many others have worked on it. A ⚠ marks parts where one person holds most of the lines. The Inspector's **Owners** list shows each person's share and when they last changed the part, and how many people together hold more than half. Bots and uncommitted lines are left out, and `.mailmap` is respected. Names stay on your machine and are never sent to AI models. Turn it off with `codearchy.authorship.people`.
+- **Narrated tours and answers.** Tours are narrated by the Kokoro voice, which runs on your machine, or by your system's voice.
+  - **Starts quickly:** speech begins with a short first phrase and is read a whole sentence at a time.
+  - **Made ahead and kept:** the next step's speech is made in advance, and everything spoken is kept, so replays start at once.
+  - **Answers in Ask are narrated too:** a short acknowledgement plays straight away, the answer is read while it's being written, and the Map follows the voice to each part it mentions.
+  - **History:** every answer stays in this workspace's chat history. Replay its walkthrough, ask a follow-up (also after a reload), or turn it into a tour.
+  - **Closing stops the voice at once.** Speech that was already being made still finishes and is kept.
+- **Voice settings.** **Voice** in the Map's toolbar chooses between Kokoro and the system voice, sets the voice and speed, and plays a preview. Kokoro is downloaded once (about 93 MB). With a supported GPU, a faster model is downloaded in the background and used once it's ready. Your choice applies in every workspace, and Kokoro loads on its own once it has been set up.
+- **Tour management.** The Tours list has Start here, Walk through a flow, the repository's tours and your draft. Per tour, you can start over, reset progress, edit, make an editable copy, download it as JSON, or delete it. The draft editor reorders, edits and removes steps.
+- **Architecture tab.** Beside the Map, a high-level diagram of the system is built from the code:
+  - its main parts, in layers;
+  - how they depend on each other;
+  - who calls in;
+  - the external systems it reaches (databases, caches, queues, APIs).
+
+  **Design with AI** has your model group the real building blocks into subsystems, services and layers with architect-level names and responsibilities. It never invents parts or drops real dependencies, and the design is kept per workspace. Click a box for its code.
+- **Ollama models.** AI settings → Providers → Ollama lists the models installed on this machine. Use one, remove one, or download any model, with progress.
+- **Settings in the Map.** **Settings** in the toolbar shows every CodeArchy setting, grouped and searchable, for you or for this workspace. Each shows its description, a modified marker and Reset. Changes apply at once, and changes made in VS Code's Settings show up there too.
+- **Panels you can arrange.** The Navigator, the side panel (Inspector / Ask) and the Flows list can be resized (by dragging or with the keyboard) and hidden. Double-click a divider to reset it.
+- **A redesigned Navigator and Inspector.**
+  - **Navigator:** a filter, indent guides, icons, file counts, and ↑/↓ to move between rows.
+  - **Inspector:** tabs for Overview, Uses, Used by, and Symbols or Contains.
+- **The CLI on npm.** `npx codearchy mcp` gives your own AI agent (Claude Code, Codex, Gemini CLI, Copilot) the architecture map, and `npx codearchy serve` runs the Companion for the web app. See the [MCP guide](https://github.com/CodeArchy/codearchy/blob/main/docs/guides/mcp.md).
 
 ### Changed
 
-- In the Map, the new Ask panel replaces the v1 chat, and **AI model** is now **Local models** (downloading Ollama models). The classic views keep the v1 chat.
+- In the Map, the new Ask panel replaces the v1 chat, Ollama models are managed in AI settings, and **Voice** opens the shared Voice panel. The classic views keep the v1 chat and voice dialog.
+- **Start Here** is about the product: it skips samples, examples, benchmarks and docs, and picks the core inside the main part.
+
+### Fixed
+
+- **GitHub Copilot.** Copilot no longer picks a model VS Code reserves for itself ("only available to VS Code core"). The next best model answers instead.
+- **Branch authorship report.** It names parts by their path, and waits until the git evidence has been read.
+- **Cards.** File cards no longer overlap the lens badge, and the Matrix uses the whole canvas.
 
 ## [2.0.0] - 2026-11-23
 
