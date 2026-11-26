@@ -2,284 +2,163 @@
 
 # CodeArchy
 
-**The offline AI architect that lives inside your editor.**
+**See how any codebase is built, who owns it, and how much of it AI wrote.**
 
-*Parse any codebase. Generate a senior engineer's whiteboard diagram. Ask questions. Learn. — All locally, all privately.*
+An architecture map of your code, generated on your machine, in VS Code, in the browser, and for your AI agent.<br>
+Free and open source. Private by default.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://react.dev/)
-[![VS Code](https://img.shields.io/badge/VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://code.visualstudio.com/)
-[![Ollama](https://img.shields.io/badge/Ollama-Gemma%204-ff69b4?style=flat-square)](https://ollama.com/)
-[![Offline First](https://img.shields.io/badge/Offline-First-brightgreen?style=flat-square)]()
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=iyinusa.codearchy)
+[![Open VSX](https://img.shields.io/open-vsx/v/iyinusa/codearchy?label=Open%20VSX&style=flat-square&color=a60ee5)](https://open-vsx.org/extension/iyinusa/codearchy)
+[![npm](https://img.shields.io/npm/v/codearchy?label=npx%20codearchy&logo=npm&style=flat-square)](https://www.npmjs.com/package/codearchy)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/CodeArchy/codearchy/blob/HEAD/LICENSE)
 
-![CodeArchy Demo](https://raw.githubusercontent.com/CodeArchy/codearchy/HEAD/media/codearchy.gif)
+![CodeArchy: the Map, ownership, AI authorship, a flow traced end to end, and an onboarding tour](https://raw.githubusercontent.com/CodeArchy/codearchy/HEAD/media/codearchy.gif)
+
+**[Install for VS Code](https://marketplace.visualstudio.com/items?itemName=iyinusa.codearchy)** ·
+**[Cursor, Windsurf, VSCodium](https://open-vsx.org/extension/iyinusa/codearchy)** ·
+**[Open in the browser](https://app.codearchy.com)** ·
+**[`npx codearchy`](https://www.npmjs.com/package/codearchy)**
 
 </div>
 
 ---
 
-## What is CodeArchy?
+## Why teams use it
 
-Most developers spend days, sometimes weeks, trying to understand a new codebase. Whether you've inherited a legacy monolith, cloned an open-source repo, received a project written by an AI agent, or just returned to your own code after six months, the question is always the same: **"Where do I even start?"**
+Every codebase has a map in someone's head. CodeArchy draws it from the code, keeps it current, and puts it where everyone can see it.
 
-CodeArchy answers that question in seconds.
+- **Onboard in days, not weeks.** New engineers start with a generated tour of the system, follow any request from the route to the database, and ask questions whose answers point to the exact files and lines.
+- **See your people risk.** The Ownership lens shows who holds each part of the code today, and warns where one person holds most of it, before they go on leave.
+- **Know what AI wrote.** The Authorship lens shows how much of each part AI tools wrote, from the evidence they leave in git (`Co-authored-by` trailers, coding-agent commits, tool markers). A branch report puts it in your pull request.
+- **Change things safely.** Click any part to see what it uses and what uses it. Health and Tests lenses show cycles, hubs, orphans and untested code.
+- **Keep your code private.** Everything is parsed on your machine. AI is optional, and when you use it, you decide what may leave your machine.
 
-It parses your project using a battle-tested AST engine, builds a full dependency graph, and feeds the structured result to a **locally-running Gemma 4 model via Ollama**. The AI doesn't just list your files, it thinks like a senior architect and produces a **professional, high-level system architecture diagram**: named subsystems, their responsibilities, and the data flows between them.
+## What you get
 
-Then it goes further. You can **talk to your codebase**. Ask questions, and CodeArchy responds with clear architectural explanations, read aloud by the built-in **Kokoro neural TTS engine**, all offline, all private, zero data ever leaves your machine.
-
----
-
-## Why CodeArchy?
-
-### The Future of Learning System Architecture
-
-University courses teach patterns in isolation. Real-world architecture lives inside production codebases that students rarely get to see. CodeArchy closes that gap, open any open-source project and instantly see a senior-engineer-level diagram of how it is actually built. Click any subsystem. Ask "why does this exist?". Get an explanation spoken back to you. Architecture education has never been this tangible.
-
-### Effortless Onboarding for Legacy Systems
-
-The average developer spends **58% of their time reading and understanding code** rather than writing it. For legacy codebases this is even worse, outdated docs, tribal knowledge locked in someone who left, no architectural overview anywhere. CodeArchy generates that overview on demand, turning week-long archaeology projects into a less-minute walkthrough.
-
-### Understand AI-Generated Codebases
-
-AI coding agents can produce thousands of lines in minutes. The result is often syntactically correct but architecturally opaque, files that work but no one understands why they are structured the way they are. CodeArchy is the missing layer: the architectural reviewer that explains *what was built* so your team can own it with confidence.
-
-### Reduce Tech Debt Before It Accumulates
-
-Tech debt doesn't start when code gets messy. It starts when no one understands the architecture well enough to make good decisions. CodeArchy keeps your team aligned on structure, flags tightly-coupled subsystems, and gives every developer, from intern to principal, the same architectural context before they touch the codebase.
-
-### Safety-First Development
-
-Understanding *why* a module exists before changing it is the single most effective way to avoid regressions. CodeArchy's architectural view gives developers the blast-radius awareness they need: "if I change this service, here is what depends on it." Safer refactoring. Fewer surprises in production.
-
----
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Your Codebase                            │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                    Tree-sitter AST Parser
-               (TypeScript · JS · Python · Java · Go · Rust)
-                            │
-                    Symbol & Dependency Extractor
-                  (imports · exports · call graphs)
-                            │
-                    Graph Builder
-                  (typed nodes + weighted edges)
-                            │
-                    ┌───────▼────────┐
-                    │  Gemma 4 via   │  ← runs 100% locally
-                    │    Ollama      │    via http://localhost:11434
-                    └───────┬────────┘
-                            │  "Named subsystems, responsibilities,
-                            │   data flows, architectural pattern"
-                            │
-                    Architecture Renderer
-               (React Flow · Cytoscape.js for dense graphs)
-                            │
-                    ┌───────▼────────────────────────────────────┐
-                    │  Interactive Diagram + AI Chat + Voice I/O │
-                    │          (Kokoro TTS — offline)            │
-                    └────────────────────────────────────────────┘
-```
-
-### The AI Pipeline in Detail
-
-1. **Parse**: Tree-sitter incrementally builds an AST for every file, updating only what changed on each save.
-2. **Extract**: Symbols, imports, exports, and call relationships are extracted into a typed dependency graph.
-3. **Abstract**: The graph (not raw source code) is sent to Gemma 4 via the Ollama local REST API. The model is prompted to act as a software architect, grouping low-level modules into named, purposeful subsystems.
-4. **Render**: The structured response is parsed into `ArchitectureNode` and `ArchitectureEdge` objects and visualised in React Flow.
-5. **Converse**: Every follow-up question you ask is answered by the same Gemma 4 model with full architectural context maintained across turns.
-6. **Narrate**: Kokoro neural TTS runs in a background Web Worker and streams synthesised speech for audio playback.
-
----
-
-## Features
-
-| Capability | Details |
+| | |
 |---|---|
-| **Architecture Map** *(2.0 beta)* | Explore System › Package › Component › File on one canvas: double-click expands in place with smooth transitions; click a node to animate what it uses and what uses it; Navigator, Inspector and ⌘K search |
-| **Matrix and lenses** *(2.0 beta)* | A dependency structure matrix that exposes cycles; Health (cycles, hubs, orphans) and Tests lenses |
-| **Editor integration** *(2.0 beta)* | A status bar entry and a CodeLens show where the current file sits; **Reveal in Map** from the editor or Explorer |
-| **Ask about your code** *(2.0 beta)* | Answers from the map with citations you can click (to the map, or to the file and line), a **Show me** button, and summary cards in the Inspector |
-| **Your choice of model** *(2.0 beta)* | Ollama or LM Studio on your machine, your GitHub Copilot plan (VS Code's Language Model API), or an API key for Anthropic, OpenAI, Gemini, OpenRouter, Groq or Mistral. Keys stay in your OS keychain |
-| **Multi-language AST Parsing** | TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby via Tree-sitter WASM, with import resolution for each ecosystem |
-| **Semantic Subsystem Inference** | Heuristic grouping (API, Services, Models, Auth, Events, Storage …) |
-| **Gemma 4 AI Architect** | Local LLM via Ollama produces professional system architecture, not a file list |
-| **Interactive React Flow Diagram** | Pan, zoom, drag, click to inspect, double-click to open source files |
-| **Classic views** | The 1.x System, Flow and Dense (Cytoscape.js) views stay available during the 2.0 beta (`codearchy.ui`) |
-| **Conversational AI Assistant** *(classic views)* | Ask architecture questions in natural language; context maintained across turns |
-| **Voice Input** *(coming)* | Speak your questions; audio is transcribed and sent to Gemma 4 |
-| **Kokoro Neural TTS** | AI responses are read aloud via an offline neural speech engine (GPU or CPU fallback) |
-| **Story Narrator** | Step-by-step architectural walkthroughs generated and narrated by the AI |
-| **Incremental Re-analysis** | Re-parses only changed files on save, stays fast on large repos |
-| **Export** | Save the diagram as SVG or PNG |
-| **Activity Bar Integration** | Browse subsystems and modules in a dedicated VS Code tree view |
-| **Private by default** | The privacy tier starts at *Local only*: nothing leaves your machine. You choose if structure (names, signatures, docs, dependencies) or code excerpts may go to a cloud model; secrets are removed first, and **Ask before sending** shows each request |
+| **Map** | The system as packages, components, files and symbols on one canvas. Double-click to expand a part in place; click to see what it uses and what uses it. Navigator, Inspector and ⌘K search. |
+| **Lenses** | Colour the Map by **Dependencies**, **Health** (cycles, hubs, orphans), **Tests**, **Authorship** (AI-written lines) or **Ownership** (who last changed the lines still there). |
+| **Matrix** | A dependency structure matrix that makes cycles and layering problems obvious. |
+| **Flows** | Every entrypoint (HTTP routes, CLI commands, jobs and listeners, UI routes, `main`) and what it does: each call in order, across the parts it passes through, down to the databases, caches, queues and APIs it reaches. |
+| **Tours** | **Start Here** is generated for every repository. Write your own tours from the Inspector or a flow and save them to `.codearchy/tours`, so they're reviewed and versioned like code. Narrated, with progress you can resume. |
+| **Architecture** | A high-level diagram built from the code: the main parts in layers, their dependencies, callers and external systems. **Design with AI** groups them into named subsystems and services. |
+| **Ask** | Questions answered from the map, with citations you can click (to the Map, or to the file and line). Answers can be narrated while the Map follows along, kept as history, followed up, or turned into a tour. |
+| **Authorship in the editor** | A gutter beside AI-written and reviewed lines, **Mark Selection as Reviewed**, optional agent session logs (Claude Code, Codex, Aider), git notes to share it with your team, and a **Branch Authorship Report** for pull requests. |
+| **In your editor** | A status bar entry and a CodeLens show where the current file sits; **Reveal in Map** from the editor or the Explorer. |
+| **Voice** | Tours and answers read aloud by Kokoro, a neural voice that runs on your machine, or by your system's voice. |
 
----
+Languages: **TypeScript, JavaScript, Python, Java, Kotlin, Go, Rust, C#, PHP and Ruby**, parsed with tree-sitter, with each ecosystem's imports resolved. Flows recognise Express, NestJS, Fastify, Koa, Hono, Next.js, SvelteKit, FastAPI, Flask, Django, Celery, Spring, ASP.NET, gin, net/http, cobra, Laravel, Rails and more.
 
-## Prerequisites
+## Get started
 
-### 1. Install Ollama
+### VS Code (and Cursor, Windsurf, VSCodium)
 
-Ollama runs Gemma 4 locally. Download it from [ollama.com](https://ollama.com) and install it.
+1. Install **CodeArchy** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iyinusa.codearchy), or from [Open VSX](https://open-vsx.org/extension/iyinusa/codearchy) in editors that use it.
+2. Open a project and run **CodeArchy: Show Architecture** (`Cmd+Shift+P` / `Ctrl+Shift+P`), or click the CodeArchy icon in the Activity Bar.
+3. Explore the Map. Try the lenses, **Flows** and **Tours**. No AI or setup is needed for any of it.
+4. To ask questions, open **AI** in the Map's toolbar and choose a model (see [AI, on your terms](#ai-on-your-terms)).
 
-```bash
-# Verify Ollama is running
-ollama --version
+### In the browser
+
+Open **[app.codearchy.com](https://app.codearchy.com)** and choose a folder, a `.zip`, the sample, or a **public GitHub or GitLab URL**. Everything runs in your browser tab; nothing is uploaded. Share a repository directly with `https://app.codearchy.com/?repo=owner/repo`.
+
+For big repositories, live updates and authorship from git, run the **Companion** in the repository and open the link it prints:
+
+```sh
+npx codearchy serve --root .
 ```
 
-### 2. Pull a Gemma 4 Model
+### For your AI agent (MCP)
 
-CodeArchy supports two Gemma 4 variants. Choose based on your hardware:
+Give Claude Code, Codex, Gemini CLI or Copilot your architecture map:
 
-```bash
-# Faster — ideal for most machines (recommended starting point)
-ollama pull gemma4:e2b
-
-# Deeper reasoning — better architectural analysis on powerful machines
-ollama pull gemma4:e4b
-
-# Maximum depth — extensive analysis for large or complex codebases
-ollama pull gemma4:26b
+```sh
+claude mcp add codearchy -- npx -y codearchy mcp --root /path/to/repo
 ```
 
-### 3. Start the Ollama Server
+The agent gets `overview`, `search`, `get_node`, `neighbors`, `explain_edge`, `find_flows` and `read_code`. See the [MCP guide](https://github.com/CodeArchy/codearchy/blob/HEAD/docs/guides/mcp.md) for other agents.
 
-```bash
-ollama serve
+The CLI also writes authorship reports for pull requests: `npx codearchy authorship report`. Node.js 22 or later.
+
+## AI, on your terms
+
+The Map, lenses, Flows, Tours and Architecture work without AI. Ask, summary cards and **Design with AI** use the model you choose:
+
+- **On your machine:** Ollama or LM Studio (pick, download and remove Ollama models in AI settings).
+- **Your GitHub Copilot plan,** through VS Code's Language Model API.
+- **Your own API key:** Anthropic, OpenAI, Google Gemini, OpenRouter, Groq or Mistral. Keys are kept in your OS keychain (VS Code) or encrypted in the browser.
+
+You choose what may leave your machine: **Local only** (the default; nothing leaves), **Structure** (names, signatures, docs and dependencies, no code), or **Structure + code excerpts**. Secrets are removed from anything sent to a cloud model, **Ask before sending** shows each request first, and you can set daily token budgets per provider. Answers are grounded in the map and cite what they rely on.
+
+## How it works
+
+```text
+your files ─▶ tree-sitter (10 languages, on your machine) ─▶ symbols, imports, calls
+                                                                    │
+         git history (blame, commits, notes) ─────────────┐         ▼
+                                                          │   dependency graph
+                                                          ▼         │
+     System ▸ Package ▸ Component ▸ File ▸ Symbol  ◀── hierarchy ───┘
+          │
+          ├─ lenses: health · tests · authorship · ownership
+          ├─ flows: entrypoints traced call by call to databases, queues and APIs
+          ├─ tours: Start Here, and yours in .codearchy/tours
+          └─ the map, read by your chosen model through tools, with citations
 ```
 
-Ollama will be available at `http://localhost:11434`. CodeArchy handles all communication with it automatically.
-
----
-
-## Quick Start
-
-1. Open any project folder in VS Code.
-2. Click the **CodeArchy icon** in the Activity Bar or run **`CodeArchy: Show Architecture`** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
-3. Select your Gemma 4 model variant in the toolbar (`e2b` for speed, `e4b` for depth, `26b` for large).
-4. Explore the generated architecture diagram.
-5. Open the **Chat panel** and ask: *"What does the Auth subsystem do?"* or *"Explain the data flow from the API to the database."*
-6. Enable **voice output** to have the AI narrate its answers aloud via Kokoro TTS.
-
----
+The index is persistent and incremental: reopening a workspace reuses what hasn't changed. See [ARCHITECTURE.md](https://github.com/CodeArchy/codearchy/blob/HEAD/ARCHITECTURE.md) for the engine's design.
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `CodeArchy: Show Architecture` | Open the interactive architecture visualisation |
-| `CodeArchy: Analyze Workspace` | Run a full workspace parse and rebuild the graph |
-| `CodeArchy: Refresh Architecture` | Re-analyse and update the current view |
-| `CodeArchy: Export as SVG` | Save the diagram as a vector graphic |
-| `CodeArchy: Export as PNG` | Save the diagram as a raster image |
-| `CodeArchy: Open Sidebar` | Open the subsystem and module explorer |
+| `CodeArchy: Show Architecture` | Open the Map |
+| `CodeArchy: Analyze Workspace` | Index the workspace again |
+| `CodeArchy: Refresh Architecture` | Refresh the current view |
 | `CodeArchy: Reveal in Map` | Show the current file on the Map (also in the editor and Explorer context menus) |
+| `CodeArchy: Open Sidebar` | Open the CodeArchy view in the Activity Bar |
+| `CodeArchy: Branch Authorship Report` | What the current branch adds, and who wrote it, as Markdown for a pull request |
+| `CodeArchy: Mark Selection as Reviewed` | Mark AI-written lines as reviewed by you |
+| `CodeArchy: Correct Authorship of Selection` | Set who wrote the selected lines |
+| `CodeArchy: Write Authorship Notes for the Last Commit` | Record the last commit's AI lines as a git note |
 | `CodeArchy: Switch between the Map and the classic views` | Toggle `codearchy.ui` |
+| `CodeArchy: Export as SVG` / `Export as PNG` | Export the diagram (classic views) |
 
----
+## Settings
 
-## Configuration
+All of these are also in the Map, under **Settings**, for you or for the workspace.
 
-| Setting | Default | Description |
+| Setting | Default | What it does |
 |---|---|---|
-| `codearchy.ui` | `"map"` | `map`: the 2.0 Map · `classic`: the 1.x System, Flow and Dense views (kept through the 2.0 beta) |
-| `codearchy.codeLens` | `true` | Show where each file sits in the architecture at the top of the file |
-| `codearchy.includedLanguages` | all supported languages | Languages to analyse (`typescript`, `javascript`, `python`, `java`, `kotlin`, `go`, `rust`, `csharp`, `php`, `ruby`) |
-| `codearchy.excludePatterns` | `["**/node_modules/**", ...]` | Glob patterns to skip |
-| `codearchy.maxFileSize` | `500000` | Max file size in bytes to parse |
-| `codearchy.aiModel` | `"none"` | Gemma 4 variant: `none` · `gemma-e2b` · `gemma-e4b` · `gemma-26b` |
+| `codearchy.includedLanguages` | all ten | Languages to analyse |
+| `codearchy.excludePatterns` | `node_modules`, `dist`, `build`… | Glob patterns to skip (files ignored by `.gitignore` are always skipped) |
+| `codearchy.maxFileSize` | `500000` | Largest file to analyse, in bytes |
+| `codearchy.maxFiles` | `20000` | Most source files to analyse (`0` for no limit) |
+| `codearchy.codeLens` | `true` | Show where each file sits in the architecture, at the top of the file |
+| `codearchy.ollama.url` | `http://localhost:11434` | Where Ollama listens |
+| `codearchy.authorship.enabled` | `true` | The Authorship lens: AI-written code, from git |
+| `codearchy.authorship.people` | `true` | The Ownership lens: who owns the code, from git blame (names never go to AI models) |
+| `codearchy.authorship.gutter` | `true` | Mark AI-written and reviewed lines beside the code |
+| `codearchy.authorship.capture` | `true` | Record AI insertions as they happen in this editor |
+| `codearchy.authorship.agentLogs` | `[]` | Read these agents' session logs to see exactly which lines they wrote: `claude-code`, `codex`, `aider` |
+| `codearchy.authorship.gitNotes` | `off` | Record authorship in git notes, to share it with your team |
+| `codearchy.ui` | `map` | `classic` shows the 1.x System, Flow and Dense views instead |
+| `codearchy.aiModel`, `codearchy.aiProcessing` | | Settings for the classic views' AI |
 
----
+## Contributing
 
-## Gemma 4 + Ollama: The Offline AI Core
-
-CodeArchy uses **Gemma 4**, Google DeepMind's efficient multimodal models, running entirely on your local machine via **Ollama**. There is no cloud backend, no API key, no subscription, and no telemetry. Your source code stays on your device.
-
-The model receives the **structured dependency graph** (not raw source files), which keeps the prompt concise and within context limits even for large codebases. It is instructed to respond as a senior software architect, returning named subsystems, their roles, inter-subsystem dependencies, and a recommended architectural pattern such as MVC, Layered, Event-Driven, or Hexagonal.
-
-Two variants are available to match your hardware:
-
-- **`gemma4:e2b`**: 5.12B parameters · ~4 GB RAM; fast responses on consumer hardware, including machines without a discrete GPU.
-- **`gemma4:e4b`**: 8B parameters · ~8 GB RAM; richer, more nuanced architectural analysis for complex or large codebases.
-- **`gemma4:26b`**: 25.8B parameters · ~16 GB RAM; maximum analytical depth for large monorepos, intricate legacy systems, or deep architectural insights.
-
----
-
-## Kokoro TTS: Neural Voice — Fully Offline
-
-CodeArchy includes **Kokoro**, a lightweight neural text-to-speech engine that runs directly in the VS Code Webview via a background Web Worker. It requires no internet connection, no third-party speech service, no API key, and no cloud dependency of any kind.
-
-Key characteristics:
-
-- **Streaming playback**: audio begins playing as soon as the first synthesised chunk is ready, before the full response is complete.
-- **GPU acceleration**: uses WebGPU when available; falls back gracefully to WASM (CPU) on any machine.
-- **Multiple voices**: choose from a curated set of natural-sounding voices in the Voice Selector panel.
-- **Locked to your session**: Kokoro's model weights are downloaded once and cached locally; subsequent sessions start instantly.
-
-Voice output is a progressive enhancement, text chat always works independently. When Kokoro is active, every AI response is read aloud automatically, making CodeArchy suitable for accessibility use-cases and for developers who prefer to listen while navigating the diagram.
-
----
-
-## Use Cases
-
-| Scenario | How CodeArchy Helps |
-|---|---|
-| **Junior developer joins a team** | Generates an architect-level overview on day one; AI answers "why" questions in plain language |
-| **Tech lead reviews AI-generated code** | Instantly see the structural pattern the AI chose; validate it against intended architecture |
-| **Architect plans a refactor** | Visualise coupling between subsystems before touching a line of code |
-| **CS student learns design patterns** | Open any open-source project and see patterns such as MVC, Hexagonal, or Event-Driven in action |
-| **Product manager needs a system brief** | Export the diagram as SVG/PNG; use the narrated walkthrough as a presentation |
-| **Security engineer assesses blast radius** | Trace dependency paths from a vulnerable module to understand exposure |
-| **Team inherits a legacy codebase** | Replace weeks of archaeology with a less-minute AI-narrated architectural tour |
-
----
-
-## Development
-
-```bash
-corepack enable      # pnpm ships with Node; the version is pinned in package.json
-pnpm install         # installs the whole workspace
-pnpm build           # builds every package (Turborepo)
-pnpm test            # unit + webview tests
+```sh
+corepack enable && pnpm install
+pnpm build      # every package (Turborepo)
+pnpm test       # unit tests
 pnpm lint
 ```
 
-The extension lives in `apps/vscode/`.
+Press **F5** in VS Code to run the extension in a development window. The extension is in `apps/vscode`, the shared engine and UI are in `packages/*`, and the CLI is in `apps/cli`.
 
-Press **F5** in VS Code to launch the extension in a dedicated development host window.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and the contribution workflow, [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is put together, and the [adding-a-language guide](docs/guides/adding-a-language.md) to add a language.
-
----
-
-## Roadmap
-
-- [x] Tree-sitter WASM multi-language AST parsing
-- [x] Semantic heuristic subsystem grouping
-- [x] React Flow interactive architecture diagram
-- [x] Cytoscape.js dense-graph view
-- [x] Gemma 4 via Ollama — local AI architecture inference
-- [x] Conversational AI assistant with context persistence
-- [x] Kokoro neural TTS — offline voice output with GPU/CPU fallback
-- [x] Story narrator — AI-generated architectural walkthroughs
-- [x] Export diagrams as SVG and PNG
-- [x] Incremental re-analysis on file save
-- [ ] Voice input (audio transcription → Gemma 4)
-- [ ] Custom onboarding explainer - export/share
-- [ ] Multi-root workspace support
-- [ ] Custom subsystem annotation rules
-- [ ] Architecture diff view (detect structural drift between branches)
-- [ ] Team knowledge base — share architectural annotations across a repo
-
----
+Read [CONTRIBUTING.md](https://github.com/CodeArchy/codearchy/blob/HEAD/CONTRIBUTING.md) to get set up, [ARCHITECTURE.md](https://github.com/CodeArchy/codearchy/blob/HEAD/ARCHITECTURE.md) for how the engine fits together, and the [language guide](https://github.com/CodeArchy/codearchy/blob/HEAD/docs/guides/adding-a-language.md) to add a language. Issues and ideas are welcome in [GitHub Issues](https://github.com/CodeArchy/codearchy/issues).
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute.
+[MIT](https://github.com/CodeArchy/codearchy/blob/HEAD/LICENSE)
