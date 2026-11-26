@@ -32,31 +32,21 @@ docs and structure only.
 
 ## Set it up
 
-The CLI isn't published on npm yet, so run it from a checkout of this
-repository:
-
-```sh
-git clone https://github.com/CodeArchy/codearchy.git
-cd codearchy
-corepack enable && pnpm install
-pnpm --filter "@codearchy/cli..." build
-```
-
-In the examples below, `/path/to/codearchy` is that checkout and
-`/path/to/repo` is the codebase you want the agent to understand.
+The CLI is [the `codearchy` package on npm](https://www.npmjs.com/package/codearchy) (Node.js 22 or later). Agents start
+the server themselves. In the examples below, `/path/to/repo` is the codebase you want the agent to understand.
 
 **Claude Code**
 
 ```sh
-claude mcp add codearchy -- node /path/to/codearchy/apps/cli/dist/main.js mcp --root /path/to/repo
+claude mcp add codearchy -- npx -y codearchy mcp --root /path/to/repo
 ```
 
 **Codex CLI** (`~/.codex/config.toml`)
 
 ```toml
 [mcp_servers.codearchy]
-command = "node"
-args = ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "/path/to/repo"]
+command = "npx"
+args = ["-y", "codearchy", "mcp", "--root", "/path/to/repo"]
 ```
 
 **Gemini CLI** (`~/.gemini/settings.json`)
@@ -65,8 +55,8 @@ args = ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "/path/to/r
 {
   "mcpServers": {
     "codearchy": {
-      "command": "node",
-      "args": ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "/path/to/repo"]
+      "command": "npx",
+      "args": ["-y", "codearchy", "mcp", "--root", "/path/to/repo"]
     }
   }
 }
@@ -79,8 +69,8 @@ args = ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "/path/to/r
   "servers": {
     "codearchy": {
       "type": "stdio",
-      "command": "node",
-      "args": ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "${workspaceFolder}"]
+      "command": "npx",
+      "args": ["-y", "codearchy", "mcp", "--root", "${workspaceFolder}"]
     }
   }
 }
@@ -89,10 +79,33 @@ args = ["/path/to/codearchy/apps/cli/dist/main.js", "mcp", "--root", "/path/to/r
 Then ask the agent something like *"Use CodeArchy to give me an overview of
 this codebase"* or *"Which parts depend on the billing package, and why?"*.
 
+**Faster starts:** `npx` may check npm for a newer version each time the agent starts the server.
+Install it once with `npm install -g codearchy` and use `codearchy` as the
+command instead (`claude mcp add codearchy -- codearchy mcp --root /path/to/repo`;
+in the config files, `"command": "codearchy"` with the same args minus `-y` and `codearchy`).
+
+**Windows:** some agents can't start `npx` directly. Use `"command": "cmd"` with
+`"args": ["/c", "npx", "-y", "codearchy", "mcp", "--root", "C:\\path\\to\\repo"]`,
+or install it globally and use `codearchy`.
+
+### From source
+
+To run your own changes, build the CLI in a checkout of this repository:
+
+```sh
+git clone https://github.com/CodeArchy/codearchy.git
+cd codearchy
+corepack enable && pnpm install
+pnpm --filter "@codearchy/cli..." build
+node apps/cli/dist/main.js --help
+```
+
+Then use `node /path/to/codearchy/apps/cli/dist/main.js` wherever the examples
+above say `npx -y codearchy`.
+
 ## Troubleshooting
 
 - The server writes its log to stderr, for example
   `[codearchy] Indexed 227 files in 1051 ms`. Most agents show it in their
   MCP logs.
-- Run `node /path/to/codearchy/apps/cli/dist/main.js --help` to check the
-  build.
+- Run `npx codearchy --version` to check that it runs (Node.js 22 or later).
