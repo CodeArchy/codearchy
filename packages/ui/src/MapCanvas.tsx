@@ -8,12 +8,16 @@
  * (in the direction of the dependency) and coloured by role (uses / used
  * by), its neighbours stay bright and everything else fades. Hovering
  * previews the same without fading.
+ *
+ * Edges follow ELK's routes (orthogonal, around the cards, each in its own
+ * lane). While nodes glide to a new layout an edge is drawn the plain way,
+ * and snaps to its route once its ends have arrived.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
+import { Background, BaseEdge, Controls, getSmoothStepPath, Handle, MarkerType, MiniMap, Position, ReactFlow, useInternalNode, useReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react';
 import { AUTHORSHIP_ORIGINS, flowRoles, lensBadge, type FlowRoles, type LensId, type MapEdge, type MapModel, type MapNode } from './model.js';
 import type { AuthorshipOrigin } from '@codearchy/protocol';
-import type { Box, Layout } from './layout.js';
+import type { Box, Layout, Point, Route } from './layout.js';
 
 interface NodeData extends Record<string, unknown> {
     node: MapNode;
@@ -161,6 +165,66 @@ const ExternalNode = memo(function ExternalNode({ data, selected }: NodeProps<Ca
 
 const NODE_TYPES = { node: NodeCard, container: ContainerFrame, external: ExternalNode };
 
+/** An orthogonal route as an SVG path, its corners rounded (never more than half a segment). */
+export function roundedPath(points: Point[], radius = 10): string {
+    if (points.length < 2) return '';
+    let d = `M ${points[0]!.x} ${points[0]!.y}`;
+    for (let i = 1; i < points.length - 1; i++) {
+        const [a, b, c] = [points[i - 1]!, points[i]!, points[i + 1]!];
+        const inLen = Math.hypot(b.x - a.x, b.y - a.y);
+        const outLen = Math.hypot(c.x - b.x, c.y - b.y);
+        const r = Math.min(radius, inLen / 2, outLen / 2);
+        if (r < 0.5) {
+            d += ` L ${b.x} ${b.y}`;
+            continue;
+        }
+        const p = { x: b.x - ((b.x - a.x) / inLen) * r, y: b.y - ((b.y - a.y) / inLen) * r };
+        const q = { x: b.x + ((c.x - b.x) / outLen) * r, y: b.y + ((c.y - b.y) / outLen) * r };
+        d += ` L ${p.x} ${p.y} Q ${b.x} ${b.y} ${q.x} ${q.y}`;
+    }
+    const last = points[points.length - 1]!;
+    return `${d} L ${last.x} ${last.y}`;
+}
+
+/** The point halfway along a route (for the edge's label). */
+export function midpoint(points: Point[]): Point {
+    const lengths = points.slice(1).map((p, i) => Math.hypot(p.x - points[i]!.x, p.y - points[i]!.y));
+    let left = lengths.reduce((a, b) => a + b, 0) / 2;
+    for (let i = 0; i < lengths.length; i++) {
+        if (left <= lengths[i]! || i === lengths.length - 1) {
+            const k = lengths[i]! ? Math.min(1, left / lengths[i]!) : 0;
+            const [a, b] = [points[i]!, points[i + 1]!];
+            return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+        }
+        left -= lengths[i]!;
+    }
+    return points[0] ?? { x: 0, y: 0 };
+}
+
+const near = (a: Point, b: Point) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+
+type RoutedEdgeType = Edge<{ route?: Route }, 'routed'>;
+
+/** ELK's route once both ends are where it was routed for; until then (mid-transition, or no route) a plain step line. */
+const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeType>) {
+    const source = useInternalNode(props.source);
+    const target = useInternalNode(props.target);
+    const route = props.data?.route;
+    let path: string;
+    let at: Point;
+    if (route && source && target && near(source.internals.positionAbsolute, route.source) && near(target.internals.positionAbsolute, route.target)) {
+        path = roundedPath(route.points);
+        at = midpoint(route.points);
+    } else {
+        const [p, x, y] = getSmoothStepPath({ sourceX: props.sourceX, sourceY: props.sourceY, targetX: props.targetX, targetY: props.targetY, sourcePosition: props.sourcePosition, targetPosition: props.targetPosition, borderRadius: 10, offset: 18 });
+        path = p;
+        at = { x, y };
+    }
+    return <BaseEdge path={path} label={props.label} labelX={at.x} labelY={at.y} style={props.style} markerEnd={props.markerEnd} interactionWidth={props.interactionWidth} />;
+});
+
+const EDGE_TYPES = { routed: RoutedEdge };
+
 /** Where the viewport should go once the current transition settles. */
 export interface FocusRequest {
     /** A node to bring into view, or undefined for the whole map. */
@@ -194,10 +258,10 @@ const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(pre
  * Glides boxes from what is on screen to `layout`. Nodes that weren't on
  * screen before are reported as entering (they fade in); everything else moves.
  */
-function useTransition(layout: Layout, ids: string[], onSettled: () => void): { boxes: Layout; entering: Set<string> } {
-    const [boxes, setBoxes] = useState<Layout>(layout);
+function useTransition(layout: Map<string, Box>, ids: string[], onSettled: () => void): { boxes: Map<string, Box>; entering: Set<string> } {
+    const [boxes, setBoxes] = useState<Map<string, Box>>(layout);
     const [entering, setEntering] = useState<Set<string>>(new Set());
-    const shown = useRef<Layout>(layout);
+    const shown = useRef<Map<string, Box>>(layout);
     const known = useRef<Set<string>>(new Set(ids));
     const settled = useRef(onSettled);
     settled.current = onSettled;
@@ -218,7 +282,7 @@ function useTransition(layout: Layout, ids: string[], onSettled: () => void): { 
         const frame = (now: number) => {
             const k = Math.min(1, (now - start) / DURATION);
             const e = ease(k);
-            const next: Layout = new Map();
+            const next = new Map<string, Box>();
             for (const [id, to] of layout) next.set(id, lerp(from.get(id) ?? to, to, e));
             shown.current = next;
             setBoxes(next);
@@ -252,7 +316,7 @@ export function MapCanvas(props: MapCanvasProps) {
     }
 
     const ids = useMemo(() => model.nodes.map((n) => n.id), [model]);
-    const { boxes, entering } = useTransition(props.layout, ids, () => {
+    const { boxes, entering } = useTransition(props.layout.boxes, ids, () => {
         const f = pendingFocus.current;
         if (!f || !mounted.current) return;
         pendingFocus.current = undefined;
@@ -312,7 +376,8 @@ export function MapCanvas(props: MapCanvasProps) {
         [model, boxes, roles, selected, lens, entering]
     );
 
-    const edges = useMemo<Edge[]>(
+    const routes = props.layout.routes;
+    const edges = useMemo<RoutedEdgeType[]>(
         () =>
             props.edges.map((e) => {
                 const r = roles ?? preview;
@@ -332,8 +397,8 @@ export function MapCanvas(props: MapCanvasProps) {
                     id: e.id,
                     source: e.source,
                     target: e.target,
-                    type: 'smoothstep',
-                    pathOptions: { borderRadius: 10, offset: 18 },
+                    type: 'routed',
+                    data: { route: routes.get(e.id) },
                     // The selection's own dependencies flow, in the dependency's direction.
                     animated: !!roles && !!role,
                     label: (role || isSelected) && e.count > 1 ? String(e.count) : undefined,
@@ -350,7 +415,7 @@ export function MapCanvas(props: MapCanvasProps) {
                     interactionWidth: 14,
                 };
             }),
-        [props.edges, roles, preview, selectedEdge, lens]
+        [props.edges, routes, roles, preview, selectedEdge, lens]
     );
 
     return (
@@ -358,6 +423,7 @@ export function MapCanvas(props: MapCanvasProps) {
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             fitView
             fitViewOptions={{ padding: 0.15, maxZoom: 1.1, minZoom: 0.35 }}
             minZoom={0.1}

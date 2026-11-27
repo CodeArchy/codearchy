@@ -124,19 +124,61 @@ export function neighbourhood(model: MapModel, id: string, hops: number): Set<st
 export const DEFAULT_EDGE_LIMIT = 60;
 
 /**
- * The edges to draw: all of them when `all` or under the limit; otherwise
- * the heaviest `limit`, plus every edge touching a node in `around` (the
- * selection, or its neighbours in focus mode), so a selection always shows
- * its own dependencies.
+ * The transitive reduction, safely: an edge u → v is left out when the edges
+ * still drawn already lead from u to v another way (u → w → … → v), so every
+ * "depends on, directly or not" the full graph shows is still on the map.
+ * Edges are tried lightest first (a heavy direct dependency outlives a light
+ * one when either could go), each against what is left, never both halves of
+ * a choice. A cycle stays a cycle (reachability is kept), only its shortcuts go.
+ */
+export function reduceEdges(edges: MapEdge[]): MapEdge[] {
+    const out = new Map<string, Set<string>>();
+    for (const e of edges) {
+        if (!out.has(e.source)) out.set(e.source, new Set());
+        out.get(e.source)!.add(e.target);
+    }
+    /** v reachable from u without the direct edge u → v. */
+    const reachableAround = (u: string, v: string): boolean => {
+        const seen = new Set<string>([u]);
+        const stack = [...(out.get(u) ?? [])].filter((w) => w !== v);
+        for (const w of stack) seen.add(w);
+        while (stack.length) {
+            const w = stack.pop()!;
+            for (const x of out.get(w) ?? []) {
+                if (x === v) return true;
+                if (!seen.has(x)) {
+                    seen.add(x);
+                    stack.push(x);
+                }
+            }
+        }
+        return false;
+    };
+    const dropped = new Set<string>();
+    const order = [...edges].sort((a, b) => a.weight - b.weight || (a.id < b.id ? -1 : 1));
+    for (const e of order) {
+        if (e.source === e.target) continue;
+        if (reachableAround(e.source, e.target)) {
+            out.get(e.source)!.delete(e.target);
+            dropped.add(e.id);
+        }
+    }
+    return dropped.size ? edges.filter((e) => !dropped.has(e.id)) : edges;
+}
+
+/**
+ * The edges to draw. `all`: every one. Otherwise the transitive reduction
+ * (lines implied by a longer path left out), and of that, when it is still
+ * over the limit, the heaviest `limit`; plus every edge touching a node in
+ * `around` (the selection, or its neighbours in focus mode), so a selection
+ * always shows all of its own dependencies.
  */
 export function visibleEdges(model: MapModel, options: { all?: boolean; limit?: number; around?: Set<string> } = {}): MapEdge[] {
+    if (options.all) return model.edges;
     const limit = options.limit ?? DEFAULT_EDGE_LIMIT;
-    if (options.all || model.edges.length <= limit) return model.edges;
+    const reduced = reduceEdges(model.edges);
     const keep = new Set(
-        [...model.edges]
-            .sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : 1))
-            .slice(0, limit)
-            .map((e) => e.id)
+        (reduced.length <= limit ? reduced : [...reduced].sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : 1)).slice(0, limit)).map((e) => e.id)
     );
     const around = options.around;
     return model.edges.filter((e) => keep.has(e.id) || (around && (around.has(e.source) || around.has(e.target))));
