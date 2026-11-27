@@ -56,7 +56,8 @@ fs.mkdirSync(path.join(OUT, 'parsers'));
 for (const f of wanted) fs.copyFileSync(path.join(wasmDir, f), path.join(OUT, 'parsers', f));
 fs.copyFileSync(runtimeWasm, path.join(OUT, 'parsers', 'web-tree-sitter.wasm'));
 
-// ── package.json, README, LICENSE ──────────────────────────────────────────
+// ── package.json, server.json, README, LICENSE ─────────────────────────────
+const MCP_NAME = 'io.github.CodeArchy/codearchy';
 const pkg = {
     name: 'codearchy',
     version: source.version,
@@ -70,8 +71,22 @@ const pkg = {
     bin: { codearchy: 'dist/main.js' },
     files: ['dist', 'parsers', 'README.md', 'LICENSE'],
     engines: { node: '>=22' },
+    // The official MCP Registry checks that the package names the server it lists (server.json below).
+    mcpName: MCP_NAME,
 };
 fs.writeFileSync(path.join(OUT, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
+// The MCP Registry entry for this version: \`mcp-publisher publish\` from apps/cli/npm after npm has it.
+const server = {
+    $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
+    name: MCP_NAME,
+    title: 'CodeArchy',
+    description: 'Your codebase’s architecture for your AI agent: map, search, dependencies, request flows, code.',
+    websiteUrl: 'https://codearchy.com',
+    repository: { url: 'https://github.com/CodeArchy/codearchy', source: 'github', subfolder: 'apps/cli' },
+    version: source.version,
+    packages: [{ registryType: 'npm', identifier: pkg.name, version: source.version, transport: { type: 'stdio' }, packageArguments: [{ type: 'positional', value: 'mcp' }] }],
+};
+fs.writeFileSync(path.join(OUT, 'server.json'), `${JSON.stringify(server, null, 2)}\n`);
 fs.copyFileSync(path.join(CLI, 'README.md'), path.join(OUT, 'README.md'));
 fs.copyFileSync(path.join(REPO, 'LICENSE'), path.join(OUT, 'LICENSE'));
 
