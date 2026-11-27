@@ -58,12 +58,25 @@ export async function opfsSyncAccessAvailable(): Promise<boolean> {
     }
 }
 
+/** The OPFS SAH pool's own utilities (list, size, export, import, delete its databases). */
+export type SqlitePool = Awaited<ReturnType<Sqlite3['installOpfsSAHPoolVfs']>>;
+
+/** The OPFS SAH pool (installed once per name and worker). Throws where sync access handles aren't available. */
+export async function opfsPool(options: { poolName?: string; wasmUrl?: string } = {}): Promise<SqlitePool> {
+    const s3 = await init(options.wasmUrl);
+    return s3.installOpfsSAHPoolVfs({ name: options.poolName ?? 'codearchy' });
+}
+
 export async function openSqliteWasm(options: SqliteWasmOptions): Promise<StoragePort> {
     const s3 = await init(options.wasmUrl);
     let db: OoDb;
     if (options.mode === 'opfs-sahpool') {
-        const pool = await s3.installOpfsSAHPoolVfs({ name: options.poolName ?? 'codearchy' });
-        db = new pool.OpfsSAHPoolDb(`/${options.name ?? 'codearchy-index.db'}`);
+        const pool = await opfsPool(options);
+        const file = `/${options.name ?? 'codearchy-index.db'}`;
+        // Every database also needs a slot for its journal (and SQLite a spare): without room, opening a
+        // new one would fail, and the workspace would only be indexed in memory.
+        if (!pool.getFileNames().includes(file)) await pool.reserveMinimumCapacity(Number(pool.getFileCount()) + 3);
+        db = new pool.OpfsSAHPoolDb(file);
     } else {
         db = new s3.oo1.DB(':memory:');
     }

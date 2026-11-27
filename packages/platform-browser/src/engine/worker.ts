@@ -5,6 +5,9 @@
  *   open(source)   discover → index (SQLite on OPFS, memory fallback; parse
  *                  workers) → graph → hierarchy; a picked folder can be watched
  *   view, children, describe, explain, search, readFile
+ *   storage, storageSettings, storageDelete, storageExport, storageExportFolder
+ *                  the indexes this browser keeps (see indexes.ts); these work
+ *                  with or without an open workspace
  *   + host-specific handlers (config.handlers), given the open workspace
  *
  * Live updates: FileSystemObserver where the browser has it, otherwise
@@ -34,12 +37,14 @@ import {
     type DiscoveryResult,
     type FileSystemPort,
     type IndexStats,
+    type StoragePort,
 } from '@codearchy/core';
 import type { ArchitectureGraph, EngineEvent, FileAnalysis, SearchResult, Tour, WorkspaceSummary } from '@codearchy/protocol';
 import { unzipSync } from 'fflate';
 import { HandleFileSystem, MemoryFileSystem, listHandleFiles, type MemoryEntry } from '../fs.js';
 import { BrowserWorkerPool, type WorkspaceSource } from '../pool.js';
-import { openSqliteWasm, opfsSyncAccessAvailable } from '../storage.js';
+import { openSqliteWasm, opfsPool, opfsSyncAccessAvailable, type SqlitePool } from '../storage.js';
+import { IndexLibrary, type IndexSourceKind } from './indexes.js';
 import type { EngineReply, EngineRequest, EngineSource } from './messages.js';
 import { downloadRepository } from './repository.js';
 
@@ -104,7 +109,20 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
     const emit = (event: EngineEvent) => scope.postMessage({ event });
     const ctx: HandlerContext = { emit: (hostEvent) => scope.postMessage({ hostEvent }) };
 
-    let ws: (EngineWorkspace & { indexer: Indexer; pool: BrowserWorkerPool; live: boolean; lazy: { hierarchy?: HierarchyIndex; resolver?: ImportResolver } }) | undefined;
+    let ws: (EngineWorkspace & { db: string; port: StoragePort; indexer: Indexer; pool: BrowserWorkerPool; live: boolean; lazy: { hierarchy?: HierarchyIndex; resolver?: ImportResolver } }) | undefined;
+    const poolName = config.poolName ?? 'codearchy';
+    let poolState: Promise<{ pool?: SqlitePool; reason?: string }> | undefined;
+    /** The OPFS pool that keeps the indexes, or why there is none (then they're kept in memory only). */
+    const storagePool = () =>
+        (poolState ??= (async () => {
+            if (!(await opfsSyncAccessAvailable())) return { reason: 'This browser doesn’t let the app keep files here (private browsing, for example): indexes last only while the tab is open.' };
+            try {
+                return { pool: await opfsPool({ poolName, wasmUrl: sqliteWasmUrl }) };
+            } catch {
+                return { reason: 'Another CodeArchy tab is using the storage: indexes opened in this tab last only while it’s open.' };
+            }
+        })());
+    const library = new IndexLibrary(poolName, storagePool);
     let stopWatch: (() => void) | undefined;
     let opening = 0;
 
@@ -125,7 +143,10 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             isCancelled: () => ticket !== opening,
         });
         const discovery = classifyFiles(paths, { languages: DEFAULT_LANGUAGE_IDS, excludePatterns: DEFAULT_EXCLUDE_PATTERNS, maxFiles: 0 }, source.kind);
-        const { store, storage } = await openStore(name, config.poolName ?? 'codearchy', sqliteWasmUrl);
+        const db = indexFileName(name);
+        // Another browser's copy in the export folder, if this one has none: unchanged files are then reused.
+        await library.beforeOpen(db).catch(() => false);
+        const { store, storage, port } = await openStore(db, poolName, sqliteWasmUrl);
         const pool = new BrowserWorkerPool({ ...parsers, workerUrl: config.parseWorkerUrl, source: workers, maxFileSize, ...(config.workers ? { workers: config.workers } : {}) });
         const indexer = new Indexer({ fs, store, executor: pool });
         let last = 0;
@@ -142,6 +163,8 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         const graph = buildGraph(result.analyses.values(), result.manifests);
         const workspace = {
             name,
+            db,
+            port,
             storage,
             fs,
             store,
@@ -180,6 +203,11 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
             },
         };
         ws = workspace;
+        if (storage === 'opfs') {
+            void library
+                .opened({ db, name, source: SOURCE_KIND[source.kind], ...(source.kind === 'repository' ? { url: source.url } : {}), sizeBytes: indexSize(port), files: result.analyses.size })
+                .catch(() => undefined);
+        }
         if (live && source.kind === 'handle') stopWatch = watch(source.handle, fs);
         return summarize(workspace);
     }
@@ -307,6 +335,7 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
         }
         w.graph = buildGraph(w.analyses.values(), w.manifests);
         w.lazy = {};
+        if (w.storage === 'opfs') void library.changed(w.db, indexSize(w.port), w.analyses.size).catch(() => undefined);
         emit({ type: 'changed', paths: [...changed, ...removed], summary: summarize(w) });
     }
 
@@ -330,9 +359,25 @@ export function runEngineWorker(config: EngineWorkerConfig): void {
     async function handle(method: string, params: Record<string, unknown>): Promise<unknown> {
         if (method === 'open') return open(params.source as EngineSource);
         if (method === 'close') return close();
+        const s = (k: string) => String(params[k] ?? '');
+        // The indexes this browser keeps: with or without an open workspace.
+        switch (method) {
+            case 'storage':
+                return library.status(ws?.storage === 'opfs' ? ws.db : undefined);
+            case 'storageSettings':
+                return library.setSettings(params.settings, ws?.db);
+            case 'storageDelete':
+                return library.remove(s('db'), ws?.storage === 'opfs' ? ws.db : undefined);
+            case 'storageExport':
+                return library.exportAll();
+            case 'storageExportFolder': {
+                const handle = params.handle;
+                if (handle !== undefined && handle !== null && (typeof handle !== 'object' || (handle as FileSystemHandle).kind !== 'directory')) throw new Error('"handle" must be a folder');
+                return library.setExportFolder((handle ?? undefined) as FileSystemDirectoryHandle | undefined);
+            }
+        }
         const w = ws;
         if (!w) return undefined;
-        const s = (k: string) => String(params[k] ?? '');
         switch (method) {
             case 'view':
                 return w.hierarchy.project((params.request ?? {}) as Parameters<HierarchyIndex['project']>[0]);
@@ -432,16 +477,33 @@ function wanted(name: string): boolean {
     return getPackForExtension(posixPath.extname(base)) !== undefined;
 }
 
-async function openStore(name: string, poolName: string, wasmUrl: string): Promise<{ store: IndexStore; storage: 'opfs' | 'memory' }> {
-    const dbName = `${name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'workspace'}.db`;
+/** The index's file name in the pool for a workspace name. */
+export function indexFileName(name: string): string {
+    return `${name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'workspace'}.db`;
+}
+
+const SOURCE_KIND: Record<EngineSource['kind'], IndexSourceKind> = { handle: 'folder', files: 'files', zip: 'zip', texts: 'sample', repository: 'repository' };
+
+/** Bytes the index takes on disk. */
+function indexSize(port: StoragePort): number {
+    const n = (sql: string) => Number(Object.values(port.prepare(sql).get() ?? {})[0] ?? 0);
+    try {
+        return n('PRAGMA page_count') * n('PRAGMA page_size');
+    } catch {
+        return 0;
+    }
+}
+
+async function openStore(dbName: string, poolName: string, wasmUrl: string): Promise<{ store: IndexStore; storage: 'opfs' | 'memory'; port: StoragePort }> {
     if (await opfsSyncAccessAvailable()) {
         try {
             const db = await openSqliteWasm({ mode: 'opfs-sahpool', name: dbName, poolName, wasmUrl });
-            return { store: new IndexStore(db), storage: 'opfs' };
+            return { store: new IndexStore(db), storage: 'opfs', port: db };
         } catch (err) {
             // e.g. another tab holds the pool: index in memory instead.
             console.warn(`OPFS storage unavailable (${(err as Error).message}); indexing in memory`);
         }
     }
-    return { store: new IndexStore(await openSqliteWasm({ mode: 'memory', wasmUrl })), storage: 'memory' };
+    const port = await openSqliteWasm({ mode: 'memory', wasmUrl });
+    return { store: new IndexStore(port), storage: 'memory', port };
 }

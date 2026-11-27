@@ -12,8 +12,11 @@ import type { EngineEvent, WorkspaceSummary } from './engine.js';
 
 export const COMPANION_PROTOCOL = 1;
 
-/** The engine requests a Companion serves: read-only, except `authorshipMark`, which writes to the Companion's own ledger (outside the workspace). */
-export const COMPANION_METHODS = ['summary', 'view', 'children', 'describe', 'explain', 'search', 'flows', 'flow', 'tours', 'tour', 'architecture', 'anchorTour', 'readFile', 'authorshipStatus', 'authorship', 'authorshipMark', 'authorshipReport'] as const;
+/**
+ * The engine requests a Companion serves: read-only, except `authorshipMark`, which writes to the Companion's own ledger (outside the workspace),
+ * and `pairingLink`, which gives a paired browser a fresh one-time link for another browser on this machine (Companion 0.1.3+).
+ */
+export const COMPANION_METHODS = ['pairingLink', 'summary', 'view', 'children', 'describe', 'explain', 'search', 'flows', 'flow', 'tours', 'tour', 'architecture', 'anchorTour', 'readFile', 'authorshipStatus', 'authorship', 'authorshipMark', 'authorshipReport'] as const;
 export type CompanionMethod = (typeof COMPANION_METHODS)[number];
 
 export type CompanionClientMessage =
