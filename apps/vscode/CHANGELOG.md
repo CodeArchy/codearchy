@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A tidier Map toolbar.** What the Map is showing (the click hint, or what the selected part uses and is used by, Focus, and "14 of 33 dependencies drawn · show all") now sits on a frosted bar at the top centre of the canvas, instead of crowding the toolbar onto a second row.
+
 ## [2.1.2] - 2026-11-27
 
 ### Changed

@@ -512,28 +512,6 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 </button>
                 {view ? <Breadcrumb items={view.breadcrumb} onGo={drill} /> : <span />}
                 <span className="ca-toolbar-gap" />
-                {PAGE_MODES.has(mode) ? null : flow && mode === 'map' ? (
-                    <span className="ca-legend" aria-label="Selection flow">
-                        <span className="ca-legend-out">uses {flow.out.size}</span>
-                        <span className="ca-legend-in">used by {flow.in.size}</span>
-                    </span>
-                ) : (
-                    <span className="ca-hint">Click to trace dependencies · double-click to expand</span>
-                )}
-                {focus ? <span className="ca-chip" title="F toggles focus">Focus: 2 hops</span> : null}
-                {view?.skipped.length ? <span className="ca-muted">{view.skipped.length} expansion(s) over budget</span> : null}
-                {mode === 'map' && model && (allEdges || defaultCount < model.edges.length) ? (
-                    <span
-                        className="ca-muted ca-edge-count"
-                        title="Lines a longer path already shows are left out (A → B → C needs no A → C line), and on dense views the lightest. Select a part to see all of its own."
-                    >
-                        {allEdges ? `all ${model.edges.length} dependencies` : `${defaultCount} of ${model.edges.length} dependencies drawn`}
-                        {' · '}
-                        <button type="button" className="ca-link" onClick={() => setAllEdges((a) => !a)}>
-                            {allEdges ? 'show fewer' : 'show all'}
-                        </button>
-                    </span>
-                ) : null}
                 <div className="ca-segmented" role="group" aria-label="View mode">
                     {(['map', 'architecture', 'matrix', 'flows', 'tours'] as const)
                         .filter((m) => (m === 'architecture' ? !!client.architecture : m === 'flows' ? !!client.flows : m === 'tours' ? !!client.tours : true))
@@ -687,8 +665,43 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                             />
                         </ReactFlowProvider>
                     ) : null}
-                    {status && !PAGE_MODES.has(mode) ? <div className="ca-status">{status}</div> : null}
-                    {view && view.nodes.length === 0 && !PAGE_MODES.has(mode) ? <div className="ca-status">Nothing to show here.</div> : null}
+                    {PAGE_MODES.has(mode) ? null : (
+                        // Over the canvas, top centre: what the Map is showing (frosted, so the toolbar never overflows with it).
+                        <div className="ca-hud">
+                            {mode === 'map' && view ? (
+                                <div className="ca-hud-bar" role="status" aria-live="polite">
+                                    {flow ? (
+                                        <span className="ca-legend" aria-label="Selection flow">
+                                            <span className="ca-legend-out">uses {flow.out.size}</span>
+                                            <span className="ca-legend-in">used by {flow.in.size}</span>
+                                        </span>
+                                    ) : (
+                                        <span className="ca-hint">Click to trace dependencies · double-click to expand</span>
+                                    )}
+                                    {focus ? (
+                                        <span className="ca-chip" title="F toggles focus">
+                                            Focus: 2 hops
+                                        </span>
+                                    ) : null}
+                                    {view.skipped.length ? <span>{view.skipped.length} expansion(s) over budget</span> : null}
+                                    {model && (allEdges || defaultCount < model.edges.length) ? (
+                                        <span
+                                            className="ca-edge-count"
+                                            title="Lines a longer path already shows are left out (A → B → C needs no A → C line), and on dense views the lightest. Select a part to see all of its own."
+                                        >
+                                            {allEdges ? `all ${model.edges.length} dependencies` : `${defaultCount} of ${model.edges.length} dependencies drawn`}
+                                            {' · '}
+                                            <button type="button" className="ca-link" onClick={() => setAllEdges((a) => !a)}>
+                                                {allEdges ? 'show fewer' : 'show all'}
+                                            </button>
+                                        </span>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                            {status ? <div className="ca-status">{status}</div> : null}
+                            {view && view.nodes.length === 0 ? <div className="ca-status">Nothing to show here.</div> : null}
+                        </div>
+                    )}
                     {playing && mode !== 'tours' ? (
                         <TourPlayer
                             tour={playing.tour}

@@ -179,6 +179,20 @@
 
 .ca-canvas { position: relative; min-width: 0; min-height: 0; }
 .ca-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 12px; padding: 2px 10px; color: var(--ca-muted); }
+/* The canvas HUD: top centre, over the Map. The hint or the selection's legend, Focus, and how many lines are drawn,
+   on frosted glass so the map stays visible through it; the status lines stack under it. */
+.ca-hud { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - 24px); pointer-events: none; }
+.ca-hud > * { pointer-events: auto; }
+.ca-hud .ca-status { position: static; transform: none; }
+.ca-hud-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 14px; padding: 5px 14px; border-radius: 999px; font-size: 12px; line-height: 1.5; color: var(--ca-muted);
+  background: color-mix(in srgb, var(--ca-panel) 68%, transparent); border: 1px solid color-mix(in srgb, var(--ca-line) 85%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(150%); backdrop-filter: blur(12px) saturate(150%); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); }
+.ca-hud-bar > * { white-space: nowrap; }
+.ca-hud-bar .ca-hint, .ca-hud-bar .ca-legend { color: var(--ca-fg); opacity: 0.85; }
+/* No frosted glass where it isn't supported: a solid panel instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .ca-hud-bar { background: var(--ca-panel); } }
+/* A narrow canvas keeps the counts and drops the hint. */
+@media (max-width: 760px) { .ca-hud-bar .ca-hint { display: none; } .ca-hud-bar:not(:has(> :not(.ca-hint))) { display: none; } }
 .ca-canvas > .react-flow { position: absolute; inset: 0; width: auto; height: auto; background: var(--ca-bg); }
 .ca-canvas .react-flow__background { color: var(--ca-line); }
 .ca-canvas .react-flow__controls button { background: var(--ca-panel); color: var(--ca-fg); border-color: var(--ca-line); fill: var(--ca-fg); }
@@ -275,8 +289,6 @@
 .ca-segmented button.ca-on { background: var(--ca-selected); font-weight: 600; }
 .ca-lens { color: var(--ca-muted); }
 .ca-lens select { font: inherit; color: var(--ca-fg); background: var(--ca-bg); border: 1px solid var(--ca-line); border-radius: 6px; padding: 2px 6px; max-width: 140px; }
-/* A crowded toolbar drops its hint first (the legend while something is selected stays). */
-@media (max-width: 1500px) { .ca-toolbar .ca-hint { display: none; } }
 
 /* ── matrix ─────────────────────────────────────────────────────────────── */
 .ca-matrix-wrap { position: absolute; inset: 0; overflow: auto; padding: 8px 12px 24px; }
