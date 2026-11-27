@@ -215,7 +215,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
     const authorshipNote = hasAuthorship
         ? undefined
         : !client.authorshipStatus
-          ? 'needs git history'
+          ? 'needs the Companion'
           : authorshipState?.state === 'computing'
             ? 'reading git history…'
             : authorshipState?.state === 'unavailable'
@@ -224,7 +224,7 @@ export function CodeArchyMap(props: CodeArchyMapProps) {
                 ? 'none in this view'
                 : 'checking…';
     const authorshipWhy = !client.authorshipStatus
-        ? 'Authorship comes from git history. In the browser, connect the Companion (codearchy serve) on a git clone; VS Code reads it directly.'
+        ? 'Ownership and AI authorship come from git blame on your machine, which a browser tab can’t run. In a clone of this repository, run npx codearchy serve and open the link it prints (or Open… → Connect to the Companion). VS Code reads it directly.'
         : authorshipState?.reason;
     /** The Ownership lens: the same git history, plus people ownership being on (the status counts people then). */
     const hasOwnership = !!view?.nodes.some((n) => n.owner);
