@@ -7,15 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-11-27
+
 ### Changed
 
-- **A tidier Map toolbar.** What the Map is showing (the click hint, or what the selected part uses and is used by, Focus, and "14 of 33 dependencies drawn · show all") now sits on a frosted bar at the top centre of the canvas, instead of crowding the toolbar onto a second row.
+- **A tidier Map toolbar.** What the Map is showing (the click hint, or what the selected part uses and is used by, Focus, and "14 of 33 dependencies drawn · show all") now sits on a frosted bar at the top centre of the canvas, instead of crowding the toolbar onto a second row. Loading messages stack under it.
+- **A new demo on the Marketplace page**, re-recorded with the tidier Map lines from 2.1.2.
+- **In the web app** (app.codearchy.com), the Authorship and Ownership lenses now say they need the Companion, instead of "needs git history", and the tooltip says how to connect it: they read `git blame` on your machine, which a browser tab can't run. VS Code reads git directly, so nothing changes there.
 
 ## [2.1.2] - 2026-11-27
 
 ### Changed
 
 - **A tidier Map on dense codebases.** Lines now follow the layout's own routes: around the cards, never through them, each in its own lane instead of piling onto a shared trunk. By default the Map leaves out the lines a longer path already shows (A → B → C needs no A → C line), so what depends on what, directly or not, is unchanged with about half the lines. The toolbar says how many are drawn ("11 of 24 dependencies drawn · show all"), and selecting a part still draws all of its own.
+
+### CLI (`npx codearchy`) 0.1.2
+
+- **Listed in the official MCP Registry** as `io.github.CodeArchy/codearchy`, so MCP clients and directories that read the registry can find it and install it with `npx codearchy mcp`.
 
 ## [2.1.1] - 2026-11-26
 
