@@ -8,8 +8,11 @@
  */
 import type { Architecture, EdgeExplanation, EngineClient, EngineEvent, Flow, FlowSummary, NodeDetails, NodeSummary, SearchResult, Tour, TourDetails, TourSummary, View, ViewRequest, WorkspaceSummary } from '@codearchy/protocol';
 import type { EngineReply, EngineRequest, EngineSource } from './engine/messages.js';
+import type { StorageSettings, StorageStatus } from './engine/indexes.js';
 
 export type { EngineSource } from './engine/messages.js';
+export type { ExportFolderStatus, IndexSourceKind, StorageSettings, StorageStatus, StoredIndex } from './engine/indexes.js';
+export { DEFAULT_STORAGE_SETTINGS, STORAGE_LIMIT_RANGE } from './engine/indexes.js';
 
 export class WorkerEngine implements EngineClient {
     private readonly pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
@@ -104,6 +107,29 @@ export class WorkerEngine implements EngineClient {
         return this.call('readFile', { path });
     }
 
+    // ── the indexes this browser keeps (Settings) ───────────────────────────
+
+    /** The stored indexes, their sizes, the limit and the export folder. */
+    storage(): Promise<StorageStatus> {
+        return this.call('storage', {});
+    }
+    /** Saves the settings; a limit that's on applies at once. Resolves to the codebases whose index it removed. */
+    setStorageSettings(settings: StorageSettings): Promise<string[]> {
+        return this.call('storageSettings', { settings });
+    }
+    /** Deletes one index from this browser (not the open codebase's; its export folder copy stays). */
+    deleteIndex(db: string): Promise<void> {
+        return this.call('storageDelete', { db });
+    }
+    /** The folder each index is copied to (and imported from), or undefined to stop. A new folder gets every index at once. */
+    setExportFolder(handle: FileSystemDirectoryHandle | undefined): Promise<void> {
+        return this.call('storageExportFolder', { handle: handle ?? null });
+    }
+    /** Copies every index to the export folder now; resolves to how many were copied. */
+    exportIndexes(): Promise<number> {
+        return this.call('storageExport', {});
+    }
+
     dispose(): void {
         this.worker.terminate();
         this.listeners.clear();
@@ -124,6 +150,25 @@ export async function pickDirectory(): Promise<EngineSource | undefined> {
         if ((err as DOMException).name === 'AbortError') return undefined;
         throw err;
     }
+}
+
+/** A folder to export indexes to (read-write). Undefined if cancelled or unsupported. */
+export async function pickExportFolder(): Promise<FileSystemDirectoryHandle | undefined> {
+    const picker = (globalThis as { showDirectoryPicker?: (o?: { mode?: string; id?: string }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+    if (!picker) return undefined;
+    try {
+        return await picker.call(globalThis, { mode: 'readwrite', id: 'codearchy-indexes' });
+    } catch (err) {
+        if ((err as DOMException).name === 'AbortError') return undefined;
+        throw err;
+    }
+}
+
+/** Asks again for access to the export folder (browsers forget it between visits). Must run on a click. */
+export async function allowExportFolder(handle: FileSystemDirectoryHandle): Promise<boolean> {
+    const h = handle as FileSystemDirectoryHandle & { requestPermission?(o: { mode: 'readwrite' }): Promise<PermissionState> };
+    if (!h.requestPermission) return true;
+    return (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
 }
 
 /** True when the browser can pick a folder in place (and watch it). */

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **In the web app** (app.codearchy.com), every codebase you open now keeps its index. Before, after about five codebases, new ones were indexed in memory only and lost on reload. The browser engine also gains what the app's new Settings use: a list of the stored indexes with their sizes, an optional limit that removes the least recently opened ones (off unless you turn it on), and an export folder on your device (Chromium). A browser with no index for a codebase loads the copy from that folder, so another browser carries on without indexing again. VS Code isn't affected: its index lives on disk.
+
+### CLI (`npx codearchy`)
+
+- **Open the same workspace in a second browser.** A browser connected to `codearchy serve` can ask for a new one-time link (it works once, within 10 minutes; at most 5 can be waiting). Before, the printed link worked once, so a second browser needed a restart of the Companion.
+
 ## [2.1.3] - 2026-11-27
 
 ### Changed

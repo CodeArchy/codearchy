@@ -7,8 +7,10 @@
  *   - the upgrade must come from an allowed Origin (the app, localhost dev
  *     servers, and origins added with --allow-origin) and name this server in
  *     its Host header (DNS rebinding);
- *   - the first frame authenticates: the one-time pairing token (single use,
+ *   - the first frame authenticates: a one-time pairing token (single use,
  *     compared in constant time) or a session key an earlier pairing issued;
+ *     a paired browser can ask for another one-time link (`pairingLink`,
+ *     valid 10 minutes) to open the same workspace in a second browser;
  *   - read-only: requests are a fixed allow-list, and only indexed source files
  *     and tour files can be read;
  *   - frames are capped in size and rate.
@@ -35,6 +37,9 @@ import type { Snapshot, Workspace } from './workspace.js';
 export const APP_ORIGIN = 'https://app.codearchy.com';
 const MAX_FRAME = 1 << 20;
 const AUTH_TIMEOUT_MS = 10_000;
+/** How long a link minted for another browser (`pairingLink`) stays valid, and how many can wait at once. */
+const PAIRING_LINK_TTL_MS = 10 * 60_000;
+const MAX_PAIRING_LINKS = 5;
 /** Requests per second, with a burst allowance. */
 const RATE = 60;
 const BURST = 200;
@@ -83,7 +88,17 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
             throw new Error(`--allow-origin: "${o}" is not a URL`);
         }
     });
-    let token: string | undefined = options.token ?? randomBytes(24).toString('base64url');
+    /** One-time pairing tokens and when each stops working: the printed one never expires; a link a paired browser asks for (`pairingLink`) lasts PAIRING_LINK_TTL_MS. */
+    const printedToken = options.token ?? randomBytes(24).toString('base64url');
+    const pairingTokens = new Map<string, number>([[printedToken, Infinity]]);
+    const takeToken = (offered: string): boolean => {
+        const now = Date.now();
+        for (const [t, expires] of pairingTokens) {
+            if (expires < now) pairingTokens.delete(t);
+            else if (sameSecret(offered, t)) return pairingTokens.delete(t); // one-time
+        }
+        return false;
+    };
     const sessions = new Set<string>();
     const clients = new Set<WebSocket>();
 
@@ -135,8 +150,7 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
             if (!authed) {
                 if ((msg.type !== 'pair' && msg.type !== 'resume') || msg.protocol !== COMPANION_PROTOCOL) return ws.close(COMPANION_CLOSE.protocol, 'unsupported protocol');
                 let session: string | undefined;
-                if (msg.type === 'pair' && token && typeof msg.token === 'string' && sameSecret(msg.token, token)) {
-                    token = undefined; // one-time
+                if (msg.type === 'pair' && typeof msg.token === 'string' && takeToken(msg.token)) {
                     session = randomBytes(32).toString('base64url');
                     sessions.add(session);
                     log(`Paired with ${origin}.`);
@@ -212,6 +226,17 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
                 if (base && (base.startsWith('-') || base.length > 200)) throw new Error('"base" must be a branch, tag or commit');
                 return workspace.branchReport(base);
             }
+            case 'pairingLink': {
+                // Another browser on this machine: a fresh one-time link (the asking browser is already paired).
+                const t = randomBytes(24).toString('base64url');
+                pairingTokens.set(t, Date.now() + PAIRING_LINK_TTL_MS);
+                // A handful at most: the oldest unused link stops working first.
+                for (const old of pairingTokens.keys()) {
+                    if (pairingTokens.size <= MAX_PAIRING_LINKS) break;
+                    if (old !== printedToken) pairingTokens.delete(old);
+                }
+                return { url: `${app}/#pair=${t}@127.0.0.1:${port}`, expiresInMs: PAIRING_LINK_TTL_MS };
+            }
             case 'authorshipMark': {
                 const as = str('as');
                 if (!['reviewed', 'ai', 'human', 'unknown'].includes(as)) throw new Error('"as" must be reviewed, ai, human or unknown');
@@ -246,7 +271,7 @@ export async function startCompanion(workspace: Workspace, options: CompanionOpt
     const app = options.appUrl ?? APP_ORIGIN;
     return {
         port,
-        pairingUrl: `${app}/#pair=${token}@127.0.0.1:${port}`,
+        pairingUrl: `${app}/#pair=${printedToken}@127.0.0.1:${port}`,
         notify,
         async close() {
             clearTimeout(debounce);

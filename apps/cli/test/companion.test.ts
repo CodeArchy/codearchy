@@ -155,6 +155,30 @@ describe('the Companion (codearchy serve)', () => {
         resumed.ws.close();
     });
 
+    it('gives a paired browser a one-time link for another browser', async () => {
+        const first = await connect(companion.port, { origin: APP });
+        first.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));
+        expect(await first.next()).toMatchObject({ type: 'ready' });
+        const link = (await request(first, 'pairingLink')).result as { url: string; expiresInMs: number };
+        expect(link.expiresInMs).toBe(10 * 60_000);
+        const m = /^https:\/\/app\.codearchy\.com\/#pair=([\w-]+)@127\.0\.0\.1:(\d+)$/.exec(link.url);
+        expect(m?.[2]).toBe(String(companion.port));
+        expect(m?.[1]).not.toBe('one-time-token');
+        // The other browser pairs with it, once.
+        const second = await connect(companion.port, { origin: APP });
+        second.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: m![1] }));
+        expect(await second.next()).toMatchObject({ type: 'ready', summary: { name: 'polyglot' } });
+        const third = await connect(companion.port, { origin: APP });
+        third.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: m![1] }));
+        expect((await third.closed).code).toBe(4401);
+        // The printed link stays used up.
+        const printed = await connect(companion.port, { origin: APP });
+        printed.ws.send(JSON.stringify({ type: 'pair', protocol: COMPANION_PROTOCOL, token: 'one-time-token' }));
+        expect((await printed.closed).code).toBe(4401);
+        first.ws.close();
+        second.ws.close();
+    });
+
     it('pushes a change event to connected pages', async () => {
         const c = await connect(companion.port, { origin: APP });
         c.ws.send(JSON.stringify({ type: 'resume', protocol: COMPANION_PROTOCOL, session }));

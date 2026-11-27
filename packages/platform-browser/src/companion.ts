@@ -180,6 +180,13 @@ export class CompanionEngine implements EngineClient {
     readFile(path: string): Promise<string | undefined> {
         return this.call('readFile', { path });
     }
+    /**
+     * A fresh one-time link that opens this workspace in another browser on this machine (valid for `expiresInMs`).
+     * Companions before 0.1.3 don't have it: they answer with an "Unknown request" error.
+     */
+    pairingLink(): Promise<{ url: string; expiresInMs: number }> {
+        return this.call('pairingLink', {});
+    }
 
     dispose(): void {
         this.ws.close(1000, 'done');
