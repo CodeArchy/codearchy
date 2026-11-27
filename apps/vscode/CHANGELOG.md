@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-27
+
 ### Changed
 
 - **A tidier Map on dense codebases.** Lines now follow the layout's own routes: around the cards, never through them, each in its own lane instead of piling onto a shared trunk. By default the Map leaves out the lines a longer path already shows (A → B → C needs no A → C line), so what depends on what, directly or not, is unchanged with about half the lines. The toolbar says how many are drawn ("11 of 24 dependencies drawn · show all"), and selecting a part still draws all of its own.

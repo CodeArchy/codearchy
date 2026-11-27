@@ -2,7 +2,7 @@
     "name": "codearchy",
     "displayName": "CodeArchy",
     "description": "Offline-first privacy system that visualizes codebase into explainable system architecture for education, onboarding, and safer software development/maintenance",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "publisher": "iyinusa",
     "license": "MIT",
     "repository": {
