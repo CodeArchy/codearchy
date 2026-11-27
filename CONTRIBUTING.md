@@ -11,14 +11,9 @@ Thank you for your interest in contributing to CodeArchy! This document provides
 - **Node.js 22.18+** (pnpm comes with it via Corepack)
 - **VS Code 1.85+**
 - **Git**
-- **Ollama** — required to run Gemma 4 locally for AI inference. Download from [ollama.com](https://ollama.com).
-- At least one Gemma 4 model pulled locally:
-
-  ```bash
-  ollama pull gemma4:e2b   # fast, ~4 GB RAM
-  ollama pull gemma4:e4b   # deeper, ~8 GB RAM
-  ollama pull gemma4:26b   # maximum depth, ~16 GB RAM
-  ```
+- **AI is optional.** Nothing you build or test needs a model. To work on AI features, use any provider CodeArchy
+  supports: a local one (Ollama, LM Studio) or an API key (Anthropic, OpenAI, Gemini, OpenRouter, Groq, Mistral).
+  Unit tests use fakes, never a real provider.
 
 ### Getting Started
 
@@ -69,11 +64,14 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 │   ├── platform-browser/ @codearchy/platform-browser  browser adapters: File System Access / OPFS,
 │   │                                        SQLite WASM on OPFS, fetched grammars, Web Worker pool
 │   ├── conformance/ @codearchy/conformance  shared adapter test suite + golden polyglot graph
-│   └── ui/         @codearchy/ui            shared React UI: Map canvas, Navigator, Inspector
+│   ├── providers/  @codearchy/providers     AI model adapters behind one streaming interface (no engine)
+│   ├── ai/         @codearchy/ai            summary cards, grounded chat, search over the hierarchy
+│   └── ui/         @codearchy/ui            shared React UI: Map, Architecture, Matrix, Flows, Tours
 ├── apps/
 │   ├── vscode/     the extension (composition root): bundled to dist/extension.js with esbuild
 │   │   ├── src/            extension host: commands, file watcher, pipeline, webview panel, voice
 │   │   └── webview-ui/     React webview
+│   ├── cli/        the `codearchy` npm package: `mcp` (MCP server), `serve` (Companion), `authorship`
 │   └── playground/ browser debug UI for the engine (pnpm playground)
 ├── docs/guides/    contributor guides (adding a language, ...)
 ├── fixtures/       small multi-language repos used by tests (polyglot/)
@@ -87,6 +85,7 @@ codearchy/                         pnpm workspace (package.json, pnpm-workspace.
 protocol, sdk ← lang-* ← core ← treesitter ← platform-node | platform-browser ← apps/*
                                 ↖ conformance (tests every platform against the same cases)
 protocol ← ui ← apps/*          (the UI never imports the engine; apps give it an EngineClient)
+protocol ← providers ← ai ← apps/*   (providers never import the engine)
 ```
 
 - `core`, `sdk` and the language packs compile with **no DOM and no Node types**: they can't touch the host, even by accident.
@@ -99,52 +98,33 @@ protocol ← ui ← apps/*          (the UI never imports the engine; apps give 
 
 ## Architecture
 
-### Full Pipeline
+[ARCHITECTURE.md](ARCHITECTURE.md) is the full tour. In short:
 
 ```
-Command / file-system events (saves, agents, git pull)
-         │
-         ▼
-Discovery            ← git ls-files (honours .gitignore), exclude globs
-         │
-         ▼
-Analyzer             ← tree-sitter WASM + one query per language pack
-         │              (regex fallback only if a grammar is missing)
-         ▼
-Import Resolver      ← per-ecosystem rules, indexed lookups
-         │
-         ▼
-Graph Builder        ← typed ArchitectureNode + ArchitectureEdge
-         │
-    ┌────┴──────────────────┐
-    │                       │
-    ▼                       ▼
-Heuristic Inference    Ollama (Gemma 4)   ← local REST API
-(fast, no AI)         (semantic subsystems, architectural pattern)
-    │                       │
-    └────────┬──────────────┘
-             │
-             ▼
-    Webview (postMessage)
-             │
-    ┌────────┴───────────────┐
-    │                        │
-    ▼                        ▼
-React Flow diagram    Conversational Chat
-(interactive)         + Kokoro TTS narration
+Discovery         ← git ls-files (honours .gitignore), exclude globs
+   ▼
+Extraction        ← tree-sitter (wasm) + one query per language pack, in a worker pool
+   ▼
+Index             ← per-file facts in SQLite (node:sqlite, or SQLite wasm on OPFS in the browser); only changed files re-parse
+   ▼
+Resolution        ← per-ecosystem import rules → the dependency graph
+   ▼
+Hierarchy         ← system → packages → components → files → symbols, projected into bounded views
+   ▼
+Map · Architecture · Matrix · Flows · Tours · lenses (health, tests, ownership, AI authorship)
+   ▲
+AI (optional)     ← ProviderRegistry: roles, privacy tiers, redaction, budgets; any provider or none
 ```
 
-### Key Principles
+### Key principles
 
-1. **Offline-First** — All runtime operations work without internet. Ollama runs at `http://localhost:11434`. Kokoro TTS runs in a Web Worker using local ONNX weights. External downloads (Tree-sitter WASM grammars, Kokoro model, Gemma 4 via Ollama) happen once at install/setup time.
-
-2. **Strict Host / Webview Separation** — File system access, Ollama calls, and audio recording live exclusively in the Extension Host (`src/`). The Webview (`webview-ui/`) handles only rendering, user interaction, and Web Speech API. All cross-boundary communication uses VS Code's `postMessage` API with typed message payloads.
-
-3. **Performance** — Files are read straight from disk (never opened as editor documents), parsing yields to the event loop, and only files that change on disk are re-parsed; edges are rebuilt from cached per-file results. Ollama inference runs in a background worker thread to keep VS Code responsive. Kokoro TTS runs in a Web Worker and streams PCM chunks so audio playback begins before synthesis completes.
-
-4. **AI Output is Architectural, Not File-Level** — When prompting Gemma 4, the model receives the structured dependency graph (not raw source code) and is instructed to respond as a senior software architect. Responses must be in structured JSON (named subsystems, roles, relationships, architectural pattern). Never send raw file content to the model.
-
-5. **Conversation Context** — Chat history is persisted in IndexedDB per project. On each conversational turn, a trimmed context window slice is sent to Ollama — never the full history or the full codebase graph.
+1. **Local-first.** Parsing, the index, the Map, flows, tours, ownership and authorship run on the user's machine and
+   need no network. AI is optional, and the user decides what may leave the machine (privacy tiers in `ProviderRegistry`).
+2. **One engine, several hosts.** The same core runs in VS Code, the browser and the CLI. Host-specific code lives
+   behind ports in `platform-node` / `platform-browser`. The UI talks to the engine only through `EngineClient`.
+3. **Deterministic.** The same input gives the same graph, views and cards, and ties break by path.
+4. **Repository content is untrusted.** Names and paths are rendered as text, never HTML. Queries must not blow up on hostile input.
+5. **Pinned, verified downloads.** Grammars, runtimes and the voice model are pinned and integrity-checked.
 
 ---
 
@@ -154,8 +134,8 @@ React Flow diagram    Conversational Chat
 - Follow existing naming conventions (camelCase for variables/functions, PascalCase for classes/types)
 - Keep functions focused; avoid side-effects in pure data-transformation functions
 - Webview components use React functional components with hooks — no class components
-- All Ollama API calls must handle errors gracefully (Ollama not running, model not pulled, timeout)
-- Voice I/O is a progressive enhancement — text chat must always function independently
+- AI is a progressive enhancement: every feature must work with no provider configured, and provider calls go through `ProviderRegistry` (never straight to a vendor)
+- Voice is a progressive enhancement too: text must always work on its own
 
 ## Testing
 
@@ -211,9 +191,9 @@ and include the before/after numbers in your pull request.
 
 Open an issue on GitHub with:
 
-- VS Code version
-- Operating system and hardware (relevant for Kokoro GPU/CPU behaviour)
-- Ollama version and model(s) installed (for AI-related issues)
+- Where you use CodeArchy (VS Code version, the web app and browser, or the CLI version) and the CodeArchy version
+- Operating system and hardware (relevant for the voice's GPU/CPU behaviour)
+- For AI issues: the provider and model (never paste your API key)
 - Steps to reproduce
 - Expected vs actual behaviour
 - Any relevant output from the VS Code Developer Tools console (`Help → Toggle Developer Tools`)
